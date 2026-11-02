@@ -4,6 +4,7 @@
 // that code references cannot see (WebSocket, TCP, database) are declared below.
 // usage: node scripts/scan-galaxy-wars.mjs [repoRoot]   → writes model/galaxy-wars/*.c4
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { basename, join, relative } from 'node:path'
 
 const repo = process.argv[2] ?? 'F:/projects/galaxy-wars'
@@ -151,6 +152,13 @@ const gw = node(null, 'system', 'Galaxy Wars', { description: 'Persistent shared
 const db = node(gw, 'database', 'PostgreSQL', { technology: 'PostgreSQL 18', description: 'Accounts, ships, items, loadouts, missions and reward receipts.' })
 const areas = Object.fromEntries(Object.entries(AREAS).map(([k, a]) => [k, node(gw, 'area', a.title, { description: a.description })]))
 
+// Commits touching each file in the last 90 days, for the churn lens.
+const churn = new Map()
+try {
+  const log = execFileSync('git', ['-C', repo, 'log', '--since=90.days', '--name-only', '--pretty=format:'], { encoding: 'utf8', maxBuffer: 1 << 28 })
+  for (const line of log.split('\n')) if (line.trim()) churn.set(line.trim(), (churn.get(line.trim()) ?? 0) + 1)
+} catch { /* not a git checkout: no churn lens */ }
+
 const files = [] // { node, project, path, src }
 const projectNode = new Map()
 
@@ -178,6 +186,7 @@ for (const p of PROJECTS) {
       description: p.lang === 'rust' ? summaryRs(src) : summaryCs(src),
       technology: p.lang === 'rust' ? 'Rust module' : '',
       idName: title.replace(/\./g, '_'),
+      metrics: { lines: src.split('\n').length, churn: churn.get(`${p.dir}/${rel}`) ?? 0 },
     })
     files.push({ node: n, project: p, path: rel, src })
   }
@@ -281,6 +290,7 @@ function emit(n, indent) {
   const body = []
   if (n.technology) body.push(`${pad}  technology ${q(n.technology)}`)
   if (n.description) body.push(`${pad}  description ${q(n.description.slice(0, 300))}`)
+  if (n.metrics) body.push(`${pad}  metadata {\n${Object.entries(n.metrics).map(([k, v]) => `${pad}    ${k} '${v}'`).join('\n')}\n${pad}  }`)
   for (const c of n.children) body.push(emit(c, indent + 2))
   const id = n.fqn.slice(n.fqn.lastIndexOf('.') + 1)
   return `${pad}${id} = ${n.kind} ${q(n.title)}${body.length ? ` {\n${body.join('\n')}\n${pad}}` : ''}`

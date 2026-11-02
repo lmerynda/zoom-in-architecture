@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Camera } from './camera'
+import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, contentBox, placeWorld, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
 import { clipToScreen, shortText } from './render'
@@ -114,6 +114,19 @@ describe('Camera', () => {
     expect(cam.z).toBeCloseTo(80, 6)
   })
 
+  it('keeps zooming at full speed while panning', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    for (let t = 16; t <= 2000; t += 16) {
+      cam.panBy(3, 0)
+      cam.zoomAt(500, 300, Math.exp(1 * 0.016))
+      cam.step(t, 16)
+    }
+    // 2 s at 1 log unit/s is e^2; easing lags a little behind the target.
+    expect(Math.log(cam.z)).toBeGreaterThan(1.8)
+  })
+
   it('stays exact at a million-fold zoom', () => {
     const cam = new Camera()
     cam.resize(1000, 600)
@@ -128,11 +141,28 @@ describe('Camera', () => {
     cam.resize(1000, 600)
     cam.set(0, 0, 1)
     cam.flyTo(500, 500, 10, 6, 0, 1)
-    for (let t = 0; t <= 800; t += 16) cam.step(t, 16)
-    cam.step(800, 16)
+    let t = 0
+    while (cam.flying && t < 10000) { t += 16; cam.step(t, 16) }
+    expect(cam.flying).toBe(false)
     expect(cam.x).toBeCloseTo(505, 6)
     expect(cam.y).toBeCloseTo(503, 6)
     expect(cam.z).toBeCloseTo(100, 6)
+  })
+})
+
+describe('flight (van Wijk–Nuij)', () => {
+  it('starts and ends exactly at both views, for far pans and pure zooms', () => {
+    for (const [x0, y0, w0, x1, y1, w1] of [[0, 0, 1000, 50000, -20000, 30], [10, 10, 800, 10, 10, 0.05], [5, 5, 100, 5, 5, 4000]]) {
+      const f = flight(x0, y0, w0, x1, y1, w1)
+      const a = f.at(0), b = f.at(f.S)
+      ;[x0, y0, w0].forEach((v, k) => expect(a[k]).toBeCloseTo(v, 6))
+      ;[x1, y1, w1].forEach((v, k) => expect(b[k] / v).toBeCloseTo(1, 6))
+    }
+  })
+
+  it('pulls back while crossing a long distance', () => {
+    const f = flight(0, 0, 100, 100000, 0, 100)
+    expect(f.at(f.S / 2)[2]).toBeGreaterThan(5000)
   })
 })
 

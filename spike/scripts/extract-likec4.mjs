@@ -25,6 +25,7 @@ for (const name of readdirSync(root)) {
     tags: [...(e.tags ?? [])],
     color: String(e.color ?? 'primary'),
     shape: String(e.shape ?? 'rectangle'),
+    metadata: { ...(e.getMetadata?.() ?? {}) },
   }))
   const relations = [...model.relationships()].map(r => ({
     source: r.source.id,

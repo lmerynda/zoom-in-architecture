@@ -8,6 +8,8 @@ export interface ElementJson {
   tags: string[]
   color: string
   shape: string
+  /** LikeC4 metadata; the viewer reads numeric `lines` and `churn` for its lenses. */
+  metadata?: Record<string, string>
 }
 
 export interface RelationJson {

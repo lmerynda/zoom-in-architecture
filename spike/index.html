@@ -8,7 +8,7 @@
   <style>
     :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #64748b; --accent: #fbbf24; }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f17; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
     #stage, #stage canvas { position: fixed; inset: 0; display: block; }
     .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); }
     #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; }
@@ -19,7 +19,7 @@
     #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
     #search { width: 220px; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; font: inherit; outline: none; }
     #search:focus { border-color: var(--accent); }
-    #crumbs { display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 46vw; }
+    #crumbs { position: fixed; top: 64px; left: 24px; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
     #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
     #crumbs button:hover { color: var(--text); }
@@ -48,6 +48,31 @@
     .d-rels button span { color: var(--dim); font-size: 11px; }
     .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
     #help { right: 12px; bottom: 12px; color: var(--dim); font-size: 11px; position: fixed; }
+    #sound { background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; }
+    #sound.on { color: var(--accent); border-color: rgba(251, 191, 36, 0.4); }
+    .lensbar { position: static; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
+    .lensbar button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
+    .lensbar button.on { color: #0b0f17; background: var(--accent); font-weight: 600; }
+    .lens-legend { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; color: var(--dim); font-size: 11px; }
+    .lens-legend[hidden] { display: none; }
+    .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
+    /* Altimeter: depth gauge on the left edge. */
+    .alt { position: fixed; left: 22px; top: 50%; transform: translateY(-50%); height: 46vh; width: 120px; pointer-events: none; font: 600 9px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.12em; color: #475569; }
+    .alt-title { position: absolute; top: -26px; left: 0; color: #64748b; }
+    .alt-rail { position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: linear-gradient(#1e293b, #334155, #1e293b); border-radius: 1px; }
+    .alt-tick { position: absolute; left: -4px; width: 10px; height: 1px; background: #334155; padding-left: 18px; line-height: 0; white-space: nowrap; transition: color 0.3s; }
+    .alt-tick.on { color: #94a3b8; background: #64748b; }
+    .alt-marker { position: absolute; left: -7px; width: 16px; height: 16px; margin-top: -8px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: 0 0 12px rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.15); }
+    .alt-readout { position: absolute; bottom: -28px; left: 0; color: var(--accent); font-size: 11px; }
+    /* Region title card. */
+    .banner { position: fixed; top: 108px; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; opacity: 0; }
+    .banner.show { animation: banner 2.6s ease forwards; }
+    .banner-kicker { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.4em; color: var(--accent); }
+    .banner-title { font: 300 34px/1.15 'Segoe UI', Inter, sans-serif; letter-spacing: 0.06em; color: #f1f5f9; text-shadow: 0 0 24px rgba(96, 165, 250, 0.45); margin-top: 4px; }
+    .banner-sub { font-size: 12px; color: #94a3b8; letter-spacing: 0.08em; margin-top: 4px; }
+    .banner-title::after { content: ''; display: block; height: 1px; margin: 8px auto 0; width: 0; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: rule 2.6s ease forwards; }
+    @keyframes banner { 0% { opacity: 0; transform: translate(-50%, -8px); letter-spacing: 0.02em; } 14% { opacity: 1; transform: translate(-50%, 0); } 72% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, 0); } }
+    @keyframes rule { 0% { width: 0; } 30% { width: 220px; } 100% { width: 220px; } }
   </style>
 </head>
 <body>
@@ -63,12 +88,13 @@
       <a href="?model=synthetic&n=10000">10k</a>
     </nav>
     <input id="search" placeholder="Search  /" autocomplete="off" />
-    <div id="crumbs" class="panel" style="position: static"></div>
+    <button id="sound" title="M">Sound off</button>
   </div>
+  <div id="crumbs" class="panel"></div>
   <div id="stats" class="panel">loading…</div>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
-  <div id="help">scroll to zoom · drag to pan · click to select · double-click to fly in · Esc up · 0 fit</div>
+  <div id="help">scroll to zoom · drag to pan · click select · double-click fly in · WASD/QE fly · Tab next · L lens · M sound · Esc up · 0 fit</div>
   <script>
     const q = location.search || '?model=acme'
     for (const a of document.querySelectorAll('#models a')) if (a.getAttribute('href') === q) a.className = 'on'

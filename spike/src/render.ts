@@ -1,6 +1,10 @@
-import { BitmapFont, BitmapText, BlurFilter, Container, Graphics, NineSliceSprite, Rectangle, Sprite, Texture, TilingSprite, type Application } from 'pixi.js'
+import { BitmapFont, BitmapText, BlurFilter, Container, Graphics, NineSliceSprite, Rectangle, Sprite, Texture, type Application } from 'pixi.js'
 import type { Camera } from './camera'
 import { EdgeRouter } from './edges'
+import { FlowParticles, type Flow } from './fx/particles'
+import { Starfield } from './fx/starfield'
+import { WarpStreaks } from './fx/warp'
+import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
 import { aggregateEdges, type ShownEdge, type Tree } from './model'
 
@@ -48,6 +52,7 @@ interface NodeView {
   sub?: BitmapText
   desc?: BitmapText
   dossier?: BitmapText
+  metric?: BitmapText
 }
 
 interface Chip { bg: NineSliceSprite; text: BitmapText }
@@ -66,7 +71,11 @@ const enum Kind { Thin, Mid, Thick, Out, In }
 export class Renderer {
   readonly stage = new Container()
   readonly router: EdgeRouter
-  private dots: TilingSprite[] = []
+  private stars = new Starfield()
+  private warp = new WarpStreaks()
+  private particles = new FlowParticles()
+  /** Pulse rings and selection reticle, drawn above cards. */
+  private fxG = new Graphics()
   private cardLayers: Container[] = []
   private textLayers: Container[] = []
   private edgeG = new Graphics()
@@ -91,6 +100,19 @@ export class Renderer {
   private round!: Texture
   private ring!: Texture
   private soft!: Texture
+  /** Animation clock in ms, from the app's (possibly manual) clock. */
+  time = 0
+  private dt = 16
+  /** Per container: whether it was open last frame, to fire a pulse when it opens. */
+  private wasOpen: Uint8Array
+  private pulses: { node: number; t0: number }[] = []
+  /** When the current selection was made, for the lock-on animation. */
+  private selectedAt = 0
+  private lastSelected = -1
+  /** Called when a container opens on screen, for sound. */
+  onOpen: () => void = () => {}
+  /** Active lens, or null for the structure view. */
+  lens: Lens | null = null
   hover = -1
   /** Clicked element: its relations stay highlighted and everything unrelated dims. */
   selected = -1
@@ -110,19 +132,16 @@ export class Renderer {
     this.related = new Int32Array(n).fill(-1)
     this.endpoint = new Int32Array(n).fill(-1)
     this.endKind = new Uint8Array(n)
+    this.wasOpen = new Uint8Array(n)
     this.colors = new Int32Array(n)
     for (let i = 0; i < n; i++) {
       const own = tree.els[i].color
       this.colors[i] = own in PALETTE ? PALETTE[own] : PALETTE.primary
     }
     this.makeTextures()
-    for (let k = 0; k < 2; k++) {
-      const t = new TilingSprite({ texture: this.dotTexture(), width: 10, height: 10 })
-      this.dots.push(t)
-      this.stage.addChild(t)
-    }
+    this.stage.addChild(this.stars.back)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.cardLayers.push(c); this.stage.addChild(c) }
-    this.stage.addChild(this.edgeG, this.hotEdgeG, this.chipLayer)
+    this.stage.addChild(this.edgeG, this.hotEdgeG, this.particles.view, this.warp.view, this.stars.front, this.fxG, this.chipLayer)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.textLayers.push(c); this.stage.addChild(c) }
   }
 
@@ -149,11 +168,6 @@ export class Renderer {
     this.soft = r.generateTexture({ target: blob, frame: new Rectangle(0, 0, 96, 96), resolution: 1, antialias: true })
   }
 
-  private dotTexture() {
-    const g = new Graphics().rect(0, 0, 64, 64).fill({ color: 0x000000, alpha: 0 }).circle(32, 32, 2.2).fill(0xffffff)
-    return this.app.renderer.generateTexture({ target: g, frame: new Rectangle(0, 0, 64, 64), resolution: 2, antialias: true })
-  }
-
   private nine(tex: Texture, layer: Container, edge = 14) {
     const s = new NineSliceSprite({ texture: tex, leftWidth: edge, topHeight: edge, rightWidth: edge, bottomHeight: edge })
     layer.addChild(s)
@@ -165,6 +179,8 @@ export class Renderer {
       text: s,
       style: { fontFamily: FONT, fontSize: FONT_PX, fill: 0xffffff, wordWrap: wrap > 0, wordWrapWidth: wrap || 100, lineHeight: FONT_PX * 1.25 },
     })
+    // Created hidden: a label made for a card too small to show it must not appear at (0, 0).
+    t.visible = false
     layer.addChild(t)
     return t
   }
@@ -239,9 +255,17 @@ export class Renderer {
     return focus > 0 && (n === focus || this.tree.isAncestor(focus, n) || this.tree.isAncestor(n, focus))
   }
 
-  frame(): FrameStats {
+  /** Depth under the screen centre as a continuous level: labelled levels plus how far the next has opened. */
+  altitude(path = this.breadcrumb()): number {
+    return path.length + (path.length ? this.open(path[path.length - 1]) : 0)
+  }
+
+  frame(now = performance.now()): FrameStats {
     const t0 = performance.now()
+    this.dt = Math.min(100, Math.max(1, now - this.time))
+    this.time = now
     this.frameNo++
+    if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
     const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.pick(this.pointer[0], this.pointer[1]) : -1
     const focus = this.selected > 0 ? this.selected : this.hover
@@ -261,37 +285,24 @@ export class Renderer {
         mark(e.s); mark(e.t)
       }
     }
-    this.drawDots()
+    this.stars.update(this.cam, now)
+    this.fxG.clear()
     const prev = this.shown
     this.shown = []
     this.visit(0, 1, 1, st)
     for (const i of prev) if (this.stamp[i] !== this.frameNo) this.hide(i)
     this.drawEdges(edges, focus, st)
+    this.warp.update(this.cam, now, this.dt)
+    this.drawPulses()
+    this.drawReticles()
     st.cpuMs = performance.now() - t0
     return st
-  }
-
-  /** World-anchored dot grid in two octaves that crossfade, so zooming never runs out of grid. */
-  private drawDots() {
-    const z = this.cam.z, W = this.cam.w, H = this.cam.h
-    const a = Math.log2(z * 40)
-    const f = a - Math.floor(a)
-    const ox = (0 - this.cam.x) * z + W / 2, oy = (0 - this.cam.y) * z + H / 2
-    for (let k = 0; k < 2; k++) {
-      const t = this.dots[k]
-      const spacing = 2 ** f * (k === 0 ? 64 : 32)
-      t.width = W; t.height = H
-      t.tileScale.set(spacing / 64)
-      t.tilePosition.set(((ox % spacing) + spacing) % spacing - spacing / 2, ((oy % spacing) + spacing) % spacing - spacing / 2)
-      t.tint = 0x94a3b8
-      t.alpha = k === 0 ? 0.09 : 0.09 * f
-    }
   }
 
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.dossier]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.dossier, v.metric]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -306,12 +317,27 @@ export class Renderer {
     const kids = this.tree.children[i]
     if (!kids.length) return
     const t = this.open(i)
+    if (i > 0) {
+      if (t > 0.97 && !this.wasOpen[i]) {
+        this.wasOpen[i] = 1
+        if (w > 160) { this.pulses.push({ node: i, t0: this.time }); this.onOpen() }
+      } else if (t < 0.3) this.wasOpen[i] = 0
+    }
     // Children are always drawn once they are a few px wide, as a faint preview; they brighten
-    // and gain labels as the container opens, so detail grows in place instead of popping.
+    // and gain labels as the container opens, so detail grows in place instead of popping. The
+    // reveal runs as a wave outward from the zoom focus.
     const childW = CARD_W * this.world.content[i * 3 + 2] * this.cam.z
     if (childW < 1.5) return
-    const a = alpha * (i === 0 ? 1 : 0.35 + 0.65 * t)
-    for (const c of kids) this.visit(c, a, t, st)
+    const diag = Math.hypot(this.cam.w, this.cam.h)
+    for (const c of kids) {
+      let r = t
+      if (i > 0 && t > 0 && t < 1) {
+        const [cx, cy, cw, ch] = this.screenRect(c)
+        const d = Math.hypot(cx + cw / 2 - this.cam.focusX, cy + ch / 2 - this.cam.focusY) / diag
+        r = Math.min(1, Math.max(0, t * 1.8 - d * 0.8))
+      }
+      this.visit(c, alpha * (i === 0 ? 1 : 0.35 + 0.65 * r), r, st)
+    }
   }
 
   private drawCard(i: number, x: number, y: number, w: number, h: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -328,12 +354,13 @@ export class Renderer {
     const endColor = this.endKind[i] === 2 ? IN : OUT
     const cards = this.cardLayers[d]
 
+    const heat = this.lens ? heatColor(this.lens.heat[i]) : -1
     if (w < PIP) {
       const p = (v.pip ??= (() => { const s = new Sprite(Texture.WHITE); cards.addChild(s); return s })())
       p.visible = true
       p.position.set(x, y)
       p.width = w; p.height = h
-      p.tint = sel ? 0xffffff : ends ? endColor : mix(color, BG, isContainer ? 0.55 : 0.35)
+      p.tint = sel ? 0xffffff : ends ? endColor : heat >= 0 ? mix(heat, BG, isContainer ? 0.45 : 0.15) : mix(color, BG, isContainer ? 0.55 : 0.35)
       p.alpha = alpha * dim
       return
     }
@@ -358,13 +385,17 @@ export class Renderer {
     fill.visible = true
     fill.position.set(x, y)
     fill.width = w; fill.height = h
-    fill.tint = isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
+    // Under a lens the heat sits on the cards you are looking at: closed ones are vivid, open
+    // containers fade to a dark frame so their children carry the colour.
+    fill.tint = heat >= 0
+      ? mix(heat, BG, isContainer ? 0.32 + 0.6 * t : hot || sel ? 0.12 : 0.28)
+      : isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
     fill.alpha = alpha * dim
 
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
-    border.tint = sel ? 0xffffff : ends ? endColor : hot ? 0xe2e8f0 : mix(color, 0xffffff, 0.15)
+    border.tint = sel ? 0xffffff : ends ? endColor : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
     border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : isContainer ? 0.55 : 0.45) * dim
 
     if (sel || ends) {
@@ -378,8 +409,23 @@ export class Renderer {
     }
 
     const texts = this.textLayers[d]
-    const la = alpha * labelAlpha * (dim < 1 ? 0.6 : 1)
+    const la = alpha * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9)
     if (la < 0.02 || w < 44) return
+
+    // Lens value badge in the bottom-right corner.
+    if (this.lens && w > 90) {
+      const label = `${compact(this.lens.raw[i])} ${this.lens.unit}`
+      const badge = (v.metric ??= this.text(label, texts))
+      if (badge.text !== label) badge.text = label
+      const bpx = Math.min(h * 0.1, 14)
+      if (bpx >= 7) {
+        badge.visible = true
+        badge.scale.set(bpx / FONT_PX)
+        badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
+        badge.position.set(x + w - w * 0.06 - badge.width, y + h - h * 0.08 - bpx * 1.25)
+        badge.alpha = la
+      }
+    }
 
     if (isContainer) {
       const hh = HEADER * h
@@ -390,7 +436,7 @@ export class Renderer {
       header.width = w; header.height = Math.max(hh, 28)
       sq.position.set(x, y + hh / 2)
       sq.width = w; sq.height = hh / 2
-      header.tint = sq.tint = mix(color, BG, 0.62)
+      header.tint = sq.tint = heat >= 0 ? mix(heat, BG, 0.3 + 0.35 * t) : mix(color, BG, 0.62)
       header.alpha = sq.alpha = alpha * dim
       if (hh < 28) { header.height = hh; header.visible = false; sq.position.set(x, y); sq.height = hh }
 
@@ -509,6 +555,7 @@ export class Renderer {
     const sel = this.selected > 0
 
     const drawn: { e: ShownEdge; kind: Kind; pts: number[]; sOn: boolean; tOn: boolean }[] = []
+    const flows: Flow[] = []
     for (const e of edges) {
       const sOn = this.onScreen(e.s), tOn = this.onScreen(e.t)
       if (!sOn && !tOn) continue
@@ -539,6 +586,7 @@ export class Renderer {
         }
       }
       paths[kind].push(clipped)
+      flows.push({ pts: clipped, color: hot ? (kind === Kind.Out ? OUT : IN) : 0x9fb6ff, count: e.count, both: e.both, bright: hot })
       st.edges++
       const n = pts.length
       if (tOn) heads[kind].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -564,8 +612,46 @@ export class Renderer {
       arrowHeads(gg, heads[kind], color, Math.min(1, alpha + 0.15), 6 + width * 1.4)
     })
 
+    this.particles.update(flows, this.time, sel)
     st.chips = this.drawChips(chipTargets, W, H)
     this.drawLabels(labelSpots)
+  }
+
+  /** Expanding rings around containers that just opened: the map acknowledging a new level. */
+  private drawPulses() {
+    const g = this.fxG
+    this.pulses = this.pulses.filter(p => this.time - p.t0 < 750)
+    for (const p of this.pulses) {
+      const u = (this.time - p.t0) / 750
+      const e = 1 - (1 - u) ** 3
+      const [x, y, w, h] = this.screenRect(p.node)
+      const grow = 6 + e * 46
+      g.roundRect(x - grow, y - grow, w + grow * 2, h + grow * 2, 14 + grow * 0.5)
+      g.stroke({ width: 2.5 * (1 - u) + 0.5, color: 0x7dd3fc, alpha: (1 - u) * 0.8 })
+    }
+  }
+
+  /** Targeting brackets: hover gets a thin set, selection locks on with a snap and breathes. */
+  private drawReticles() {
+    const g = this.fxG
+    const corners = (i: number, pad: number, len: number, width: number, color: number, alpha: number) => {
+      const [x, y, w, h] = this.screenRect(i)
+      if (w < 8 || x + w < -50 || y + h < -50 || x > this.cam.w + 50 || y > this.cam.h + 50) return
+      const L = Math.min(len, w * 0.3, h * 0.3)
+      const x0 = x - pad, y0 = y - pad, x1 = x + w + pad, y1 = y + h + pad
+      g.moveTo(x0, y0 + L).lineTo(x0, y0).lineTo(x0 + L, y0)
+      g.moveTo(x1 - L, y0).lineTo(x1, y0).lineTo(x1, y0 + L)
+      g.moveTo(x1, y1 - L).lineTo(x1, y1).lineTo(x1 - L, y1)
+      g.moveTo(x0 + L, y1).lineTo(x0, y1).lineTo(x0, y1 - L)
+      g.stroke({ width, color, alpha, cap: 'square' })
+    }
+    if (this.hover > 0 && this.hover !== this.selected) corners(this.hover, 5, 18, 1.5, 0xcbd5e1, 0.7)
+    if (this.selected > 0) {
+      const u = Math.min(1, (this.time - this.selectedAt) / 280)
+      const snap = 1 - (1 - u) ** 3
+      const pad = 8 + (1 - snap) * 60 + Math.sin(this.time / 260) * 2 * snap
+      corners(this.selected, pad, 28, 2.5, 0xfbbf24, 0.35 + 0.65 * snap)
+    }
   }
 
   private toScreen(world: number[]) {
@@ -641,6 +727,11 @@ export class Renderer {
     this.chipLayer.addChild(bg, text)
     return { bg, text }
   }
+}
+
+/** 1234 → 1.2k, for badges. */
+function compact(n: number) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n))
 }
 
 /** Width of a label per px of font size, independent of how it is scaled right now. */

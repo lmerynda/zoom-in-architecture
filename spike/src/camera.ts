@@ -8,14 +8,20 @@ export class Camera {
   z = 1
   w = 1
   h = 1
+  /** How fast the view is changing, for motion effects: zoom in log units/s, pan in screen px/s. */
+  zoomRate = 0
+  panSpeed = 0
+  /** Screen point the current zoom is anchored on, for effects that radiate from it. */
+  focusX = 0
+  focusY = 0
 
   private targetLogZ = 0
   private anchor: { sx: number; sy: number; wx: number; wy: number } | null = null
   private vx = 0
   private vy = 0
-  private fly: { t0: number; dur: number; x0: number; y0: number; z0: number; x1: number; y1: number; z1: number } | null = null
+  private fly: Flight | null = null
 
-  resize(w: number, h: number) { this.w = w; this.h = h }
+  resize(w: number, h: number) { this.w = w; this.h = h; this.focusX = w / 2; this.focusY = h / 2 }
 
   toScreen(wx: number, wy: number): [number, number] {
     return [(wx - this.x) * this.z + this.w / 2, (wy - this.y) * this.z + this.h / 2]
@@ -24,6 +30,11 @@ export class Camera {
   toWorld(sx: number, sy: number): [number, number] {
     return [this.x + (sx - this.w / 2) / this.z, this.y + (sy - this.h / 2) / this.z]
   }
+
+  get flying() { return this.fly != null }
+
+  /** Duration of the flight in progress, in ms (0 when not flying). */
+  get flightMs() { return this.fly?.dur ?? 0 }
 
   set(x: number, y: number, z: number) {
     this.x = x; this.y = y; this.z = z
@@ -39,45 +50,50 @@ export class Camera {
       const [wx, wy] = this.toWorld(sx, sy)
       this.anchor = { sx, sy, wx, wy }
     }
+    this.focusX = sx; this.focusY = sy
     this.targetLogZ += Math.log(factor)
   }
 
+  /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */
   panBy(dx: number, dy: number) {
     this.fly = null
-    this.anchor = null
-    this.targetLogZ = Math.log(this.z)
     this.x -= dx / this.z
     this.y -= dy / this.z
+    if (this.anchor) { this.anchor.wx -= dx / this.z; this.anchor.wy -= dy / this.z }
   }
 
   release(vx: number, vy: number) { this.vx = vx; this.vy = vy }
 
-  /** Fits a world rect. Large zoom changes run as a zoom about one fixed point, like the wheel. */
-  flyTo(x: number, y: number, w: number, h: number, now: number, fill = 0.85, dur = 750) {
+  /**
+   * Fits a world rect along the van Wijk–Nuij optimal path: far jumps pull back, glide and dive
+   * in; near ones are a plain zoom. Duration follows the path length.
+   */
+  flyTo(x: number, y: number, w: number, h: number, now: number, fill = 0.85, dur?: number) {
     const z1 = Math.min((this.w * fill) / w, (this.h * fill) / h)
     this.anchor = null
     this.vx = this.vy = 0
-    this.fly = { t0: now, dur, x0: this.x, y0: this.y, z0: this.z, x1: x + w / 2, y1: y + h / 2, z1 }
+    const f = flight(this.x, this.y, this.w / this.z, x + w / 2, y + h / 2, this.w / z1)
+    this.fly = { ...f, t0: now, dur: dur ?? Math.min(2600, Math.max(650, 420 + f.S * 260)) }
   }
 
   /** Advances easing; returns true while the camera is still moving. */
   step(now: number, dt: number): boolean {
+    const x0 = this.x, y0 = this.y, lz0 = Math.log(this.z)
+    const moving = this.advance(now, dt)
+    const s = Math.max(dt, 1) / 1000
+    this.zoomRate = (Math.log(this.z) - lz0) / s
+    this.panSpeed = Math.hypot(this.x - x0, this.y - y0) * this.z / s
+    return moving
+  }
+
+  private advance(now: number, dt: number): boolean {
     if (this.fly) {
       const f = this.fly
       const u = Math.min(1, (now - f.t0) / f.dur)
       const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2
-      this.z = Math.exp(Math.log(f.z0) + (Math.log(f.z1) - Math.log(f.z0)) * e)
-      const r = f.z0 / f.z1
-      if (Math.abs(Math.log(r)) > 0.2) {
-        // Fixed point P with c1 = P + (c0 - P) * r; the centre follows c(t) = P + (c0 - P) * z0 / z(t).
-        const px = (f.x1 - f.x0 * r) / (1 - r), py = (f.y1 - f.y0 * r) / (1 - r)
-        const k = f.z0 / this.z
-        this.x = px + (f.x0 - px) * k
-        this.y = py + (f.y0 - py) * k
-      } else {
-        this.x = f.x0 + (f.x1 - f.x0) * e
-        this.y = f.y0 + (f.y1 - f.y0) * e
-      }
+      const [cx, cy, vw] = f.at(e * f.S)
+      this.x = cx; this.y = cy; this.z = this.w / vw
+      this.focusX = this.w / 2; this.focusY = this.h / 2
       if (u >= 1) { this.fly = null; this.targetLogZ = Math.log(this.z) }
       return true
     }
@@ -106,5 +122,46 @@ export class Camera {
       this.vx = this.vy = 0
     }
     return moving
+  }
+}
+
+interface Flight {
+  t0: number
+  dur: number
+  /** Path length in the zoom-pan metric. */
+  S: number
+  /** Centre x, y and view width in world units at path position s in [0, S]. */
+  at: (s: number) => [number, number, number]
+}
+
+const RHO = 1.42
+
+/**
+ * van Wijk & Nuij, "Smooth and efficient zooming and panning" (2003): the path from view
+ * (c0, w0) to (c1, w1) that is shortest when zooming out costs as much as panning.
+ */
+export function flight(x0: number, y0: number, w0: number, x1: number, y1: number, w1: number): Omit<Flight, 't0' | 'dur'> {
+  const dx = x1 - x0, dy = y1 - y0
+  const u1 = Math.hypot(dx, dy)
+  const r2 = RHO * RHO
+  if (u1 < 1e-9 * Math.max(w0, w1)) {
+    const k = w1 < w0 ? -1 : 1
+    const S = Math.abs(Math.log(w1 / w0)) / RHO
+    return { S, at: s => [x0 + dx * (S ? s / S : 1), y0 + dy * (S ? s / S : 1), w0 * Math.exp(k * RHO * s)] }
+  }
+  const b = (i: 0 | 1) => {
+    const wi = i ? w1 : w0
+    return (w1 * w1 - w0 * w0 + (i ? -1 : 1) * r2 * r2 * u1 * u1) / (2 * wi * r2 * u1)
+  }
+  const r = (i: 0 | 1) => { const bi = b(i); return Math.log(Math.sqrt(bi * bi + 1) - bi) }
+  const r0 = r(0), r1 = r(1)
+  const S = (r1 - r0) / RHO
+  const c0 = Math.cosh(r0), s0 = Math.sinh(r0)
+  return {
+    S,
+    at: s => {
+      const u = (w0 / r2) * (c0 * Math.tanh(RHO * s + r0) - s0)
+      return [x0 + (dx * u) / u1, y0 + (dy * u) / u1, (w0 * c0) / Math.cosh(RHO * s + r0)]
+    },
   }
 }
