@@ -1,0 +1,25 @@
+{
+  "name": "zoom-spike",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "extract": "node scripts/extract-likec4.mjs",
+    "predev": "npm run extract",
+    "dev": "vite --port 5180 --strictPort",
+    "prebuild": "npm run extract",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "elkjs": "^0.12.1",
+    "pixi.js": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "likec4": "^1.60.0",
+    "puppeteer-core": "^23.11.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

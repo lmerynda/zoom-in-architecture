@@ -85,3 +85,5 @@ A throwaway spike, one to two days, to settle the two real unknowns before any a
 3. Measure: frame time at 1k and 10k elements, text crispness across a 1000× zoom range, and whether ELK's nested layout keeps positions stable enough.
 
 If PixiJS text or frame time disappoints, the fallback is the Rust/WASM path.
+
+Done: see [2026-11-02-spike-findings.md](2026-11-02-spike-findings.md). PixiJS held up; the fallback is not needed.

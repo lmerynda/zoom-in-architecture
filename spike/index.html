@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zoom spike</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #64748b; --accent: #fbbf24; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f17; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
+    #stage, #stage canvas { position: fixed; inset: 0; display: block; }
+    .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); }
+    #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; }
+    #top > * { pointer-events: auto; }
+    #brand { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: var(--accent); padding: 8px 12px; }
+    #models { display: flex; gap: 2px; padding: 3px; }
+    #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; }
+    #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
+    #search { width: 220px; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 12px; font: inherit; outline: none; }
+    #search:focus { border-color: var(--accent); }
+    #crumbs { display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 46vw; }
+    #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+    #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
+    #crumbs button:hover { color: var(--text); }
+    #crumbs button.here { color: var(--text); font-weight: 600; }
+    #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
+    #minimap { right: 12px; bottom: 40px; width: 240px; height: 150px; cursor: crosshair; }
+    #help { right: 12px; bottom: 12px; color: var(--dim); font-size: 11px; position: fixed; }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="top" class="panel">
+    <div id="brand" class="panel" style="position: static">Zoom spike</div>
+    <nav id="models" class="panel" style="position: static">
+      <a href="?model=boutique">Boutique</a>
+      <a href="?model=bigbank">Big Bank</a>
+      <a href="?model=synthetic&n=1000">1k</a>
+      <a href="?model=synthetic&n=10000">10k</a>
+    </nav>
+    <input id="search" placeholder="Search  /" autocomplete="off" />
+    <div id="crumbs" class="panel" style="position: static"></div>
+  </div>
+  <div id="stats" class="panel">loading…</div>
+  <canvas id="minimap" class="panel"></canvas>
+  <div id="help">scroll to zoom · drag to pan · double-click to fly in · Esc to go up · 0 to fit</div>
+  <script>
+    const q = location.search || '?model=boutique'
+    for (const a of document.querySelectorAll('#models a')) if (a.getAttribute('href') === q) a.className = 'on'
+  </script>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

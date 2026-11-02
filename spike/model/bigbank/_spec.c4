@@ -1,0 +1,13 @@
+// Spec added for the spike: the playground ships bigbank.c4 without one.
+specification {
+  element person { style { shape person } }
+  element staff { style { shape person; color secondary } }
+  element enterprise
+  element softwaresystem
+  element existingsystem { style { color muted } }
+  element container
+  element spa { style { shape browser } }
+  element mobileApp { style { shape mobile } }
+  element database { style { shape storage } }
+  element component
+}
