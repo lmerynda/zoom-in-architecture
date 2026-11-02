@@ -8,9 +8,9 @@ npm run dev        # extracts model/*/ to public/models/, serves http://localhos
 npm test           # unit tests for tree, aggregation, placement, camera, clipping
 ```
 
-URL parameters: `?model=boutique|bigbank|synthetic`, `&n=10000` for the synthetic size, `&layout=packed|layered`.
+URL parameters: `?model=acme|boutique|bigbank|synthetic` (default `acme`) and `&n=10000` for the synthetic size.
 
-Controls: scroll zooms at the cursor, drag pans, double-click flies into a card, `Esc` goes up a level, `0` fits all, `/` searches.
+Controls: scroll zooms at the cursor, drag pans, click selects (relations out in amber, in in cyan, details panel on the right), double-click flies into a card, `Esc` clears the selection and then goes up a level, `0` fits all, `/` searches.
 
 ## Measuring
 
@@ -20,6 +20,7 @@ With the dev server running:
 node scripts/probe.mjs "model=synthetic&n=10000"          # screenshots and report into shots/
 DPR=2 node scripts/probe.mjs "model=synthetic&n=10000"    # same at device pixel ratio 2
 node scripts/layout-bench.mjs 1000                         # ELK option sets: card fill and time
+DPR=2 node scripts/tour.mjs                                # screenshot walkthrough into shots/tour/
 ```
 
 `probe.mjs` drives Chrome (set `CHROME` to another binary), wheel-zooms from the overview into the deepest element, flies back out, pans the overview, and writes frame-time percentiles plus `window.__spike.gpu` so you can see which GPU rendered.
@@ -28,7 +29,11 @@ node scripts/layout-bench.mjs 1000                         # ELK option sets: ca
 
 - `scripts/extract-likec4.mjs` — LikeC4 workspace → `{ elements, relations }` JSON.
 - `src/model.ts` — hierarchy as flat arrays under a virtual root; relation roll-up.
-- `src/layout.ts`, `layout.worker.ts`, `layoutPool.ts` — one ELK layout per container, batched per worker; cards scaled into their parent's content area.
+- `src/layout.ts`, `layout.worker.ts`, `layoutPool.ts` — one ELK rectpacking layout per container, batched per worker, sibling edges routed there; cards scaled into their parent's content area.
+- `src/route.ts` — orthogonal channel router through the gutters, with trunk sharing.
+- `src/edges.ts` — composes routes across nesting levels so no edge crosses a card.
 - `src/camera.ts` — float64 camera, cursor-anchored eased zoom, inertia, fly-to about a fixed point.
-- `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, off-screen chips.
+- `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
+- `src/details.ts` — the selection panel.
+- `model/acme/` — the realistic sample model.
 - `src/synthetic.ts` — deterministic five-level landscapes for scale tests.

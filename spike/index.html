@@ -26,6 +26,27 @@
     #crumbs button.here { color: var(--text); font-weight: 600; }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 40px; width: 240px; height: 150px; cursor: crosshair; }
+    #details { top: 72px; right: 12px; width: 330px; max-height: calc(100vh - 290px); overflow: auto; padding: 16px 16px 12px; }
+    #details[hidden] { display: none; }
+    .d-head { display: flex; flex-direction: column; gap: 6px; }
+    .d-kind { align-self: flex-start; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #0b0f17; background: #fbbf24; border-radius: 4px; padding: 2px 7px; font-weight: 700; }
+    #details h2 { margin: 0; font-size: 19px; color: #f1f5f9; font-weight: 650; }
+    .d-path { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 6px; }
+    .d-path button, .d-rels button { background: none; border: 0; color: var(--dim); font: inherit; padding: 2px 4px; cursor: pointer; border-radius: 5px; }
+    .d-path button + button::before { content: '›'; margin-right: 6px; color: #334155; }
+    .d-path button:hover, .d-rels button:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
+    .d-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 4px; }
+    .d-tags span { font-size: 11px; color: #cbd5e1; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+    #details p { color: #94a3b8; margin: 10px 0 4px; line-height: 1.5; }
+    .d-rels { margin-top: 12px; display: flex; flex-direction: column; }
+    .d-rels h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+    .d-rels.out h3, .d-rels.out i { color: #fbbf24; }
+    .d-rels.in h3, .d-rels.in i { color: #22d3ee; }
+    .d-rels button { display: grid; grid-template-columns: 16px 1fr; text-align: left; padding: 4px 6px; }
+    .d-rels i { font-style: normal; grid-row: span 2; }
+    .d-rels b { color: #e2e8f0; font-weight: 600; }
+    .d-rels button span { color: var(--dim); font-size: 11px; }
+    .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
     #help { right: 12px; bottom: 12px; color: var(--dim); font-size: 11px; position: fixed; }
   </style>
 </head>
@@ -34,6 +55,7 @@
   <div id="top" class="panel">
     <div id="brand" class="panel" style="position: static">Zoom spike</div>
     <nav id="models" class="panel" style="position: static">
+      <a href="?model=acme">Acme</a>
       <a href="?model=boutique">Boutique</a>
       <a href="?model=bigbank">Big Bank</a>
       <a href="?model=synthetic&n=1000">1k</a>
@@ -43,10 +65,11 @@
     <div id="crumbs" class="panel" style="position: static"></div>
   </div>
   <div id="stats" class="panel">loading…</div>
+  <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
-  <div id="help">scroll to zoom · drag to pan · double-click to fly in · Esc to go up · 0 to fit</div>
+  <div id="help">scroll to zoom · drag to pan · click to select · double-click to fly in · Esc up · 0 fit</div>
   <script>
-    const q = location.search || '?model=boutique'
+    const q = location.search || '?model=acme'
     for (const a of document.querySelectorAll('#models a')) if (a.getAttribute('href') === q) a.className = 'on'
   </script>
   <script type="module" src="/src/main.ts"></script>

@@ -41,7 +41,25 @@ describe('Tree', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
     const e = aggregateEdges(t, i => t.childUnder(0, i))
-    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0 }])
+    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1 }])
+  })
+
+  it('lights a rolled-up edge only for relations that cross the focus', () => {
+    // Focus a.a1: r1 (a.a1 → b.b1) leaves it; r2 (a.a2.x → b.b1) also rolls up to a→b but does not.
+    const tree = new Tree(model)
+    const id = (s: string) => tree.byId.get(s)!
+    const focus = id('a.a1')
+    const inFocus = (i: number) => i === focus
+    const top = (i: number) => tree.childUnder(0, i)
+    const [e] = aggregateEdges(tree, top, inFocus)
+    expect([e.out, e.in]).toEqual([true, false])
+    // Focus a.a2 (holding x): r2 leaves through x, so the same rolled-up edge lights; r1 alone would not.
+    const a2 = id('a.a2')
+    const viaA2 = aggregateEdges(tree, top, i => i === a2 || tree.isAncestor(a2, i))
+    expect([viaA2[0].out, viaA2[0].in]).toEqual([true, false])
+    // A focus no relation crosses leaves the edge dark.
+    const dark = aggregateEdges(tree, top, () => false)
+    expect([dark[0].out, dark[0].in]).toEqual([false, false])
   })
 
   it('aggregates shown edges and drops ones that collapse onto one node', () => {

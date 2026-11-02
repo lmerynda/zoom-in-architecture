@@ -1,0 +1,474 @@
+model {
+
+  shopper = actor 'Shopper' {
+    description 'Browses the catalogue, buys products and tracks deliveries.'
+  }
+  merchant = actor 'Merchant' {
+    description 'Third-party seller who lists products and receives payouts.'
+  }
+  agent = actor 'Support Agent' {
+    description 'Resolves order, payment and delivery issues for shoppers.'
+  }
+
+  stripe = external 'Stripe' {
+    technology 'REST'
+    description 'Card processing, payouts and dispute handling.'
+  }
+  sendgrid = external 'SendGrid' {
+    technology 'REST'
+    description 'Transactional email delivery.'
+  }
+  carriers = external 'Carrier APIs' {
+    technology 'REST, EDI'
+    description 'DHL, UPS and FedEx rate, label and tracking APIs.'
+  }
+  snowflake = external 'Snowflake' {
+    technology 'SQL'
+    description 'Analytics warehouse for reporting and forecasting.'
+  }
+
+  acme = enterprise 'Acme Commerce' {
+    description 'Marketplace for home goods: storefronts, ordering, payments and fulfilment.'
+
+    storefront = domain 'Storefront' {
+      description 'Everything shoppers touch directly.'
+
+      web = webapp 'Web Store' {
+        technology 'Next.js'
+        description 'Server-rendered storefront for desktop and mobile web.'
+        productPage = component 'Product Page' {
+          technology 'React'
+          description 'Product detail with gallery, price, stock and reviews.'
+        }
+        cartUi = component 'Cart Drawer' {
+          technology 'React'
+          description 'Slide-out cart with promo codes and shipping estimate.'
+        }
+        checkoutUi = component 'Checkout Flow' {
+          technology 'React'
+          description 'Address, delivery, payment and confirmation steps.'
+        }
+        accountUi = component 'Account Pages' {
+          technology 'React'
+          description 'Orders, addresses, saved cards and preferences.'
+        }
+      }
+
+      app = mobile 'Mobile App' {
+        technology 'React Native'
+        description 'iOS and Android shopping app with push notifications.'
+        home = component 'Home Feed' {
+          description 'Personalised feed of deals and recommendations.'
+        }
+        appCheckout = component 'Native Checkout' {
+          description 'Apple Pay and Google Pay checkout.'
+        }
+        push = component 'Push Handler' {
+          description 'Receives order and delivery notifications.'
+        }
+      }
+
+      bff = service 'Storefront BFF' {
+        technology 'Node.js, GraphQL'
+        description 'Backend for frontends: one GraphQL API over the domain services.'
+        gql = component 'GraphQL Gateway' {
+          technology 'Apollo'
+          description 'Schema stitching, batching and per-client query limits.'
+        }
+        session = component 'Session Manager' {
+          description 'Anonymous and signed-in sessions, cart hand-off at login.'
+        }
+        personalise = component 'Personalisation' {
+          description 'Ranks home feed and recommendations per shopper.'
+        }
+      }
+    }
+
+    catalog = domain 'Catalog' {
+      description 'Products, prices and search.'
+
+      products = service 'Product Service' {
+        technology 'Go'
+        description 'Source of truth for products, variants and prices.'
+        productApi = component 'Product API' {
+          technology 'gRPC'
+          description 'Reads and writes products and variants.'
+        }
+        pricing = component 'Pricing Rules' {
+          description 'Base price, sales, bundles and regional pricing.'
+        }
+        productRepo = component 'Product Repository' {
+          description 'Persistence and change events for products.'
+        }
+      }
+
+      search = service 'Search Service' {
+        technology 'Kotlin'
+        description 'Full-text and faceted product search.'
+        query = component 'Query Parser' {
+          description 'Spelling, synonyms and facet extraction.'
+        }
+        ranker = component 'Ranker' {
+          description 'Learning-to-rank scoring with business boosts.'
+        }
+        indexer = component 'Indexer' {
+          description 'Consumes product events and updates the index.'
+        }
+      }
+
+      productDb = database 'Product DB' {
+        technology 'PostgreSQL'
+        description 'Products, variants, prices and media references.'
+      }
+      searchIndex = database 'Search Index' {
+        technology 'OpenSearch'
+        description 'Denormalised product documents for search.'
+      }
+    }
+
+    ordering = domain 'Ordering' {
+      description 'Carts, checkout and the order lifecycle.'
+
+      cart = service 'Cart Service' {
+        technology 'Node.js'
+        description 'Carts for anonymous and signed-in shoppers.'
+        cartApi = component 'Cart API' {
+          description 'Add, remove and update cart lines.'
+        }
+        promo = component 'Promotion Engine' {
+          description 'Applies coupons, bundles and free-shipping rules.'
+        }
+      }
+
+      checkout = service 'Checkout Service' {
+        #critical
+        technology 'Java'
+        description 'Turns a cart into a paid order.'
+        flow = component 'Checkout Orchestrator' {
+          description 'Saga over stock reservation, payment and order creation.'
+        }
+        tax = component 'Tax Calculator' {
+          description 'Sales tax and VAT per destination.'
+        }
+        orderFactory = component 'Order Factory' {
+          description 'Builds the order from cart, prices and delivery choice.'
+        }
+      }
+
+      orders = service 'Order Service' {
+        #critical
+        technology 'Java'
+        description 'Order lifecycle from placed to delivered or refunded.'
+        orderApi = component 'Order API' {
+          description 'Order queries for shoppers, merchants and support.'
+        }
+        stateMachine = component 'Order State Machine' {
+          description 'Placed, paid, packed, shipped, delivered, returned.'
+        }
+        orderRepo = component 'Order Repository' {
+          description 'Persists orders and the outbox of order events.'
+        }
+        publisher = component 'Event Publisher' {
+          description 'Publishes order events from the outbox.'
+        }
+      }
+
+      orderDb = database 'Order DB' {
+        technology 'PostgreSQL'
+        description 'Orders, order lines and the event outbox.'
+      }
+      cartCache = database 'Cart Cache' {
+        technology 'Redis'
+        description 'Live carts with a 30-day expiry.'
+      }
+    }
+
+    payments = domain 'Payments' {
+      description 'Charging shoppers, paying merchants, keeping the books.'
+
+      gateway = service 'Payment Gateway' {
+        #pci
+        technology 'Go'
+        description 'Single entry point for authorising, capturing and refunding.'
+        paymentApi = component 'Payment API' {
+          description 'Authorise, capture, refund and void.'
+        }
+        stripeAdapter = component 'Stripe Adapter' {
+          description 'Maps payments to Stripe intents and webhooks.'
+        }
+        retries = component 'Retry Scheduler' {
+          description 'Retries soft declines and failed captures.'
+        }
+      }
+
+      fraud = service 'Fraud Detection' {
+        technology 'Python'
+        description 'Scores orders for fraud before payment capture.'
+        scorer = component 'Risk Scorer' {
+          description 'Combines model score and rules into a decision.'
+        }
+        rules = component 'Rules Engine' {
+          description 'Velocity, geography and blocklist rules.'
+        }
+        model = component 'Model Client' {
+          description 'Calls the hosted fraud model.'
+        }
+      }
+
+      ledger = service 'Ledger' {
+        #legacy
+        technology 'Java'
+        description 'Double-entry ledger for charges, refunds and payouts.'
+        ledgerApi = component 'Ledger API' {
+          description 'Posts journal entries.'
+        }
+        payouts = component 'Payout Scheduler' {
+          description 'Weekly merchant payouts net of fees.'
+        }
+        recon = component 'Reconciliation' {
+          description 'Matches Stripe balance reports to the ledger.'
+        }
+      }
+
+      ledgerDb = database 'Ledger DB' {
+        technology 'Oracle'
+        description 'Journal entries and balances.'
+      }
+    }
+
+    fulfilment = domain 'Fulfilment' {
+      description 'Stock, warehouses and delivery.'
+
+      inventory = service 'Inventory Service' {
+        technology 'Rust'
+        description 'Stock levels and reservations across warehouses.'
+        stockApi = component 'Stock API' {
+          description 'Available-to-promise per variant and region.'
+        }
+        reservations = component 'Reservation Manager' {
+          description 'Holds stock during checkout and releases on timeout.'
+        }
+        sync = component 'Warehouse Sync' {
+          description 'Applies stock counts from warehouse scanners.'
+        }
+      }
+
+      shipping = service 'Shipping Service' {
+        technology 'Go'
+        description 'Rates, labels and tracking with carriers.'
+        rates = component 'Rate Shopper' {
+          description 'Picks the cheapest carrier meeting the promise date.'
+        }
+        labels = component 'Label Printer' {
+          description 'Buys labels and sends them to warehouse printers.'
+        }
+        tracking = component 'Tracking Poller' {
+          description 'Polls carriers and emits delivery events.'
+        }
+      }
+
+      console = webapp 'Warehouse Console' {
+        technology 'Vue'
+        description 'Pick, pack and ship screens for warehouse staff.'
+      }
+      inventoryDb = database 'Inventory DB' {
+        technology 'CockroachDB'
+        description 'Stock per warehouse and open reservations.'
+      }
+    }
+
+    customer = domain 'Customer' {
+      description 'Identity, profiles, notifications and support.'
+
+      identity = service 'Identity Service' {
+        technology 'Go'
+        description 'Sign-in, tokens and multi-factor authentication.'
+        auth = component 'Auth API' {
+          description 'Password, passkey and social sign-in.'
+        }
+        tokens = component 'Token Issuer' {
+          description 'Issues and rotates access and refresh tokens.'
+        }
+      }
+
+      profile = service 'Profile Service' {
+        technology 'Kotlin'
+        description 'Shopper profiles, addresses and preferences.'
+        profileApi = component 'Profile API' {
+          description 'Reads and updates profiles.'
+        }
+        addresses = component 'Address Book' {
+          description 'Validated delivery addresses.'
+        }
+      }
+
+      notify = service 'Notification Service' {
+        technology 'Node.js'
+        description 'Email, SMS and push notifications.'
+        templates = component 'Template Renderer' {
+          description 'Localised templates for every message.'
+        }
+        router = component 'Channel Router' {
+          description 'Chooses channel from preferences and urgency.'
+        }
+      }
+
+      support = webapp 'Support Console' {
+        technology 'React'
+        description 'Ticket queue with order, payment and delivery context.'
+      }
+    }
+
+    platform = domain 'Platform' {
+      description 'Shared infrastructure every team builds on.'
+
+      bus = queue 'Event Bus' {
+        technology 'Kafka'
+        description 'Domain events between services.'
+      }
+      analytics = service 'Analytics Pipeline' {
+        technology 'Flink'
+        description 'Streams events into the warehouse.'
+        collector = component 'Event Collector' {
+          description 'Validates and deduplicates events.'
+        }
+        loader = component 'Warehouse Loader' {
+          description 'Batches events into Snowflake.'
+        }
+      }
+      flags = service 'Feature Flags' {
+        technology 'Unleash'
+        description 'Gradual rollouts and experiments.'
+      }
+    }
+
+    merchants = domain 'Merchant' {
+      description 'Tools for third-party sellers.'
+
+      portal = webapp 'Merchant Portal' {
+        technology 'React'
+        description 'Listings, orders and payouts for merchants.'
+        listingsUi = component 'Listings Editor' {
+          description 'Create and edit products and stock.'
+        }
+        ordersUi = component 'Merchant Orders' {
+          description 'Orders to fulfil and returns to approve.'
+        }
+        payoutsUi = component 'Payouts View' {
+          description 'Statements and upcoming payouts.'
+        }
+      }
+      merchantApi = service 'Merchant API' {
+        technology 'Node.js'
+        description 'Public API for merchant integrations.'
+      }
+    }
+  }
+
+  // Actors
+  shopper -> acme.storefront.web.productPage 'browses products'
+  shopper -> acme.storefront.web.checkoutUi 'checks out'
+  shopper -> acme.storefront.app.home 'shops on mobile'
+  merchant -> acme.merchants.portal.listingsUi 'manages listings'
+  merchant -> acme.merchants.merchantApi 'integrates via API'
+  agent -> acme.customer.support 'handles tickets'
+
+  // Storefront
+  acme.storefront.web.productPage -> acme.storefront.bff.gql 'queries products'
+  acme.storefront.web.cartUi -> acme.storefront.bff.gql 'updates cart'
+  acme.storefront.web.checkoutUi -> acme.storefront.bff.gql 'places order'
+  acme.storefront.web.accountUi -> acme.storefront.bff.gql 'loads account'
+  acme.storefront.app.home -> acme.storefront.bff.gql 'loads feed'
+  acme.storefront.app.appCheckout -> acme.storefront.bff.gql 'places order'
+  acme.storefront.bff.gql -> acme.storefront.bff.session 'resolves session'
+  acme.storefront.bff.gql -> acme.storefront.bff.personalise 'ranks feed'
+  acme.storefront.bff.gql -> acme.catalog.products.productApi 'reads products'
+  acme.storefront.bff.gql -> acme.catalog.search.query 'searches'
+  acme.storefront.bff.gql -> acme.ordering.cart.cartApi 'reads and writes carts'
+  acme.storefront.bff.gql -> acme.ordering.checkout.flow 'starts checkout'
+  acme.storefront.bff.gql -> acme.ordering.orders.orderApi 'reads orders'
+  acme.storefront.bff.session -> acme.customer.identity.tokens 'validates tokens'
+  acme.storefront.bff.gql -> acme.customer.profile.profileApi 'reads profile'
+  acme.storefront.bff.personalise -> acme.platform.flags 'reads experiments'
+
+  // Catalog
+  acme.catalog.products.productApi -> acme.catalog.products.pricing 'prices variants'
+  acme.catalog.products.productApi -> acme.catalog.products.productRepo 'loads products'
+  acme.catalog.products.productRepo -> acme.catalog.productDb 'reads and writes'
+  acme.catalog.products.productRepo -> acme.platform.bus 'publishes product events'
+  acme.catalog.search.query -> acme.catalog.search.ranker 'scores results'
+  acme.catalog.search.ranker -> acme.catalog.searchIndex 'queries'
+  acme.catalog.search.indexer -> acme.platform.bus 'consumes product events'
+  acme.catalog.search.indexer -> acme.catalog.searchIndex 'indexes'
+
+  // Ordering
+  acme.ordering.cart.cartApi -> acme.ordering.cart.promo 'applies promotions'
+  acme.ordering.cart.cartApi -> acme.ordering.cartCache 'stores carts'
+  acme.ordering.cart.promo -> acme.catalog.products.pricing 'reads prices'
+  acme.ordering.checkout.flow -> acme.ordering.cart.cartApi 'reads cart'
+  acme.ordering.checkout.flow -> acme.ordering.checkout.tax 'calculates tax'
+  acme.ordering.checkout.flow -> acme.fulfilment.inventory.reservations 'reserves stock'
+  acme.ordering.checkout.flow -> acme.fulfilment.shipping.rates 'quotes delivery'
+  acme.ordering.checkout.flow -> acme.payments.fraud.scorer 'screens order'
+  acme.ordering.checkout.flow -> acme.payments.gateway.paymentApi 'authorises payment'
+  acme.ordering.checkout.flow -> acme.ordering.checkout.orderFactory 'builds order'
+  acme.ordering.checkout.orderFactory -> acme.ordering.orders.orderApi 'creates order'
+  acme.ordering.orders.orderApi -> acme.ordering.orders.stateMachine 'transitions'
+  acme.ordering.orders.stateMachine -> acme.ordering.orders.orderRepo 'saves'
+  acme.ordering.orders.orderRepo -> acme.ordering.orderDb 'reads and writes'
+  acme.ordering.orders.publisher -> acme.ordering.orderDb 'reads outbox'
+  acme.ordering.orders.publisher -> acme.platform.bus 'publishes order events'
+
+  // Payments
+  acme.payments.gateway.paymentApi -> acme.payments.gateway.stripeAdapter 'charges'
+  acme.payments.gateway.stripeAdapter -> stripe 'creates payment intents'
+  acme.payments.gateway.retries -> acme.payments.gateway.stripeAdapter 'retries captures'
+  acme.payments.gateway.paymentApi -> acme.payments.ledger.ledgerApi 'posts charges'
+  acme.payments.fraud.scorer -> acme.payments.fraud.rules 'evaluates rules'
+  acme.payments.fraud.scorer -> acme.payments.fraud.model 'gets model score'
+  acme.payments.fraud.rules -> acme.customer.profile.profileApi 'reads account age'
+  acme.payments.ledger.ledgerApi -> acme.payments.ledgerDb 'writes journal'
+  acme.payments.ledger.payouts -> acme.payments.ledgerDb 'reads balances'
+  acme.payments.ledger.payouts -> stripe 'sends payouts'
+  acme.payments.ledger.recon -> stripe 'downloads balance reports'
+  acme.payments.ledger.recon -> acme.payments.ledgerDb 'matches entries'
+
+  // Fulfilment
+  acme.fulfilment.inventory.stockApi -> acme.fulfilment.inventoryDb 'reads stock'
+  acme.fulfilment.inventory.reservations -> acme.fulfilment.inventoryDb 'holds stock'
+  acme.fulfilment.inventory.sync -> acme.fulfilment.inventoryDb 'applies counts'
+  acme.fulfilment.inventory.sync -> acme.platform.bus 'consumes order events'
+  acme.fulfilment.console -> acme.fulfilment.inventory.sync 'scans stock'
+  acme.fulfilment.console -> acme.fulfilment.shipping.labels 'prints labels'
+  acme.fulfilment.shipping.rates -> carriers 'requests rates'
+  acme.fulfilment.shipping.labels -> carriers 'buys labels'
+  acme.fulfilment.shipping.tracking -> carriers 'polls tracking'
+  acme.fulfilment.shipping.tracking -> acme.platform.bus 'publishes delivery events'
+  acme.catalog.products.productApi -> acme.fulfilment.inventory.stockApi 'reads availability'
+
+  // Customer
+  acme.customer.identity.auth -> acme.customer.identity.tokens 'issues tokens'
+  acme.customer.profile.profileApi -> acme.customer.profile.addresses 'validates addresses'
+  acme.customer.notify.router -> acme.platform.bus 'consumes order and delivery events'
+  acme.customer.notify.router -> acme.customer.notify.templates 'renders'
+  acme.customer.notify.router -> acme.customer.profile.profileApi 'reads preferences'
+  acme.customer.notify.templates -> sendgrid 'sends email'
+  acme.customer.notify.router -> acme.storefront.app.push 'sends push'
+  acme.customer.support -> acme.ordering.orders.orderApi 'looks up orders'
+  acme.customer.support -> acme.payments.gateway.paymentApi 'issues refunds'
+  acme.customer.support -> acme.fulfilment.shipping.tracking 'checks delivery'
+
+  // Platform
+  acme.platform.analytics.collector -> acme.platform.bus 'consumes all events'
+  acme.platform.analytics.collector -> acme.platform.analytics.loader 'batches'
+  acme.platform.analytics.loader -> snowflake 'loads'
+
+  // Merchant
+  acme.merchants.portal.listingsUi -> acme.merchants.merchantApi 'saves listings'
+  acme.merchants.portal.ordersUi -> acme.merchants.merchantApi 'loads orders'
+  acme.merchants.portal.payoutsUi -> acme.merchants.merchantApi 'loads payouts'
+  acme.merchants.merchantApi -> acme.catalog.products.productApi 'writes products'
+  acme.merchants.merchantApi -> acme.ordering.orders.orderApi 'reads merchant orders'
+  acme.merchants.merchantApi -> acme.payments.ledger.ledgerApi 'reads statements'
+  acme.merchants.merchantApi -> acme.fulfilment.inventory.stockApi 'updates stock'
+}

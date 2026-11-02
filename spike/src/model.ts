@@ -142,23 +142,38 @@ export interface ShownEdge {
   both: boolean
   /** First relation folded in, for its label. */
   rel: number
+  /** Some folded relation leaves the focus (out) or enters it (in). */
+  out: boolean
+  in: boolean
+  /** How many folded relations cross the focus, and the first of them. */
+  focusCount: number
+  focusRel: number
 }
 
 /**
  * Rolls every relation up to the deepest ancestors that are currently shown, merging duplicates
  * and both directions into one edge. `rep(i)` returns the shown stand-in for node i. Relations
  * whose two ends collapse onto one node, or onto a node and its own ancestor, are dropped.
+ * `inFocus` marks elements inside the focused element; each edge records whether any of its
+ * own relations crosses that boundary, so a rolled-up edge lights up only for real relations.
  */
-export function aggregateEdges(tree: Tree, rep: (i: number) => number): ShownEdge[] {
+export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?: (i: number) => boolean): ShownEdge[] {
   const out = new Map<number, ShownEdge>()
   const n = tree.size
   for (let k = 0; k < tree.rels.length; k += 2) {
     const s = rep(tree.rels[k]), t = rep(tree.rels[k + 1])
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
-    const e = out.get(key)
-    if (!e) out.set(key, { s, t, count: 1, both: false, rel: k >> 1 })
-    else { e.count++; if (e.s !== s) e.both = true }
+    let e = out.get(key)
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1 }))
+    e.count++
+    if (e.s !== s) e.both = true
+    if (inFocus) {
+      const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])
+      if (fi && !ti) e.out = true
+      if (ti && !fi) e.in = true
+      if (fi !== ti && e.focusCount++ === 0) e.focusRel = k >> 1
+    }
   }
   return [...out.values()]
 }

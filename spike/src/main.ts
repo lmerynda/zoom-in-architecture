@@ -6,12 +6,13 @@ import { Tree, type ModelJson } from './model'
 import { Renderer } from './render'
 import { synthetic } from './synthetic'
 import { Minimap } from './minimap'
+import { renderDetails } from './details'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
 async function loadModel(): Promise<ModelJson> {
   const q = new URLSearchParams(location.search)
-  const name = q.get('model') ?? 'boutique'
+  const name = q.get('model') ?? 'acme'
   if (name === 'synthetic') return synthetic(Number(q.get('n') ?? 1000))
   const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json`)
   if (!res.ok) throw new Error(`model ${name}: ${res.status}`)
@@ -29,8 +30,7 @@ async function main() {
   const model = await loadModel()
   const tree = new Tree(model)
   const tLayout = performance.now()
-  const kind = new URLSearchParams(location.search).get('layout') === 'layered' ? 'layered' : 'packed'
-  const local = await runLayout(layoutJobs(tree), kind)
+  const local = await runLayout(layoutJobs(tree))
   const layoutMs = performance.now() - tLayout
   const world: World = placeWorld(tree, local)
 
@@ -46,7 +46,11 @@ async function main() {
   let dirty = true
   const fit = (i: number, dur = 750) => {
     const r = world.rect
-    cam.flyTo(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3], performance.now(), i === 0 ? 0.92 : 0.85, dur)
+    // With the details panel open, frame the target in the space left of it.
+    const panel = document.getElementById('details')
+    const cover = panel && !panel.hidden ? panel.getBoundingClientRect().width + 24 : 0
+    const widen = cam.w / Math.max(1, cam.w - cover)
+    cam.flyTo(r[i * 4], r[i * 4 + 1], r[i * 4 + 2] * widen, r[i * 4 + 3], performance.now(), i === 0 ? 0.92 : 0.85, dur)
     dirty = true
   }
   const resize = () => {
@@ -62,6 +66,14 @@ async function main() {
   }
   window.addEventListener('resize', resize)
 
+  // Selection: click a card to focus its relations; the panel lists them, each a jump.
+  const details = $('details')
+  const select = (i: number) => {
+    renderer.selected = i > 0 ? i : -1
+    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); fit(j, 900) })
+    dirty = true
+  }
+
   // Input: wheel zooms at the cursor, drag pans with inertia, double-click flies into a card.
   const canvas = app.canvas
   canvas.addEventListener('wheel', e => {
@@ -70,10 +82,10 @@ async function main() {
     cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022))
     dirty = true
   }, { passive: false })
-  let drag: { x: number; y: number; t: number; vx: number; vy: number } | null = null
+  let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
   canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId)
-    drag = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0 }
+    drag = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0, moved: 0 }
   })
   canvas.addEventListener('pointermove', e => {
     renderer.pointer = [e.offsetX, e.offsetY]
@@ -81,13 +93,17 @@ async function main() {
     if (!drag) return
     const now = performance.now(), dt = Math.max(1, now - drag.t)
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+    drag.moved += Math.abs(dx) + Math.abs(dy)
     cam.panBy(dx, dy)
     drag.vx = drag.vx * 0.6 + (dx / dt) * 0.4
     drag.vy = drag.vy * 0.6 + (dy / dt) * 0.4
     drag.x = e.clientX; drag.y = e.clientY; drag.t = now
   })
-  canvas.addEventListener('pointerup', () => {
-    if (drag && performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
+  canvas.addEventListener('pointerup', e => {
+    if (drag && drag.moved < 5) {
+      const hit = renderer.pick(e.offsetX, e.offsetY)
+      select(hit === renderer.selected ? -1 : hit)
+    } else if (drag && performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
   })
   canvas.addEventListener('pointerleave', () => { renderer.pointer = null; dirty = true })
@@ -100,7 +116,7 @@ async function main() {
       if (e.key === 'Enter') {
         const q = search.value.trim().toLowerCase()
         const hit = tree.els.findIndex((el, i) => i > 0 && el.title.toLowerCase().includes(q))
-        if (hit > 0) fit(hit, 1100)
+        if (hit > 0) { select(hit); fit(hit, 1100) }
         search.blur()
       }
       if (e.key === 'Escape') search.blur()
@@ -108,6 +124,7 @@ async function main() {
     }
     if (e.key === '/') { e.preventDefault(); search.focus(); search.select() }
     if (e.key === 'Home' || e.key === '0') fit(0)
+    if (e.key === 'Escape' && renderer.selected > 0) { select(-1); return }
     if (e.key === 'Escape' || e.key === 'Backspace') {
       const path = renderer.breadcrumb()
       fit(path.length > 1 ? path[path.length - 2] : 0)
@@ -140,7 +157,7 @@ async function main() {
     }
     const d = values(delta), c = values(cpu)
     stats.textContent = [
-      `${tree.size - 1} elements · ${tree.rels.length / 2} relations · ${kind} layout ${layoutMs.toFixed(0)} ms`,
+      `${tree.size - 1} elements · ${tree.rels.length / 2} relations · layout ${layoutMs.toFixed(0)} ms`,
       `fps ${(1000 / (d.reduce((a, b) => a + b, 0) / (d.length || 1))).toFixed(0)} · frame p50 ${pct(c, 0.5).toFixed(1)} ms · p95 ${pct(c, 0.95).toFixed(1)} ms`,
       `drawn ${last.nodes} cards · ${last.texts} labels · ${last.edges} edges · ${last.chips} off-screen`,
       `zoom ×${(cam.z / (cam.w * 0.92 / world.rect[2])).toExponential(1)}`,
@@ -154,7 +171,7 @@ async function main() {
     __spike: {
       ready: true, tree, world, cam, renderer, layoutMs, loadMs: performance.now() - t0,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
-      fit, last: () => last,
+      fit, select, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),
       resetFrames: () => { cpu.k = delta.k = 0; cpu.full = delta.full = false },
     },

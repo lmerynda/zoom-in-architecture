@@ -1,0 +1,53 @@
+// Written for the spike: a realistic mid-size landscape to judge the visuals on.
+specification {
+  element actor {
+    style {
+      shape person
+      color green
+    }
+  }
+  element external {
+    style {
+      color muted
+    }
+  }
+  element enterprise
+  element domain {
+    style {
+      color indigo
+    }
+  }
+  element webapp {
+    style {
+      shape browser
+      color secondary
+    }
+  }
+  element mobile {
+    style {
+      shape mobile
+      color secondary
+    }
+  }
+  element service
+  element database {
+    style {
+      shape storage
+      color slate
+    }
+  }
+  element queue {
+    style {
+      shape queue
+      color amber
+    }
+  }
+  element component {
+    style {
+      color sky
+    }
+  }
+  tag critical
+  tag legacy
+  tag pci
+}

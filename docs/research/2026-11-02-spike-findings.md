@@ -4,58 +4,76 @@ Date: 2026-11-02. Code: [`spike/`](../../spike). Follows [2026-11-02-landscape.m
 
 ## Verdict
 
-**The browser + PixiJS path is good enough. No need for the Rust/WASM fallback.** Rendering has roughly 5× headroom at 10k elements. Layout is fast once batched. The hard problems left are design problems (edges, layout aesthetics), not engine problems.
+**The browser + PixiJS path is good enough. No need for the Rust/WASM fallback.** Rendering has several times headroom at 10k elements. Layout and routing take 0.6 s at 10k once batched. Edges, the main readability risk in the first pass, now read cleanly: orthogonal routes through the gutters, plus focus highlighting. What remains is product polish, not engine risk.
 
 ## What was built
 
-- LikeC4 workspaces (the official boutique template and Big Bank) extracted via `LikeC4.fromWorkspace` → JSON, plus a deterministic synthetic generator (five levels: domain → system → container → component → module).
-- Every container laid out on its own by ELK in web workers. Children are same-size cards, scaled into the parent's content area. That gives one world with **positions that never change while zooming**.
-- PixiJS v8 renderer rebuilt each frame in screen space from a float64 camera. Cards are nine-slice sprites, labels are pooled bitmap text.
-- Semantic zoom:
+- **Data:** LikeC4 workspaces extracted via `LikeC4.fromWorkspace` → JSON:
+  - `acme`, a realistic 96-element e-commerce landscape written for the spike;
+  - the official boutique template;
+  - Big Bank.
+
+  There is also a deterministic synthetic generator (five levels) for scale tests.
+- **Layout:** every container is laid out on its own by ELK `rectpacking` in web workers, aiming at the card's content aspect ratio. Children are same-size cards scaled into the parent's content area, so **positions never change while zooming**.
+- **Edge routing:**
+  - Sibling edges are routed orthogonally through the gutters by our own channel router (`src/route.ts`). It runs a cheapest-path search over gutter lines, with a bend penalty and a discount for reusing segments, so edges merge into shared trunks.
+  - An edge between nested elements is composed (`src/edges.ts`): the route at their lowest common container, plus exit routes that climb out of each container in between through its gutters. **No edge ever crosses a card**, at any level.
+- **Rendering:** a PixiJS v8 renderer rebuilt each frame in screen space from a float64 camera. Cards are nine-slice sprites with soft shadows. Labels are pooled bitmap text. A two-octave dot grid is anchored to the world, so you can always feel zoom and pan.
+- **Semantic zoom:**
   - Children appear as faint previews from 1.5 px wide.
-  - They gain labels and brighten as a child card grows from 70 to 120 px.
-  - Leaves add the subtitle, then the description, then a dossier of incoming and outgoing relations.
-- Edges rolled up to whatever is currently shown, with counts, merged in both directions, and highlighted on hover.
-- An edge whose far end is off screen ends in a chip at the screen border naming the largest off-screen ancestor ("Accounts Store ×12 →").
-- Game-style HUD: breadcrumb, minimap with viewport crosshair, search-to-fly, double-click fly-in, `Esc` up a level.
+  - They gain labels as a child card grows from 70 to 120 px.
+  - Leaves add the subtitle, then the description, then a dossier of relations.
+- **Focus:**
+  - Hover or click an element: relations leaving it turn amber, relations entering it cyan, and the cards at the other end glow in the same colours.
+  - Clicking also fades everything unrelated and opens a details panel. The panel shows identity, path, description and rolled-up outgoing and incoming relations, each a jump.
+  - Highlighting is decided per underlying relation, so a rolled-up edge lights up only when one of its own relations crosses the focus boundary.
+- **Off-screen chips:** an edge whose far end is off screen ends in a chip at the screen border naming the largest off-screen ancestor ("Stripe ×2 →"), coloured by direction.
+- **Game-style HUD:** breadcrumb, minimap with viewport crosshair, search-to-fly, double-click fly-in, `Esc` to clear the selection and then go up a level. Fly-to frames the target beside the details panel when it is open.
 
 ## Measurements
 
-Headless Chrome 1440×900 on an RTX 4070 (ANGLE D3D11). This is a fast discrete GPU. Integrated graphics are untested.
+Headless Chrome 1440×900 at DPR 2, on an RTX 4070 (ANGLE D3D11). This is a fast discrete GPU. Integrated graphics are untested.
 
-| Model | Elements / relations | Layout | Zooming, CPU per frame p50 / p95 | Overview pan p95 | Frame interval |
+| Model | Elements / relations | Layout + routing | Zooming, CPU per frame p50 / p95 | Overview pan p95 | Frame interval |
 |---|---|---|---|---|---|
-| Boutique (LikeC4) | 23 / 26 | 195 ms | 0.7 / 1.8 ms | — | 16.7 ms |
-| Big Bank (LikeC4) | 19 / 26 | 174 ms | 0.7 / 1.2 ms | — | 16.7 ms |
-| Synthetic 1k | 1,063 / 1,239 | 261 ms | 0.9 / 1.8 ms | — | 16.7 ms |
-| Synthetic 10k | 9,446 / 13,097 | 521 ms | 1.9 / 3.3 ms | 3.1 ms (1,496 cards drawn) | 16.7 ms |
-| Synthetic 10k, DPR 2 | same | 566 ms | 1.6 / 2.6 ms | 3.0 ms | 16.7 ms, one 50 ms hitch |
+| Acme (LikeC4) | 96 / 89 | 199 ms | 0.8 / 1.1 ms | 1.2 ms | 16.7 ms |
+| Synthetic 1k | 1,063 / 1,239 | 309 ms | 1.0 / 1.8 ms | 2.0 ms | 16.7 ms, one 50 ms hitch |
+| Synthetic 10k | 9,446 / 13,097 | 617 ms | 1.9 / 3.6 ms | 4.5 ms (1,496 cards drawn) | 16.7 ms, one 67 ms hitch |
 
 The three questions the spike was for:
 
-1. **Frame time at 1k and 10k.** Solved. Level of detail keeps the drawn set at about 1,500 cards at worst, however big the model is. Isolated 10–20 ms frames happen the first time many labels appear (bitmap text creation). Fix that by pre-warming or creating labels across frames.
-2. **Text crispness across a 1000× zoom.** Solved. Labels are sized in screen space (capped at 26 px), so they are never magnified past the font's 48 px raster. They are crisp at DPR 1 and DPR 2. The 10k zoom path spans 1,250×. A unit test confirms the float64 camera stays exact at 10⁶×.
-3. **ELK position stability.** Solved by construction for zooming: each container's layout is local and scaled into a fixed-size card, so opening a container moves nothing. Stability across **model edits** (adding one service re-flows its container) is untested and is the real remaining question.
+1. **Frame time at 1k and 10k.** Solved. Level of detail keeps the drawn set at about 1,500 cards at worst, however big the model is. There are rare single long frames (up to 67 ms) while frame CPU stays at or below 13.5 ms. They are outside our scene code, likely GPU texture uploads for new glyphs or garbage collection. Not investigated.
+2. **Text crispness across a 1000× zoom.** Solved. Labels are sized in screen space (capped at 26 px), so they are never magnified past the font's 48 px raster. They are crisp at DPR 1 and 2. A unit test confirms the float64 camera stays exact at 10⁶×.
+3. **ELK position stability.** Solved by construction for zooming: opening a container moves nothing. Stability across **model edits** (adding one service re-flows its container) is untested.
 
 ## Discoveries
 
-- **elkjs has a fixed cost of about 30 ms per `layout()` call.** Sending all of a worker's containers as compound children of one dummy root is 18× faster (1.8 ms per container). This took 10k layout from 5.2 s to 0.5 s.
-- **ELK `layered` wastes much of each card.** On the synthetic model, top-down layered layouts fill 54% of the card on average, wrapped left-to-right layered 79%, and `rectpacking` 87%, with a worst case of 73% against 30% for wrapped layered (`scripts/layout-bench.mjs`). Packed reads like a map: the Atlas-style even grid, with the next level visible as a preview inside every card. Layered keeps edge-aware ordering and routed edges, but it produces tall columns and spaghetti. **Packed is the default.**
-- **Edges are the main open problem.** Roll-up, counts, quieter cross-level lines and hover highlighting help. At mid zoom on a densely connected model it is still noisy, and packed layout routes nothing, so lines run straight across cards. This needs real design work: orthogonal or "metro" routing between grid cells, bundling by container pair, and showing all edges only for the hovered or selected element when density is high.
-- **Off-screen chips are the most game-like win.** Collapsing an off-screen end to its largest off-screen ancestor gives a nameable direction ("this talks to Ledger Division, that way") instead of lines vanishing at the edge.
-- **Previews from 1.5 px stop popping.** The structure two levels down is always faintly visible, and detail grows in place. The design choice that matters most is to open on legibility (child card width), not at fixed zoom levels.
-- **Labels still collide** with card titles and with each other. They need collision against cards, not just against other labels.
-- **LikeC4 works as a data layer.** Extraction takes about 200 ms per workspace. `fromWorkspace` keeps the process alive (a watcher), so the CLI must dispose and exit. For a live mode, its `onModelUpdate` is the hook.
+- **elkjs has a fixed cost of about 30 ms per `layout()` call.** Sending all of a worker's containers as compound children of one dummy root is 18× faster.
+- **`rectpacking` beats `layered` for this.** It fills 87% of each card against 54–79% for layered (`scripts/layout-bench.mjs`), it reads like a map, and it is three times faster. Layered's one advantage, routed edges, is now covered by our own router. The layered mode is gone.
+- **Gutter routing solves most of the edge problem.** Because cards sit on a near-grid with fixed gutters, a tiny routing grid (gutter lines plus card centre lines) is enough: a few dozen nodes per container. Composing routes up the hierarchy keeps lines out of cards at every zoom level. Shared trunks bundle edges naturally. The cost of a trunk is ambiguity about which pair it joins, and hover or selection resolves that.
+- **Highlight per relation, not per rolled-up endpoint.** The first version lit any edge touching a container that held the focus, so selecting Checkout also lit "Support → Order Service". Tracking crossings per folded relation fixed it (with a unit test).
+- **Off-screen chips are the most game-like win.** A nameable direction ("this talks to Stripe, that way") beats lines vanishing at the edge.
+- **Previews from 1.5 px stop popping.** The design choice that matters most is to open on legibility (child card width), not at fixed zoom levels.
+- **LikeC4 works as a data layer.** Extraction takes about 200 ms per workspace. `fromWorkspace` keeps the process alive (a watcher), so the CLI must dispose and exit.
+
+## Known rough edges
+
+- **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.
+- **Trunk arrowheads:** lines entering children along a shared trunk can look like edges between siblings.
+- **Equal-size cards at the top level:** the landscape's most important element (the enterprise) is the same size as an actor card.
+- **Empty full-screen leaves:** a leaf zoomed to fill the screen is mostly empty below its dossier.
 
 ## Not verified
 
 - Integrated or low-end GPUs, Safari and Firefox, touch and pinch.
-- Interaction feel: smoothness was judged from frame intervals and screenshots, not by a person scrolling.
-- Real large models: 10k is synthetic, with random, dense relations. That is probably the worst case for edges.
+- Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
+- Large real models: 10k is synthetic, with random, dense relations.
 
 ## Recommended next steps
 
-1. Edge design on the packed grid: routing, bundling, focus-dependent density. This decides whether the tool reads well.
-2. Visual design pass on the card, header and HUD language, aiming for the polish of a strategy-game map.
-3. Live mode: watch the LikeC4 workspace and re-lay out only the containers that changed.
-4. Zoom past leaves into code (blockviz-style levels), once the architecture levels feel right.
+1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
+2. Live mode: watch the LikeC4 workspace and re-lay out only the containers that changed, which also tests stability across edits.
+3. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
+4. Zoom past leaves into code (blockviz-style levels).
+
+Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

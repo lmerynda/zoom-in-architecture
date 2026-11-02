@@ -1,18 +1,29 @@
 import type { Tree } from './model'
+import type { Side } from './route'
 
 /** Every card has the same size inside its parent's local layout, at every level. */
 export const CARD_W = 240
 export const CARD_H = 150
 /** Header band of a container, as a fraction of its height. */
-export const HEADER = 0.16
+export const HEADER = 0.14
 export const PAD = 0.045
-
-export type LayoutKind = 'layered' | 'packed'
+/** Space between cards in a local layout; edges run along its centre line. */
+export const GUTTER = 56
 
 export interface LayoutJob {
   id: number
   children: number[]
-  edges: { s: number; t: number }[]
+  /** Sibling edges, one per unordered pair, with how many relations they carry. */
+  edges: { s: number; t: number; count: number }[]
+}
+
+export interface SiblingRoute {
+  s: number
+  t: number
+  /** Polyline from s's port to t's port, local coordinates. */
+  pts: number[]
+  from: Side
+  to: Side
 }
 
 /** One container's local layout as ELK returns it. */
@@ -22,8 +33,7 @@ export interface LocalLayout {
   h: number
   /** x, y per child, same order as the job's children. */
   pos: number[]
-  /** Routed sibling edges: source, target and polyline points in local coordinates. */
-  routes: { s: number; t: number; pts: number[] }[]
+  routes: SiblingRoute[]
 }
 
 export interface World {
@@ -40,7 +50,14 @@ export function layoutJobs(tree: Tree): LayoutJob[] {
   for (let i = 0; i < tree.size; i++) {
     const c = tree.children[i]
     if (!c.length) continue
-    jobs.push({ id: i, children: c, edges: (edges.get(i) ?? []).map(e => ({ s: e.s, t: e.t })) })
+    const pairs = new Map<string, { s: number; t: number; count: number }>()
+    for (const e of edges.get(i) ?? []) {
+      const key = e.s < e.t ? `${e.s}>${e.t}` : `${e.t}>${e.s}`
+      const p = pairs.get(key)
+      if (p) p.count += e.count
+      else pairs.set(key, { ...e })
+    }
+    jobs.push({ id: i, children: c, edges: [...pairs.values()] })
   }
   return jobs
 }
@@ -51,6 +68,9 @@ export function contentBox(x: number, y: number, w: number, h: number) {
   const top = HEADER * h
   return { x: x + pad, y: y + top + pad * 0.5, w: w - 2 * pad, h: h - top - pad * 1.5 }
 }
+
+/** Width over height of a card's content area: local layouts aim for it so they fill the card. */
+export const CONTENT_ASPECT = (() => { const b = contentBox(0, 0, CARD_W, CARD_H); return b.w / b.h })()
 
 /**
  * Places every node in one world, top-down: the root's layout sits at scale 1 and each
