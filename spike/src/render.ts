@@ -4,6 +4,7 @@ import { EdgeRouter } from './edges'
 import { FlowParticles, type Flow } from './fx/particles'
 import { Starfield } from './fx/starfield'
 import { WarpStreaks } from './fx/warp'
+import type { Hop } from './controls/logic'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
 import { aggregateEdges, type ShownEdge, type Tree } from './model'
@@ -22,6 +23,8 @@ const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
 const IN = 0x22d3ee
+const ROUTE = 0x4ade80
+const PIN = 0xf472b6
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -111,6 +114,15 @@ export class Renderer {
   private lastSelected = -1
   /** Called when a container opens on screen, for sound. */
   onOpen: () => void = () => {}
+  /** Secondary target, like an MMO's target-of-target: a neighbour of the selection being inspected. */
+  target = -1
+  /** Route being shown, hop by hop, and the waypoint the camera is on. */
+  route: Hop[] | null = null
+  routeStep = -1
+  /** Pinned elements with notes, like quest markers. */
+  pins: { node: number; note: string }[] = []
+  private routeG = new Graphics()
+  private markers: Chip[] = []
   /** Active lens, or null for the structure view. */
   lens: Lens | null = null
   hover = -1
@@ -141,7 +153,7 @@ export class Renderer {
     this.makeTextures()
     this.stage.addChild(this.stars.back)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.cardLayers.push(c); this.stage.addChild(c) }
-    this.stage.addChild(this.edgeG, this.hotEdgeG, this.particles.view, this.warp.view, this.stars.front, this.fxG, this.chipLayer)
+    this.stage.addChild(this.edgeG, this.hotEdgeG, this.routeG, this.particles.view, this.warp.view, this.stars.front, this.fxG, this.chipLayer)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.textLayers.push(c); this.stage.addChild(c) }
   }
 
@@ -149,7 +161,7 @@ export class Renderer {
     BitmapFont.install({
       name: FONT,
       style: { fontFamily: 'Segoe UI, Inter, system-ui, sans-serif', fontSize: 48, fill: '#ffffff', fontWeight: '600' },
-      chars: [['a', 'z'], ['A', 'Z'], ['0', '9'], ' .,:;!?-_/\\()[]{}&+#@\'"…·→←×|<>=*%$~`^'],
+      chars: [['a', 'z'], ['A', 'Z'], ['0', '9'], ' .,:;!?-_/\\()[]{}&+#@\'"…·→←↑↓×|<>=*%$~`^◆●▲▼◀▶'],
       resolution: 1,
       padding: 6,
     })
@@ -271,8 +283,10 @@ export class Renderer {
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
     const edges = aggregateEdges(this.tree, i => this.rep(i), inFocus)
+    const mark = (n: number) => { for (let a = n; a > 0 && this.related[a] !== this.frameNo; a = this.tree.parent[a]) this.related[a] = this.frameNo }
+    if (this.route) for (const h of this.route) { mark(h.from); mark(h.to) }
+    if (this.target > 0) mark(this.target)
     if (focus > 0) {
-      const mark = (n: number) => { for (let a = n; a > 0 && this.related[a] !== this.frameNo; a = this.tree.parent[a]) this.related[a] = this.frameNo }
       mark(focus)
       for (const e of edges) {
         if (!e.out && !e.in) continue
@@ -293,8 +307,10 @@ export class Renderer {
     for (const i of prev) if (this.stamp[i] !== this.frameNo) this.hide(i)
     this.drawEdges(edges, focus, st)
     this.warp.update(this.cam, now, this.dt)
+    this.drawRoute()
     this.drawPulses()
     this.drawReticles()
+    this.drawPins()
     st.cpuMs = performance.now() - t0
     return st
   }
@@ -349,7 +365,7 @@ export class Renderer {
     const hot = i === this.hover
     const sel = i === this.selected
     // With a selection, cards unrelated to it fade back; their children decide for themselves.
-    const dim = this.selected > 0 && this.related[i] !== this.frameNo ? 0.32 : 1
+    const dim = (this.selected > 0 || this.route) && this.related[i] !== this.frameNo ? 0.32 : 1
     const ends = this.endpoint[i] === this.frameNo && !sel
     const endColor = this.endKind[i] === 2 ? IN : OUT
     const cards = this.cardLayers[d]
@@ -646,6 +662,7 @@ export class Renderer {
       g.stroke({ width, color, alpha, cap: 'square' })
     }
     if (this.hover > 0 && this.hover !== this.selected) corners(this.hover, 5, 18, 1.5, 0xcbd5e1, 0.7)
+    if (this.target > 0 && this.target !== this.selected) corners(this.target, 7 + Math.sin(this.time / 180) * 2, 22, 2, IN, 0.95)
     if (this.selected > 0) {
       const u = Math.min(1, (this.time - this.selectedAt) / 280)
       const snap = 1 - (1 - u) ** 3
@@ -653,6 +670,97 @@ export class Renderer {
       corners(this.selected, pad, 28, 2.5, 0xfbbf24, 0.35 + 0.65 * snap)
     }
   }
+
+  /** The route as a lit path through the gutters, with numbered waypoints on the cards it visits. */
+  private drawRoute() {
+    const g = this.routeG
+    g.clear()
+    if (!this.route) { for (const m of this.markers) m.bg.visible = m.text.visible = false; return }
+    const stops: number[] = [this.route[0].from, ...this.route.map(h => h.to)]
+    const paths: number[][] = []
+    for (const h of this.route) {
+      const a = this.rep(h.from), b = this.rep(h.to)
+      if (a === b || this.tree.isAncestor(a, b) || this.tree.isAncestor(b, a)) continue
+      const world = h.reversed ? this.router.route(b, a) : this.router.route(a, b)
+      paths.push(world ? this.toScreen(world) : straight(this.screenRect(a), this.screenRect(b)))
+    }
+    for (const [width, alpha] of [[9, 0.18], [3, 0.95]] as const) {
+      for (const p of paths) { g.moveTo(p[0], p[1]); for (let k = 2; k < p.length; k += 2) g.lineTo(p[k], p[k + 1]) }
+      g.stroke({ width, color: ROUTE, alpha, join: 'round', cap: 'round' })
+    }
+    // Waypoint numbers: one per stop, on the card that stands for it now.
+    let k = 0
+    const seen = new Set<number>()
+    stops.forEach((n, i) => {
+      const r = this.rep(n)
+      if (seen.has(r) || !this.onScreen(r)) return
+      seen.add(r)
+      const [x, y, w] = this.screenRect(r)
+      const m = (this.markers[k] ??= this.makeChip())
+      const label = `${i + 1}`
+      if (m.text.text !== label) m.text.text = label
+      m.text.scale.set(13 / FONT_PX)
+      const cw = Math.max(22, m.text.width + 12), ch = 22
+      const cx = Math.min(Math.max(x + w / 2 - cw / 2, SAFE.left), this.cam.w - cw - SAFE.right), cy = Math.max(y - ch / 2, SAFE.top)
+      m.bg.position.set(cx, cy)
+      m.bg.width = cw; m.bg.height = ch
+      m.bg.tint = i === this.routeStep ? 0xffffff : ROUTE
+      m.bg.alpha = 1
+      m.text.tint = 0x052e16
+      m.text.position.set(cx + (cw - m.text.width) / 2, cy + (ch - 13 * 1.25) / 2)
+      m.bg.visible = m.text.visible = true
+      k++
+    })
+    for (let j = k; j < this.markers.length; j++) this.markers[j].bg.visible = this.markers[j].text.visible = false
+  }
+
+  /** Pins: a marker on the card, or at the screen edge pointing the way when it is off screen. */
+  private drawPins() {
+    const g = this.fxG
+    const W = this.cam.w, H = this.cam.h
+    this.pins.forEach((p, i) => {
+      const r = this.rep(p.node)
+      const [x, y, w, h] = this.screenRect(r)
+      const label = p.note || this.tree.els[p.node].title
+      if (this.onScreen(r) && w > 6) {
+        const mx = x + w - 4, my = y + 4, s = 9
+        g.poly([mx, my - s, mx + s * 0.8, my, mx, my + s, mx - s * 0.8, my]).fill({ color: PIN }).stroke({ width: 1.5, color: 0x1f0614 })
+        if (w > 120) this.pinLabel(i, label, mx + 12, my - 9, false)
+        else this.pinLabel(i, '', 0, 0, true)
+      } else {
+        // Off screen: clamp the direction to the target onto the screen border.
+        const cx = W / 2, cy = H / 2, tx = x + w / 2, ty = y + h / 2
+        const dx = tx - cx, dy = ty - cy
+        const k = Math.min((W / 2 - 60) / Math.abs(dx || 1e-9), (H / 2 - 70) / Math.abs(dy || 1e-9))
+        const ex = cx + dx * k, ey = cy + dy * k
+        const a = Math.atan2(dy, dx)
+        g.poly([ex + Math.cos(a) * 14, ey + Math.sin(a) * 14, ex + Math.cos(a + 2.4) * 9, ey + Math.sin(a + 2.4) * 9, ex + Math.cos(a - 2.4) * 9, ey + Math.sin(a - 2.4) * 9]).fill({ color: PIN })
+        this.pinLabel(i, `◆ ${label}`, ex - Math.cos(a) * 18, ey - Math.sin(a) * 18, false, true)
+      }
+    })
+    for (let j = this.pins.length; j < this.pinChips.length; j++) this.pinChips[j].bg.visible = this.pinChips[j].text.visible = false
+  }
+
+  private pinChips: Chip[] = []
+  private pinLabel(i: number, label: string, x: number, y: number, hide: boolean, centred = false) {
+    const c = (this.pinChips[i] ??= this.makeChip())
+    if (hide || !label) { c.bg.visible = c.text.visible = false; return }
+    if (c.text.text !== label) c.text.text = shortText(label, 40)
+    c.text.scale.set(12 / FONT_PX)
+    const cw = c.text.width + 14, ch = 20
+    const px = Math.min(Math.max(centred ? x - cw / 2 : x, SAFE.left), this.cam.w - cw - SAFE.right)
+    const py = Math.min(Math.max(centred ? y - ch / 2 : y, SAFE.top), this.cam.h - ch - SAFE.bottom)
+    c.bg.position.set(px, py)
+    c.bg.width = cw; c.bg.height = ch
+    c.bg.tint = mix(PIN, BG, 0.25)
+    c.bg.alpha = 1
+    c.text.tint = 0x1f0614
+    c.text.position.set(px + 7, py + (ch - 12 * 1.25) / 2)
+    c.bg.visible = c.text.visible = true
+  }
+
+  /** Screen rect of a node, for overlays positioned by the controls. */
+  screenRectOf(i: number) { return this.screenRect(i) }
 
   private toScreen(world: number[]) {
     const out = new Array<number>(world.length)

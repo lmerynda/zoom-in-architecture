@@ -76,6 +76,31 @@ async function record(name, model, script) {
     fly: id => page.evaluate(id => { const s = window.__spike; s.fly(id ? s.id(id) : 0) }, id),
     select: id => page.evaluate(id => { const s = window.__spike; s.select(id ? s.id(id) : -1) }, id),
     lens: name => page.evaluate(name => window.__spike.setLens(name), name),
+    /** Real key presses, then a few frames so the result shows. */
+    key: async (k, mods = []) => {
+      for (const m of mods) await page.keyboard.down(m)
+      await page.keyboard.press(k)
+      for (const m of [...mods].reverse()) await page.keyboard.up(m)
+      await frames(2)
+    },
+    type: async text => { for (const ch of text) { await page.keyboard.type(ch); await frames(3) } },
+    /** Screen centre of an element right now. */
+    at: id => page.evaluate(id => {
+      const s = window.__spike, i = s.id(id), r = s.world.rect
+      return s.cam.toScreen(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2)
+    }, id),
+    /** Glides the pointer to a point over a few frames, so the cursor path reads on video. */
+    move: async (x, y, ms = 400) => {
+      const n = Math.max(1, Math.round((ms / 1000) * FPS))
+      const from = s.mouse ?? [W / 2, H / 2]
+      for (let i = 1; i <= n; i++) {
+        const u = i / n, e = u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2
+        await page.mouse.move(from[0] + (x - from[0]) * e, from[1] + (y - from[1]) * e)
+        await frames(1)
+      }
+      s.mouse = [x, y]
+    },
+    click: async (button = 'left') => { const [x, y] = s.mouse ?? [W / 2, H / 2]; await page.mouse.click(x, y, { button }); await frames(2) },
   }
   await script(s)
   const b64 = await rec.evaluate(() => window.rec.finish())
@@ -117,6 +142,42 @@ const scenes = {
     await s.fly('galaxyWars.server')
     await s.land(1000)
     for (const l of ['size', 'coupling', 'churn', 'structure']) { await s.lens(l); await s.hold(1800) }
+  }),
+  // The game-style controls in use: palette travel, target cycling, walk, back, control
+  // groups, command wheel, a route with waypoints, and the controls screen.
+  'gw-controls': () => record('gw-controls', 'galaxy-wars', async s => {
+    await s.hold(700)
+    await s.key('k', ['Control'])
+    await s.type('secrun')
+    await s.hold(700)
+    await s.key('Enter')
+    await s.land(900)
+    await s.key(']'); await s.land(1300)
+    await s.key(']'); await s.land(1300)
+    await s.key('Enter'); await s.land(1100)
+    await s.key('Backspace'); await s.land(1100)
+    await s.key('1', ['Control']); await s.hold(900)
+    const [rx, ry] = await s.at('galaxyWars.server.gameServer.simulation.sector.sectorRegistry')
+    await s.move(rx, ry, 500)
+    await s.click('right')
+    await s.hold(400)
+    await s.move(rx + 92, ry - 40, 350)
+    await s.hold(900)
+    await s.key('Escape')
+    await s.select('galaxyWars.clients.browserBridge')
+    await s.fly(null); await s.land(500)
+    await s.key('r'); await s.hold(500)
+    const [dx, dy] = await s.at('galaxyWars.postgreSQL')
+    await s.move(dx, dy, 600)
+    await s.click()
+    await s.land(1600)
+    await s.key('n'); await s.land(900)
+    await s.key('n'); await s.land(900)
+    await s.key('n'); await s.land(1200)
+    await s.key('Escape'); await s.key('Escape')
+    await s.key('1'); await s.land(1200)
+    await s.key('?'); await s.hold(1800)
+    await s.key('Escape'); await s.hold(400)
   }),
   // The hand-written Acme model: dive into Ordering, select Checkout, watch the traffic.
   'acme-flow': () => record('acme-flow', 'acme', async s => {

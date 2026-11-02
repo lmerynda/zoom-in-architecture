@@ -2,17 +2,23 @@ import type { Camera } from './camera'
 import type { World } from './layout'
 import type { Tree } from './model'
 
-/** Strategy-game minimap: the top two levels, the viewport, click to jump. */
+/** Strategy-game minimap: the top two levels and the viewport; click to jump, drag to steer. */
 export class Minimap {
   onPick: (wx: number, wy: number) => void = () => {}
+  /** Dragging on the minimap moves the camera continuously, like an RTS. */
+  onDrag: (wx: number, wy: number) => void = () => {}
   private scale = 1
   private ox = 0
   private oy = 0
 
   constructor(private canvas: HTMLCanvasElement, private tree: Tree, private world: World) {
+    const toWorld = (e: PointerEvent): [number, number] => [(e.offsetX - this.ox) / this.scale, (e.offsetY - this.oy) / this.scale]
     canvas.addEventListener('pointerdown', e => {
-      const wx = (e.offsetX - this.ox) / this.scale, wy = (e.offsetY - this.oy) / this.scale
-      this.onPick(wx, wy)
+      canvas.setPointerCapture(e.pointerId)
+      this.onPick(...toWorld(e))
+      const move = (m: PointerEvent) => this.onDrag(...toWorld(m))
+      canvas.addEventListener('pointermove', move)
+      canvas.addEventListener('pointerup', () => canvas.removeEventListener('pointermove', move), { once: true })
     })
   }
 

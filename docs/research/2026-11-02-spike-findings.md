@@ -71,6 +71,39 @@ What it taught:
 - **File-level type references give useful relations without any annotation.** Selecting the Browser Bridge shows exactly the WebSocket inbound from the browser client and its use of Client Transport and the shared contracts.
 - **Real names exposed a bug the sample models hid.** Labels were fitted against their already-scaled width, so long class names overflowed. Labels are now fitted by natural width, and edge labels are capped to fit the gaps between cards.
 
+## Game-style controls
+
+The goal is the control vocabulary of games, not their graphics. Each borrowed pattern answers a real navigation question in an architecture map:
+
+| Question | Game pattern | Control |
+|---|---|---|
+| "Take me to X" | Fast travel / console | `Ctrl+K` palette: fuzzy search plus commands |
+| "I was just somewhere useful" | Return to last location | `Backspace`, `Alt+←/→`; every jump is recorded with its selection |
+| "I keep switching between these three places" | RTS control groups | `Ctrl+1–9` / `1–9`, slot bar at the bottom |
+| "What does this talk to?" | Tab-targeting, target of target | `]` / `[` cycle callees / callers with both framed; `Enter` walks |
+| "What can I do with this?" | Command wheel | Right-click: eight actions, flick-to-select |
+| "How does A reach B?" | GPS route with waypoints | `R` + click; cheapest path that prefers following the arrows; `N` / `P` |
+| "Remember this, and where is it?" | Quest markers | `P` / `Shift+P` pins; off-screen pins point the way from the screen edge |
+| "What is this, and what is that thing it mentions?" | Nested tooltips (Crusader Kings) | Hover and hold: lock, then hover names inside |
+| "Let me just move around" | Ship flight, RTS minimap | `WASD`/`QE`, minimap drag |
+| "Get me out of this" | Layered Esc | Closes the innermost layer first |
+
+All of these were driven with real mouse and keyboard input by `scripts/ux-tour.mjs`, and recorded by `scripts/record.mjs gw-controls`. Driving them found three real bugs:
+- The closed palette kept keyboard focus and swallowed every later key.
+- Moving onto a tooltip counted as leaving the map and closed it.
+- Back restored the place but not the selection, because the jump was recorded after the selection changed.
+
+Pure logic has unit tests: route search, history and fuzzy matching.
+
+The motion work from the same pass stays, but secondary:
+- van Wijk–Nuij flights;
+- flow particles;
+- the starfield;
+- reveal ripple and pulses;
+- lock-on reticles;
+- the altimeter and region banner;
+- lenses.
+
 ## Known rough edges
 
 - **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.
