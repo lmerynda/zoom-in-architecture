@@ -171,7 +171,7 @@ async function main() {
     __spike: {
       ready: true, tree, world, cam, renderer, layoutMs, loadMs: performance.now() - t0,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
-      fit, select, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
+      fit, select, unhover: () => { renderer.pointer = null; dirty = true }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),
       resetFrames: () => { cpu.k = delta.k = 0; cpu.full = delta.full = false },
     },

@@ -56,6 +56,21 @@ The three questions the spike was for:
 - **Previews from 1.5 px stop popping.** The design choice that matters most is to open on legibility (child card width), not at fixed zoom levels.
 - **LikeC4 works as a data layer.** Extraction takes about 200 ms per workspace. `fromWorkspace` keeps the process alive (a watcher), so the CLI must dispose and exit.
 
+## A real codebase: Galaxy Wars
+
+`scripts/scan-galaxy-wars.mjs` generates a LikeC4 model of the Galaxy Wars repository straight from its code:
+- **Size:** 717 elements (621 files, 30 folders, 42 name clusters) and 3,261 relations.
+- **Levels:** system → area → project → folder → cluster → file.
+- **Descriptions:** each file's `/// <summary>`.
+- **Relations:** type references between files, limited to the projects each project references. The WebSocket, TCP and database seams are declared by hand.
+
+Layout takes 325 ms, and frames take 1.6 ms p50 / 4.6 ms p95 with the busiest class selected (`SectorRuntime`, 136 outgoing relations).
+
+What it taught:
+- **Clustering by name prefix makes big flat folders readable.** The server's Simulation folder (79 files) becomes Experiences, Sector, Mining, Snapshot and Pilot. The Unity client (135 scripts) becomes Flight, Mission, Sector, Hangar and so on. Folders whose names share no prefixes stay flat rather than collapse into one "Other".
+- **File-level type references give useful relations without any annotation.** Selecting the Browser Bridge shows exactly the WebSocket inbound from the browser client and its use of Client Transport and the shared contracts.
+- **Real names exposed a bug the sample models hid.** Labels were fitted against their already-scaled width, so long class names overflowed. Labels are now fitted by natural width, and edge labels are capped to fit the gaps between cards.
+
 ## Known rough edges
 
 - **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.

@@ -27,8 +27,12 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
   if (tree.children[i].length) tags.append(el('span', '', `${tree.children[i].length} inside`))
 
   const { out, inn } = renderer.relationsOf(i)
-  const list = (title: string, cls: string, rows: { other: number; title: string }[], arrow: string) => {
-    if (!rows.length) return []
+  const list = (title: string, cls: string, all: { other: number; title: string }[], arrow: string) => {
+    if (!all.length) return []
+    // One row per element on the other side, however many of our children talk to it.
+    const byOther = new Map<number, Set<string>>()
+    for (const r of all) byOther.set(r.other, (byOther.get(r.other) ?? new Set()).add(r.title))
+    const rows = [...byOther].map(([other, titles]) => ({ other, title: [...titles].join(', ') }))
     const box = el('div', `d-rels ${cls}`)
     box.append(el('h3', '', `${title} · ${rows.length}`))
     for (const r of rows.slice(0, 40)) {

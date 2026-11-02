@@ -8,7 +8,16 @@ npm run dev        # extracts model/*/ to public/models/, serves http://localhos
 npm test           # unit tests for tree, aggregation, placement, camera, clipping
 ```
 
-URL parameters: `?model=acme|boutique|bigbank|synthetic` (default `acme`) and `&n=10000` for the synthetic size.
+URL parameters: `?model=acme|boutique|bigbank|synthetic|galaxy-wars` (default `acme`) and `&n=10000` for the synthetic size.
+
+`galaxy-wars` is generated from a local checkout of that repository and is not committed:
+
+```bash
+node scripts/scan-galaxy-wars.mjs F:/projects/galaxy-wars   # writes model/galaxy-wars/*.c4
+npm run extract                                            # or restart npm run dev
+```
+
+The scanner builds system → area → project → folder → name cluster → file from the code, takes each file's `/// <summary>` as its description, derives relations from type references between files (limited to referenced projects), and adds the WebSocket, TCP and database seams by hand.
 
 Controls: scroll zooms at the cursor, drag pans, click selects (relations out in amber, in in cyan, details panel on the right), double-click flies into a card, `Esc` clears the selection and then goes up a level, `0` fits all, `/` searches.
 
@@ -36,4 +45,5 @@ DPR=2 node scripts/tour.mjs                                # screenshot walkthro
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
 - `model/acme/` — the realistic sample model.
+- `scripts/scan-galaxy-wars.mjs` — code scanner that generates the Galaxy Wars model.
 - `src/synthetic.ts` — deterministic five-level landscapes for scale tests.

@@ -396,7 +396,7 @@ export class Renderer {
 
       const pad = PAD * w
       const title = (v.title ??= this.text(this.tree.els[i].title, texts))
-      const px = Math.min(hh * 0.6, 26, (w * 0.62) / (title.width / FONT_PX || 1))
+      const px = Math.min(hh * 0.6, 26, (w * 0.62) / em(title))
       if (px >= 6) {
         title.visible = true
         title.scale.set(px / FONT_PX)
@@ -421,7 +421,7 @@ export class Renderer {
     const inner = w - 2 * pad
     const el = this.tree.els[i]
     const title = (v.title ??= this.text(el.title.length > 60 ? el.title.slice(0, 59) + '…' : el.title, texts))
-    const px = Math.min(h * 0.15, 24, inner / (title.width / FONT_PX || 1))
+    const px = Math.min(h * 0.15, 24, inner / em(title))
     if (px < 6) return
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
@@ -437,7 +437,7 @@ export class Renderer {
     const spx = Math.min(px * 0.62, 14)
     if (spx >= 6 && subText) {
       const sub = (v.sub ??= this.text(subText, texts))
-      const s = Math.min(spx, inner / (sub.width / FONT_PX || 1))
+      const s = Math.min(spx, inner / em(sub))
       sub.visible = true
       sub.scale.set(s / FONT_PX)
       sub.position.set(bx, cy)
@@ -613,7 +613,9 @@ export class Renderer {
     for (const sp of spots) {
       if (k >= 60 || !sp.s) continue
       const lab = (this.labels[k] ??= this.makeChip())
-      if (lab.text.text !== sp.s) lab.text.text = sp.s
+      // Labels sit in gutters, so they stay short; the details panel has the full text.
+      const label = shortText(sp.s, 34)
+      if (lab.text.text !== label) lab.text.text = label
       const px = 11
       lab.text.scale.set(px / FONT_PX)
       const cw = lab.text.width + 12, ch = px * 1.8
@@ -639,6 +641,11 @@ export class Renderer {
     this.chipLayer.addChild(bg, text)
     return { bg, text }
   }
+}
+
+/** Width of a label per px of font size, independent of how it is scaled right now. */
+function em(t: BitmapText) {
+  return t.width / (t.scale.x || 1) / FONT_PX || 1
 }
 
 /** One line of text, whitespace runs collapsed, cut to `max` characters with an ellipsis. */

@@ -1,7 +1,7 @@
 // Scripted screenshot tour of the Acme model and the 10k synthetic model.
 // usage: node scripts/tour.mjs [outDir]   (dev server running; DPR env sets device pixel ratio)
 import puppeteer from 'puppeteer-core'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 const outDir = process.argv[2] ?? 'shots/tour'
@@ -23,7 +23,8 @@ const open = async q => {
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await sleep(600)
 }
-const shot = async name => { await sleep(1100); await page.screenshot({ path: join(outDir, `${name}.png`) }); console.log('shot', name) }
+/** Screenshot; hover is cleared first unless the shot is about hovering. */
+const shot = async (name, keepHover = false) => { if (!keepHover) await page.evaluate(() => window.__spike.unhover()); await sleep(1100); await page.screenshot({ path: join(outDir, `${name}.png`) }); console.log('shot', name) }
 const fit = id => page.evaluate(id => { const s = window.__spike; s.fit(s.id(id)) }, id)
 const select = id => page.evaluate(id => { const s = window.__spike; s.select(id ? s.id(id) : -1) }, id)
 /** Moves the pointer onto the centre of an element, which hovers it. */
@@ -51,7 +52,7 @@ await shot('02-domains')
 await fit('acme')
 await sleep(900)
 await hover('acme.ordering.checkout')
-await shot('03-hover-ordering')
+await shot('03-hover-ordering', true)
 await select('acme.ordering.checkout')
 await page.mouse.move(1590, 500)
 await shot('04-select-checkout')
@@ -62,7 +63,7 @@ await select(null)
 await fit('acme.ordering.checkout')
 await sleep(900)
 await hover('acme.ordering.checkout.flow')
-await shot('06-checkout-service-hover')
+await shot('06-checkout-service-hover', true)
 await select('acme.ordering.checkout.flow')
 await fit('acme.ordering.checkout.flow')
 await page.mouse.move(1590, 500)
@@ -71,7 +72,7 @@ await select(null)
 await fit('acme.payments')
 await sleep(900)
 await wheelAt('acme.payments.gateway.stripeAdapter', 6)
-await shot('08-wheel-into-payments')
+await shot('08-wheel-into-payments', true)
 
 // One continuous wheel zoom from the landscape to a single component, as a contact sheet.
 await select(null)
@@ -90,6 +91,31 @@ await sheet.setContent(`<body style="margin:0;background:#05070b;display:grid;gr
 await sheet.screenshot({ path: join(outDir, '00-zoom-sequence.png'), fullPage: true })
 await sheet.close()
 console.log('shot 00-zoom-sequence')
+
+if (existsSync('public/models/galaxy-wars.json')) {
+  await select(null)
+  await open('model=galaxy-wars')
+  await page.mouse.move(1590, 990)
+  await shot('gw-01-landscape')
+  await fit('galaxyWars')
+  await page.mouse.move(1590, 990)
+  await shot('gw-02-system')
+  await fit('galaxyWars.server.gameServer')
+  await page.mouse.move(1590, 990)
+  await shot('gw-03-game-server')
+  await fit('galaxyWars.server.gameServer.simulation')
+  await page.mouse.move(1590, 990)
+  await shot('gw-04-simulation')
+  await select('galaxyWars.server.gameServer.simulation.sector.sectorRuntime')
+  await fit('galaxyWars.server.gameServer.simulation.sector')
+  await page.mouse.move(1590, 990)
+  await shot('gw-05-sector-runtime-selected')
+  await select('galaxyWars.clients.browserBridge')
+  await fit('galaxyWars.clients')
+  await page.mouse.move(1590, 990)
+  await shot('gw-06-clients-bridge-selected')
+  await select(null)
+}
 
 await open('model=synthetic&n=10000')
 await page.mouse.move(1590, 500)
