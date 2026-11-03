@@ -96,6 +96,17 @@ What the larger repo taught:
 - **Large graphs need paging.** The full listing was 170 KB, and one file's uses ran to several kilobytes. `--folders` gives a 10 KB overview, `--under <folder>` pages through the rest, and use lists are capped.
 - **The agent needs placement rules, not just a format.** The skill now says when a shared library is its own node (used by two or more apps), when a small app needs no components, how `system` groups experiments, and which way links point.
 
+**Pilot 3: Excalidraw** (open source; a TypeScript monorepo of seven published packages, the web app and two example apps; 1,328 files). An agent mapped it in about 9 minutes, and a second agent re-mapped it from that map after the tool changed:
+- **The graph:** 507 application files and 3,453 references, 525 of them type-only. Left out were 164 test files, the build, release and stats scripts, the docs site and dead components.
+- **The map:** 87 nodes and 34 links: the collaboration socket, Firestore and Firebase Storage, browser storage, the JSON and AI backends, the library site, Excalidraw+ (window.open and postMessage), a font-subsetting worker, Sentry and analytics.
+- **In the viewer:** 594 elements, layout in 268 ms, frames 0.8 ms p50 / 1.3 ms p95.
+
+What a library monorepo taught:
+- **Type-only imports point the wrong way.** `import type` from the editor package made the base libraries look like they depend on it, a cycle that does not exist at runtime. Type-only edges are now marked, listed apart, and not drawn. The layering now reads editor → element → common and math.
+- **Barrels swallow relations.** Every import from `@excalidraw/common` landed on its `index.ts`. Named imports now follow `export … from` chains to the defining file, and re-export edges are tagged so a barrel does not count as a user.
+- **Monorepos hide apps and tooling in the same places.** The example apps were dropped as tests, and npm build, release and stats scripts counted as entry points. Examples now count as apps, those scripts no longer start the graph, and manifests with no application code are listed with the reason.
+- **Re-maps need their own tools.** The re-map kept every id and agreed with the first map at 0.98. That figure leaves out the 12 files the first map never placed; including them would skew it. `check --uncited` lists marked lines no link cites, `audit` lists files used mostly from a sibling node, and `why` takes several files. Before these, the agent diffed graph outputs by hand.
+
 **Stability across runs.** Seven fresh agents mapped Knights of Darkness, and `zoom compare` scored each pair. It uses the adjusted Rand index of how files are grouped, because node ids differ between runs; 1 is identical and 0 is chance.
 
 | Pair | Processes | Leaf groups | HTTP links |
@@ -198,7 +209,7 @@ Two environment lessons:
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Try a third repository with a different shape (a Python or Go service, a monorepo).
+2. Read Python and Go, so a backend in either can be mapped; the graph covers JS/TS, C#, Java and Rust today.
 3. Show a link's evidence in the details panel, and list a component's relations by the component on the other side rather than by file.
 4. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
 5. Zoom past leaves into code (blockviz-style levels).

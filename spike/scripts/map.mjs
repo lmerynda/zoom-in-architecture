@@ -122,6 +122,10 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const kindOf = s => nodes.get(s)?.kind ?? 'code'
   // Whether a file is a link end, or under the node that is one.
   const atEnd = (end, path) => end === path || (nodes.has(end) && (placed.get(path) === end || placed.get(path)?.startsWith(`${end}.`)))
+  // A direct caller or callee of a file end can back its link too (the line that builds the URL a helper fetches).
+  const adjacent = new Set(graph.edges.filter(e => !e.types).flatMap(e => [`${e.from}>${e.to}`, `${e.to}>${e.from}`]))
+  const nearEnd = (end, path) => adjacent.has(`${end}>${path}`)
+  const cited = new Set()
   for (const l of map.links ?? []) {
     const a = endOf(l.from), b = endOf(l.to)
     if (!a || !b) { drift(`link ${l.from} → ${l.to}: ${!a ? l.from : l.to} is neither a node id nor an application file`); continue }
@@ -137,7 +141,8 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       // In application code, evidence should land on a route, call, store, schedule or socket,
       // in a file at one end of the link (config and other non-code files can back any link).
       const hints = app.get(m[1])?.hints
-      if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
+      for (let k = from; k <= to; k++) cited.add(`${m[1]}:${k}`)
+      if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1]) && !nearEnd(l.from, m[1]) && !nearEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
       else if (hints && !hints.some(h => h.line >= from && h.line <= to)) {
         // Code moves under a map; the nearest marked line is usually where the evidence went.
         const near = hints.filter(h => Math.abs(h.line - from) <= 20).sort((x, y) => Math.abs(x.line - from) - Math.abs(y.line - from))[0]
@@ -150,11 +155,16 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)
 
   // Each node with the files under it, for judging component sizes.
-  const tree = [...nodes.values()].map(n => ({ id: n.id, title: n.title, kind: n.kind, files: [...byNode].filter(([id]) => id === n.id || id.startsWith(`${n.id}.`)).reduce((s, [, ps]) => s + ps.length, 0) }))
+  // Files placed by neighbour votes rather than by the map are counted apart, so sizes don't mislead.
+  const voted = new Set(unplaced)
+  const under = (n, id) => id === n.id || id.startsWith(`${n.id}.`)
+  const tree = [...nodes.values()].map(n => ({ id: n.id, title: n.title, kind: n.kind, files: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.length, 0), voted: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.filter(p => voted.has(p)).length, 0) }))
+  // Marked lines no link cites, for re-maps after the code or the hints changed. Timers are not links.
+  const uncited = graph.files.flatMap(f => f.hints.filter(h => h.kind !== 'schedule' && !cited.has(`${f.path}:${h.line}`)).map(h => ({ path: f.path, ...h })))
   const files = graph.files.length
   return {
     model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations },
-    errors, warnings, tree,
+    errors, warnings, tree, unplaced, uncited,
     stats: { nodes: nodes.size, files, relations: relations.length, links: (map.links ?? []).length, unplaced: unplaced.length },
   }
 }
@@ -200,7 +210,6 @@ export function publish(repo, map, { name = toName(repo), loose = false } = {}) 
  * paired by file overlap, and links are compared between paired processes and file to file.
  */
 export function compareMaps(graph, a, b) {
-  const files = graph.files.map(f => f.path)
   const top = id => (id.includes('.') ? id.slice(0, id.indexOf('.')) : id)
   const side = map => {
     const { model } = buildModel(graph, map, { name: 'compare', loose: true })
@@ -213,6 +222,10 @@ export function compareMaps(graph, a, b) {
     return { els, leaf, process, ends }
   }
   const A = side(a), B = side(b)
+  // A file one map does not place itself (placed by neighbour votes) would skew the score: leave it out.
+  const skipped = new Set([...buildModel(graph, a, { name: 'compare', loose: true }).unplaced, ...buildModel(graph, b, { name: 'compare', loose: true }).unplaced])
+  const files = graph.files.map(f => f.path).filter(p => !skipped.has(p))
+  for (const s of [A, B]) for (const p of skipped) { s.leaf.delete(p); s.process.delete(p) }
   const c2 = n => (n * (n - 1)) / 2
   const ari = (pa, pb) => {
     const cells = new Map(), ra = new Map(), rb = new Map()
@@ -239,6 +252,7 @@ export function compareMaps(graph, a, b) {
   const fileLinks = side => new Set(side.ends.filter(([x, y]) => x.file && y.file).map(([x, y]) => `${x.file} → ${y.file}`))
   const fa = fileLinks(A), fb = fileLinks(B)
   return {
+    skipped: skipped.size,
     topLevel: ari(A.process, B.process),
     leaf: ari(A.leaf, B.leaf),
     groups: { a: groups(A.leaf).size, b: groups(B.leaf).size },
@@ -246,4 +260,30 @@ export function compareMaps(graph, a, b) {
     processLinks: { a: la.size, b: lb.size, shared: [...la].filter(l => lb.has(l)).length, onlyA: [...la].filter(l => !lb.has(l)), onlyB: [...lb].filter(l => !la.has(l)) },
     fileLinks: { a: fa.size, b: fb.size, shared: [...fa].filter(l => fb.has(l)).length },
   }
+}
+
+/**
+ * Files whose runtime users sit mostly in a sibling node: candidates to move under the placement
+ * rules, for the agent to judge (a feature's own interfaces stay put).
+ */
+export function auditPlacement(graph, map) {
+  const { model } = buildModel(graph, map, { name: 'audit', loose: true })
+  const nodeOf = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e.parent]))
+  const parentOf = id => (id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null)
+  const users = new Map(), uses = new Map()
+  // Re-exports are a barrel passing a module on, not using it.
+  for (const e of graph.edges) if (!e.types && !e.reexport && e.from !== e.to) { users.set(e.to, [...(users.get(e.to) ?? []), e.from]); uses.set(e.from, [...(uses.get(e.from) ?? []), e.to]) }
+  const out = []
+  for (const f of graph.files) {
+    const own = nodeOf.get(f.path)
+    const count = new Map()
+    for (const u of users.get(f.path) ?? []) count.set(nodeOf.get(u), (count.get(nodeOf.get(u)) ?? 0) + 1)
+    const [top, n] = [...count].sort((x, y) => y[1] - x[1])[0] ?? []
+    const mine = count.get(own) ?? 0
+    // A feature's entry is imported only by the shell yet uses its own feature: that is normal.
+    // Flag a file only when it also uses nothing in its own node.
+    const usesOwn = (uses.get(f.path) ?? []).some(p => nodeOf.get(p) === own)
+    if (top && top !== own && n >= 2 && n > mine && !usesOwn && parentOf(top) === parentOf(own)) out.push({ path: f.path, own, ownUsers: mine, top, topUsers: n })
+  }
+  return out
 }

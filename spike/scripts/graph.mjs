@@ -277,12 +277,14 @@ export function buildGraph(repo) {
     }
     return recs.get(p)
   }
-  // An edge is type-only while every reference along it is a type import.
-  const relate = (from, to, name, types = false) => {
+  // An edge is type-only while every reference along it is a type import, and a re-export while
+  // every one is an export … from (a barrel passing a module on, not using it).
+  const relate = (from, to, name, types = false, reexport = false) => {
     if (!from || !to || from === to) return
-    const e = from.edges.get(to.path) ?? { names: new Set(), types: true }
+    const e = from.edges.get(to.path) ?? { names: new Set(), types: true, reexport: true }
     if (name) e.names.add(name)
     e.types &&= types
+    e.reexport &&= reexport
     from.edges.set(to.path, e)
   }
 
@@ -354,11 +356,12 @@ export function buildGraph(repo) {
       const names = braces.map(x => x.replace(/^type\s+/, '').split(/\s+as\s+/)[0])
       if (/^[\w$]+(\s*,|$)/.test(clause) && m[1] === 'import') names.push('default')
       // Named imports go to the file defining each name; default, namespace and export * to the module.
-      if (!names.length || !fileSet.has(target)) { relate(f, rec(target), label(m[4]), types); continue }
+      const reexport = m[1] === 'export'
+      if (!names.length || !fileSet.has(target)) { relate(f, rec(target), label(m[4]), types, reexport); continue }
       for (const name of names) {
         const d = definer(target, name) ?? target
         reach(d)
-        relate(f, rec(d), name === 'default' ? label(m[4]) : name, types)
+        relate(f, rec(d), name === 'default' ? label(m[4]) : name, types, reexport)
       }
     }
     for (const m of code.matchAll(importSpec)) {
@@ -398,7 +401,7 @@ export function buildGraph(repo) {
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
-    edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}) }))),
+    edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
     dropped: { tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
 }

@@ -77,6 +77,8 @@ describe('buildGraph', () => {
     // A named import through a barrel goes to the file that defines the name.
     expect(edge('web/src/main.ts', 'web/src/ui/cart.ts')).toEqual({ from: 'web/src/main.ts', to: 'web/src/ui/cart.ts', names: ['cart'] })
     expect(edge('web/src/main.ts', 'web/src/ui/index.ts')).toBeUndefined()
+    // The barrel's own edges are re-exports: it passes modules on rather than using them.
+    expect(edge('web/src/ui/index.ts', 'web/src/ui/cart.ts')).toMatchObject({ reexport: true })
     // A type-only import is kept, marked, and not drawn in maps.
     expect(edge('web/src/main.ts', 'web/src/ui/types.ts')).toMatchObject({ names: ['Item'], types: true })
     expect(edge('web/src/main.ts', 'shared/index.js').names).toEqual(['money'])

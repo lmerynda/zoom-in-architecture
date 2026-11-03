@@ -18,7 +18,8 @@ A map shows a codebase's architecture: the processes that run, the components in
   - Entry points are pages' scripts (inline module scripts included), package.json entries, `node <file>` npm scripts and `main` methods. Imports of wasm-pack output lead back to the Rust crate, and Unity sees only the projects its `Packages/manifest.json` names.
   - Tests, `eslint.config`, `vite.config`, `playwright.config` and dead code drop out.
   - It resolves every reference between the files it keeps: relative imports, tsconfig paths, workspace packages, C# types through ProjectReferences, Java packages and imports, and Rust modules and crates.
-  - It marks each file's routes, outbound calls, stores, schedules, sockets, process launches and file handoffs, with line numbers, and lists the config and deploy files.
+  - Named imports through a barrel (an `index.ts` that re-exports) point at the file that defines the name. Type-only imports are listed but not drawn, since they are compile-time coupling, not runtime use.
+  - It marks each file's routes, outbound calls, stores, schedules, sockets, messages (`postMessage`), process launches and file handoffs, with line numbers, and lists the config and deploy files. Manifests with no application code (a docs site, a monorepo root) are listed with the reason.
 - **The map, from an agent:** `/map-repo <repo>` in Claude Code runs the [map-repo skill](../.claude/skills/map-repo/SKILL.md).
   - The agent groups files into nodes by responsibility, and names and describes them.
   - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence.
@@ -31,7 +32,7 @@ A map shows a codebase's architecture: the processes that run, the components in
 
 It warns when evidence doesn't land on a line the graph marked (and quotes that line), or sits in a file at neither end of the link.
 
-`npm run zoom -- why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node.
+`npm run zoom -- why <repo> <map.json> <file>…` shows which node holds each file, and its users and uses grouped by node. `npm run zoom -- audit <repo> <map.json>` lists files used mostly from a sibling node that use nothing in their own: placement to review. For a re-map, `check … --uncited` lists marked lines no link cites.
 
 `npm run zoom -- compare <repo> <a.json> <b.json>` measures how alike two maps of one repo are, for example two agent runs. It reports grouping agreement at the process and leaf levels as an adjusted Rand index, pairs each group with its closest match by file overlap, and lists the links only one map has. Relations between files always come from the graph, so a map cannot invent a dependency.
 

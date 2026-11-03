@@ -2,7 +2,8 @@
 // usage:
 //   node scripts/zoom.mjs graph <repo> [--folders|--under <dir>|--json]   the application's file graph
 //                                                         (--folders: an overview by folder; --under: one part)
-//   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
+//   node scripts/zoom.mjs check <repo> <map.json> [--uncited]   what is wrong or missing in a map (--uncited: marked lines no link cites)
+//   node scripts/zoom.mjs audit <repo> <map.json>         files whose users sit mostly in a sibling node
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
@@ -11,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
-import { buildModel, compareMaps, publish, toName } from './map.mjs'
+import { auditPlacement, buildModel, compareMaps, publish, toName } from './map.mjs'
 
 /** The graph's header: what was left out, the projects, entry points and config files. */
 function header(g) {
@@ -74,7 +75,7 @@ export function folderText(g) {
 }
 
 const report = r => {
-  for (const n of r.tree) console.log(`${'  '.repeat(n.id.split('.').length - 1)}${n.id}  ${n.title} (${n.kind})${n.files ? `  ${n.files} file${n.files === 1 ? '' : 's'}` : ''}`)
+  for (const n of r.tree) console.log(`${'  '.repeat(n.id.split('.').length - 1)}${n.id}  ${n.title} (${n.kind})${n.files ? `  ${n.files} file${n.files === 1 ? '' : 's'}` : ''}${n.voted ? ` (${n.voted} placed by neighbours, not by the map)` : ''}`)
   for (const e of r.errors) console.log(`error: ${e}`)
   for (const w of r.warnings) console.log(`warning: ${w}`)
   const s = r.stats
@@ -85,7 +86,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const json = flag('--json'); const folders = flag('--folders'); Object.assign(args, { name, under, json, folders }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); Object.assign(args, { name, under, json, folders, uncited }); return args })()
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
     if (cmd === 'graph' && a) {
@@ -94,12 +95,20 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     } else if (cmd === 'check' && a && b) {
       const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
       report(r)
+      if (args.uncited) {
+        console.log(`${r.uncited.length} marked lines no link cites:`)
+        for (const u of r.uncited) console.log(`  ${u.path}:${u.line} ${u.kind} ${u.text.slice(0, 100)}`)
+      } else if (r.uncited.length) console.log(`${r.uncited.length} marked lines no link cites (--uncited lists them)`)
       if (r.errors.length) process.exitCode = 1
     } else if (cmd === 'publish' && a && b) {
       const r = publish(a, readMap(b), { name: args.name ?? toName(a) })
       report(r)
       console.log(r.published ? `published "${r.name}" in ${r.ms} ms; open ?model=${r.name}` : 'not published: fix the errors above')
       if (!r.published) process.exitCode = 1
+    } else if (cmd === 'audit' && a && b) {
+      const found = auditPlacement(buildGraph(a), readMap(b))
+      console.log(`${found.length} files used mostly from a sibling node (a feature's own interfaces can stay; the rest may move):`)
+      for (const x of found) console.log(`  ${x.path}  in ${x.own} (${x.ownUsers} users), mostly used from ${x.top} (${x.topUsers})`)
     } else if (cmd === 'why' && a && b && args[3]) {
       const g = buildGraph(a)
       const { model } = buildModel(g, readMap(b), { name: toName(a), loose: true })
@@ -116,7 +125,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     } else if (cmd === 'compare' && a && b && args[3]) {
       const c = compareMaps(buildGraph(a), readMap(b), readMap(args[3]))
       const pct = x => `${Math.round(x * 100)}%`
-      console.log(`Grouping agreement (adjusted Rand index; 1 = identical, 0 = chance): processes ${c.topLevel.toFixed(2)}, leaf nodes ${c.leaf.toFixed(2)} (${c.groups.a} vs ${c.groups.b} groups)`)
+      console.log(`Grouping agreement (adjusted Rand index; 1 = identical, 0 = chance): processes ${c.topLevel.toFixed(2)}, leaf nodes ${c.leaf.toFixed(2)} (${c.groups.a} vs ${c.groups.b} groups)${c.skipped ? `; ${c.skipped} files left out because one map does not place them` : ''}`)
       console.log('Each group of A, its closest group in B, and the share of files they have in common:')
       for (const p of c.pairs) console.log(`  ${p.a} (${p.files}) → ${p.b}  ${pct(p.overlap)}`)
       console.log(`Process-level links: ${c.processLinks.shared} shared, ${c.processLinks.onlyA.length} only in A, ${c.processLinks.onlyB.length} only in B`)
@@ -129,7 +138,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       report(r)
       if (!r.published) process.exitCode = 1
     } else {
-      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 9).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
     }
   } catch (e) {

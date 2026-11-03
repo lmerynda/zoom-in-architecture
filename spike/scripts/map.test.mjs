@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { buildModel, compareMaps, toName } from './map.mjs'
+import { auditPlacement, buildModel, compareMaps, toName } from './map.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -71,6 +71,16 @@ describe('buildModel', () => {
     expect(r3.warnings).toEqual([])
   })
 
+  it('lists marked lines that no link cites, leaving out timers', () => {
+    expect(r.uncited.map(u => `${u.path}:${u.line} ${u.kind}`)).toEqual(['game/www/hud.js:3 message', 'src/Api/wwwroot/app.js:3 call', 'web/src/ui/cart.ts:3 store'])
+  })
+
+  it('accepts evidence from a direct caller of a file end', () => {
+    // main.ts imports api.ts, the link's start: supporting evidence, though not a marked line.
+    const r2 = build(edit(m => { m.links[1].evidence.push('web/src/main.ts:2') }))
+    expect(r2.warnings.filter(w => w.includes('neither end'))).toEqual([])
+  })
+
   it('names the nearest marked line when evidence has drifted', () => {
     const r2 = build(edit(m => { m.links[1].evidence = ['web/src/api.ts:1', 'server/src/main/java/com/shop/orders/OrderController.java:12'] }))
     expect(r2.warnings).toHaveLength(1)
@@ -94,6 +104,7 @@ describe('buildModel', () => {
   it('places files the map misses beside their neighbours, an error unless loose', () => {
     const partial = edit(m => { m.nodes.find(n => n.id === 'web.shopping').files = ['shared/index.js', 'web/src/main.ts'] })
     const strict = build(partial)
+    expect(strict.tree.find(n => n.id === 'web')).toMatchObject({ files: 6, voted: 3 })
     expect(strict.errors).toEqual(['3 application files are not in the map: web/src/ui/cart.ts, web/src/ui/index.ts, web/src/ui/types.ts'])
     const loose = build(partial, { loose: true })
     expect(loose.errors).toEqual([])
@@ -155,5 +166,18 @@ describe('zoom why', () => {
   it('shows where a file sits and who uses it, by node', () => {
     const out = execFileSync(process.execPath, ['scripts/zoom.mjs', 'why', 'test/fixtures/polyglot', 'test/fixtures/polyglot-map.json', 'web/src/api.ts'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' })
     expect(out.split('\n')).toEqual(['web/src/api.ts is in web.orders', 'Used by 2 files:', '  web.shopping  2  main.ts, cart.ts', 'Uses 0 files:', ''])
+  })
+})
+
+describe('re-map helpers', () => {
+  it('leaves files one map does not place out of a comparison', () => {
+    const partial = edit(m => { m.nodes.find(n => n.id === 'web.shopping').files = ['shared/index.js', 'web/src/main.ts'] })
+    const c = compareMaps(graph, map, partial)
+    expect(c.skipped).toBe(3)
+    expect([c.topLevel, c.leaf]).toEqual([1, 1])
+  })
+
+  it('audits files used mostly from a sibling node that use nothing of their own', () => {
+    expect(auditPlacement(graph, map)).toEqual([{ path: 'web/src/api.ts', own: 'web.orders', ownUsers: 0, top: 'web.shopping', topUsers: 2 }])
   })
 })
