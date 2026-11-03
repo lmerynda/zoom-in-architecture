@@ -790,10 +790,15 @@ export class Renderer {
       const px = 12
       chip.text.scale.set(px / FONT_PX)
       const cw = chip.text.width + 16, ch = px * 1.9
-      const x = Math.min(Math.max(c.x - cw / 2, SAFE.left), W - cw - SAFE.right)
+      let x = Math.min(Math.max(c.x - cw / 2, SAFE.left), W - cw - SAFE.right)
       let y = Math.min(Math.max(c.y - ch / 2, SAFE.top), H - ch - SAFE.bottom)
-      // Lift chips that would sit under the stats panel or the minimap.
-      for (const [hx, hy, hw] of this.hud) if (x < hx + hw && hx < x + cw && y + ch > hy) y = hy - ch - 4
+      // Keep chips off the HUD: lift them above the panels along the bottom (stats, minimap),
+      // and step them past the ones along the side (the depth gauge).
+      for (const [hx, hy, hw, hh] of this.hud) {
+        if (!(x < hx + hw && hx < x + cw && y + ch > hy && y < hy + hh)) continue
+        if (hy > H / 2) y = hy - ch - 4
+        else x = hx < W / 2 ? hx + hw + 4 : hx - cw - 4
+      }
       if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
       placed.push([x, y, cw, ch])
       chip.bg.position.set(x, y)

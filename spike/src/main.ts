@@ -72,7 +72,7 @@ async function main() {
   }
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
-    renderer.hud = ['stats', 'minimap', 'help'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e?.getBoundingClientRect(); return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
+    renderer.hud = ['stats', 'minimap', 'help', 'alt'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e?.getBoundingClientRect(); return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
   {
     cam.resize(app.screen.width, app.screen.height)
