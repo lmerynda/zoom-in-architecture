@@ -4,16 +4,21 @@
 // - JS/TS files count when an entry point reaches them through imports (index.html scripts,
 //   package.json main/exports/bin and the `node <file>` npm scripts, conventional src/main.*).
 //   eslint.config, vite.config, playwright.config and the like are never imported, so they drop.
-// - C#, Rust and Java files count when a non-test project compiles them (.csproj, Cargo src/,
-//   Maven/Gradle src/main/java).
+// - C#, Rust, Java and Go files count when a non-test project compiles them (.csproj, Cargo src/,
+//   Maven/Gradle src/main/java, go.mod).
+// - Python files count when they are in a package (frameworks find modules by convention), or are a
+//   script with an entry point (__main__, manage.py, wsgi/asgi), or one of those imports them.
 // scripts/map.mjs turns the graph and an agent-written map into a viewer model.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 
-const LANG = { '.ts': 'js', '.tsx': 'js', '.mts': 'js', '.cts': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.cs': 'cs', '.rs': 'rs', '.java': 'java' }
-const GENERATED = /(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js)$|(^|\/)Migrations\/.*\.cs$/
-const TEST = /(^|\/)(tests?|__tests__|__mocks__|specs?|e2e|cypress|playwright|benches|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$/
+const LANG = { '.ts': 'js', '.tsx': 'js', '.mts': 'js', '.cts': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.cs': 'cs', '.rs': 'rs', '.java': 'java', '.py': 'py', '.go': 'go' }
+// Generated code and vendored dependencies are not the application's own.
+const GENERATED = /(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js|_pb2(_grpc)?\.py|\.pb(\.gw)?\.go|_gen\.go)$|(^|\/)Migrations\/.*\.cs$|(^|\/)(migrations|alembic\/versions)\/[^/]*\.py$|(^|\/)vendor\//
+const TEST = /(^|\/)(tests?|__tests__|__mocks__|mocks?|specs?|e2e|cypress|playwright|benches|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$|_test\.go$|(^|\/)testdata\/|(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/
+// Python files that configure tooling rather than run the app.
+const PY_TOOLING = /(^|\/)(setup|noxfile|fabfile)\.py$|(^|\/)docs?\/.*\.py$/
 const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', 'target', 'dist', 'build', 'out', 'coverage', 'Library', 'Temp', 'Logs'])
 // npm scripts that check, build, release or measure the code rather than run the app.
 const CHECK_SCRIPT = /test|lint|format|prettier|e2e|coverage|storybook|typecheck|check|build|release|publish|deploy|prepare|install|version|clean|docs?\b|locales?|stats|size|analy[sz]e|bump|changeset/
@@ -89,6 +94,19 @@ function discover(repo, files) {
       const settings = ['settings.gradle', 'settings.gradle.kts'].map(s => (dir ? `${dir}/${s}` : s)).find(s => files.includes(s))
       const name = (file === 'pom.xml' ? tag(src, 'artifactId') : settings && read(settings).match(/rootProject\.name\s*=\s*['"]([^'"]+)/)?.[1]) || basename(dir || resolve(repo))
       projects.push({ lang: 'java', dir, root: dir ? `${dir}/src/main/java` : 'src/main/java', name, kind: spring || /application|mainClass/.test(src) ? 'app' : 'library', technology: `Java${spring ? ' · Spring Boot' : ''}`, description: tag(src, 'description') })
+    } else if (file === 'go.mod') {
+      const src = read(p)
+      const module = src.match(/^module\s+(\S+)/m)?.[1] ?? ''
+      projects.push({ lang: 'go', dir, root: dir, name: module || basename(dir || resolve(repo)), module, kind: 'library', technology: `Go${src.match(/^go\s+(\d+\.\d+)/m) ? ` ${src.match(/^go\s+(\d+\.\d+)/m)[1]}` : ''}` })
+    } else if (['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'].includes(file)) {
+      // One Python project per folder, whichever manifest it has.
+      const src = read(p)
+      const known = projects.find(x => x.lang === 'py' && x.dir === dir)
+      const frameworks = ['Django', 'FastAPI', 'Flask', 'Starlette', 'aiohttp', 'Celery', 'SQLAlchemy', 'SQLModel'].filter(fw => new RegExp(`(^|[\\s"'\\[,])${fw}\\b`, 'im').test(src))
+      const scripts = [...(src.match(/^\[(?:project|tool\.poetry)\.scripts\]([\s\S]*?)(?=^\[|$(?![\s\S]))/m)?.[1] ?? '').matchAll(/=\s*['"]([\w.]+):/g)].map(m => m[1])
+      if (known) { known.frameworks = [...new Set([...known.frameworks, ...frameworks])]; known.scripts.push(...scripts); continue }
+      const name = (file === 'pyproject.toml' && toml(src, 'name')) || src.match(/\bname\s*=\s*['"]([^'"]+)/)?.[1] || basename(dir || resolve(repo))
+      projects.push({ lang: 'py', dir, root: dir, name, frameworks, scripts, kind: 'library', technology: '', description: toml(src, 'description') })
     } else if (file === 'package.json') {
       const pkg = readJson(join(repo, p))
       if (!pkg || (!pkg.name && !pkg.scripts)) continue
@@ -97,6 +115,10 @@ function discover(repo, files) {
       const lib = !!(pkg.main || pkg.module || pkg.exports) && !pkg.bin && !deps.vite && !deps.next
       projects.push({ lang: 'js', dir, root: dir, name: pkg.name ?? basename(dir || resolve(repo)), kind: lib ? 'library' : 'app', technology: tech.join(' · '), description: pkg.description ?? '', pkg })
     }
+  }
+  for (const p of projects.filter(x => x.lang === 'py')) {
+    p.kind = p.frameworks.some(fw => ['Django', 'FastAPI', 'Flask', 'Starlette', 'aiohttp'].includes(fw)) || p.scripts.length ? 'app' : 'library'
+    p.technology = ['Python', ...p.frameworks].join(' · ')
   }
   return projects
 }
@@ -193,6 +215,9 @@ function jsResolver(repo, projects, fileSet, allSet) {
 
 function summary(src, lang) {
   if (lang === 'html') return src.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? ''
+  // Python: the module docstring. Go: the comment above the package clause.
+  if (lang === 'py') return src.match(/^(?:\s*#[^\n]*\n)*\s*[rRuU]?("""|''')([\s\S]*?)\1/)?.[2]?.replace(/\s+/g, ' ').trim() ?? ''
+  if (lang === 'go') return (src.match(/((?:^\/\/[^\n]*\n)+)package\s/m)?.[1] ?? '').replace(/^\/\/\s?/gm, ' ').replace(/\s+/g, ' ').trim()
   if (lang === 'cs') {
     const m = src.match(/\/\/\/\s*<summary>([\s\S]*?)<\/summary>/)
     return m ? m[1].replace(/^\s*\/\/\/\s?/gm, ' ').replace(/<see\s+cref="(?:[A-Z]:)?([^"]+)"\s*\/>/g, '$1').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : ''
@@ -232,11 +257,20 @@ const HINTS = [
   ['file', /\b(writeFileSync|writeFile|renameSync|createWriteStream|File\.(WriteAll\w+|Move)|Files\.(write|move))\s*\(.*/],
   // fetch with any string, or a string that looks like a URL path or an absolute URL, passed to a call.
   // HttpClient calls take relative paths from a BaseAddress, so any string literal counts there.
+  // Python and Go seams.
+  ['route', /@(app|bp|blueprint|router|api|\w+_router)\.(route|get|post|put|delete|patch|websocket|api_route)\s*\(.*|\b(re_)?path\s*\(\s*r?['"][^'"]*['"]\s*,.*|\.(HandleFunc|Handle)\s*\(\s*"\/.*|\b\w+\.(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|Delete|Patch)\s*\(\s*"\/.*|\bhttp\.ListenAndServe\w*\s*\(.*/],
+  ['queue', /\bCelery\s*\(.*|@(shared_task|\w+\.task)\b.*|\.(delay|apply_async)\s*\(.*|\bpika\.\w*Connection\s*\(.*|\bKafka(Producer|Consumer)\s*\(.*|\bamqp\.Dial\s*\(.*|\bnats\.Connect\s*\(.*|\bkafka\.New(Writer|Reader)\s*\(.*/],
+  ['store', /\bcreate_(async_)?engine\s*\(.*|\b(psycopg2?|sqlite3|pymysql|asyncpg|aiosqlite)\.connect\s*\(.*|\bredis\.(Redis|StrictRedis|from_url)\s*\(.*|\bMongoClient\s*\(.*|\bclass\s+\w+\s*\((models\.Model|[^)]*table\s*=\s*True)[^)]*\).*|\bsql\.Open\s*\(.*|\bgorm\.Open\s*\(.*|\bpgx(pool)?\.(Connect|New)\w*\s*\(.*|\bredis\.NewClient\s*\(.*|\bmongo\.Connect\s*\(.*|\bbolt\.Open\s*\(.*/],
+  ['socket', /\bwebsockets\.(connect|serve)\s*\(.*|\bsocket\.socket\s*\(.*|\bnet\.(Listen|Dial)\w*\s*\(.*|\bwebsocket\.Upgrader\b.*|\bgrpc\.(NewServer|Dial|NewClient)\s*\(.*/],
+  ['process', /\bsubprocess\.(run|Popen|call|check_output|check_call)\s*\(.*|\bos\.system\s*\(.*|\bexec\.Command(Context)?\s*\(.*/],
+  ['call', /\b(requests|httpx)\.(get|post|put|patch|delete|request|AsyncClient|Client)\s*\(.*|\burlopen\s*\(.*|\bhttp\.(Get|Post|PostForm|Head)\s*\(.*|\bhttp\.NewRequest(WithContext)?\s*\(.*/],
+  // Generated API clients pass the path in an options object.
+  ['call', /\b(url|baseURL|baseUrl)\s*:\s*['"`](\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*['"`].*/],
   ['call', /\bfetch\s*\(.*|\bwindow\.open\s*\(.*|\bSentry\.init\s*\(.*|\b(Get|Post|Put|Patch|Delete|Send)(AsJson|FromJson|String|ByteArray|Stream)?Async\s*\(\s*\$?@?".*|\bHttpMethod\.\w+\s*,\s*\$?".*|\bnew\s+Uri\s*\(\s*\$?"(https?|wss?):\/\/.*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
 ]
 const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json)$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
 
-/** Route, call, schedule, store, socket, message, process and file lines of a file, with their line numbers. */
+/** Route, call, schedule, store, queue, socket, message, process and file lines of a file, with their line numbers. */
 function hintsOf(src) {
   const out = []
   src.split('\n').forEach((line, i) => {
@@ -293,9 +327,29 @@ export function buildGraph(repo) {
   const testProjects = projects.filter(pr => pr.kind === 'test')
   for (const p of candidates) {
     const pr = owner.get(p)
-    if (!pr || pr.lang === 'js' || pr.kind === 'test') continue
+    if (!pr || pr.lang === 'js' || pr.lang === 'py' || pr.kind === 'test') continue
     if (testProjects.some(t => under(p, t.dir))) continue
     rec(p)
+  }
+
+  // Python: whole packages, since frameworks find modules by convention (Django apps, Celery
+  // tasks), plus scripts with an entry point and whatever they import.
+  const pyFiles = new Set(candidates.filter(p => LANG[extOf(p)] === 'py' && !PY_TOOLING.test(p)))
+  const pySrc = new Map()
+  const pyRead = p => pySrc.get(p) ?? pySrc.set(p, readFileSync(join(repo, p), 'utf8')).get(p)
+  const pyr = pythonResolver(pyFiles, new Set(all), pyRead)
+  const pyScripts = new Set(projects.filter(p => p.lang === 'py').flatMap(p => p.scripts))
+  const pyEntries = [...pyFiles].filter(p => /(^|\/)(__main__|manage|wsgi|asgi)\.py$/.test(p) || /^if\s+__name__\s*==\s*['"]__main__['"]\s*:/m.test(pyRead(p)) || pyScripts.has(pyr.nameOf.get(p)))
+  const pyQueue = [...new Set([...[...pyFiles].filter(p => pyr.isPkg(dirOf(p)) || /(^|\/)src\//.test(p)), ...pyEntries])]
+  const pySeen = new Set(pyQueue)
+  while (pyQueue.length) {
+    const p = pyQueue.shift(), f = rec(p)
+    for (const imp of pyr.importsOf(p, f.src)) {
+      for (const [t, name] of pyr.resolveImport(p, imp)) {
+        relate(f, rec(t), name, imp.types)
+        if (!pySeen.has(t)) { pySeen.add(t); pyQueue.push(t) }
+      }
+    }
   }
 
   // JS/TS: what the entry points reach through imports.
@@ -380,6 +434,7 @@ export function buildGraph(repo) {
   relateCs(files, projects, relate)
   relateRs(files, projects, relate)
   relateJava(files, relate)
+  relateGo(files, projects, relate)
 
   // Commits touching each file in the last 90 days, for the churn lens.
   const churn = new Map()
@@ -391,13 +446,13 @@ export function buildGraph(repo) {
   const byFolder = (a, b) => (dirOf(a.path) === dirOf(b.path) ? a.path.localeCompare(b.path) : dirOf(a.path) < dirOf(b.path) ? -1 : 1)
   const appFiles = files.sort(byFolder)
   // Compiled entry points: main methods. More than one in a project usually means a dev tool.
-  const mains = appFiles.filter(f => f.lang === 'java' ? /\bstatic\s+void\s+main\s*\(/.test(f.src) : f.lang === 'cs' ? /\bstatic\s+(async\s+)?[\w<>]+\s+Main\s*\(/.test(f.src) || posix.basename(f.path) === 'Program.cs' : f.lang === 'rs' && (posix.basename(f.path) === 'main.rs' || /\/bin\//.test(f.path))).map(f => f.path)
+  const mains = appFiles.filter(f => f.lang === 'go' ? /^package\s+main\b/m.test(f.src) && /^func\s+main\s*\(/m.test(f.src) : f.lang === 'java' ? /\bstatic\s+void\s+main\s*\(/.test(f.src) : f.lang === 'cs' ? /\bstatic\s+(async\s+)?[\w<>]+\s+Main\s*\(/.test(f.src) || posix.basename(f.path) === 'Program.cs' : f.lang === 'rs' && (posix.basename(f.path) === 'main.rs' || /\/bin\//.test(f.path))).map(f => f.path)
   return {
     repo,
     // Manifests with no application code, and why: a docs site or a monorepo root, say.
     unmapped: projects.filter(p => p.kind !== 'test' && !p.unity && !appFiles.some(f => f.project === p)).map(p => ({ dir: p.dir, name: p.name, reason: candidates.some(c => owner.get(c) === p) ? 'no entry point reaches its code' : 'no source files' })),
-    projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description }) => ({ lang, dir, name, kind, technology, description: description ?? '' })),
-    entries: [...new Set([...entries, ...pages.inline, ...mains])].sort(),
+    projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description }) => ({ lang, dir, name, kind: lang === 'go' && mains.some(m => recs.get(m)?.project?.dir === dir && recs.get(m)?.project?.lang === 'go') ? 'app' : kind, technology, description: description ?? '' })),
+    entries: [...new Set([...entries, ...pages.inline, ...pyEntries, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
@@ -500,6 +555,140 @@ function relateJava(files, relate) {
       if (f.declares.has(t)) continue
       const g = visible.get(t)
       if (g && g !== f) relate(f, g, t)
+    }
+  }
+}
+
+/**
+ * Python: module names from package folders (__init__.py) or a src/ layout, and import
+ * resolution: absolute and relative imports, submodules, sibling scripts, and names a package's
+ * __init__.py re-exports. Imports under `if TYPE_CHECKING:` are type-only.
+ */
+function pythonResolver(pyFiles, allSet, read) {
+  const isPkg = d => allSet.has(d ? `${d}/__init__.py` : '__init__.py')
+  const nameOf = new Map(), byName = new Map()
+  for (const p of pyFiles) {
+    const parts = p.replace(/\.py$/, '').split('/')
+    const dirs = parts.slice(0, -1)
+    const chain = parts.at(-1) === '__init__' ? [] : [parts.at(-1)]
+    let consumed = 0
+    while (dirs.length && isPkg(dirs.join('/'))) { chain.unshift(dirs.pop()); consumed++ }
+    // A src/ layout without __init__.py files names modules from src/ (namespace packages).
+    const src = parts.lastIndexOf('src')
+    const name = !consumed && src >= 0 && src < parts.length - 1 ? parts.slice(src + 1).filter(x => x !== '__init__').join('.') : chain.join('.')
+    nameOf.set(p, name)
+    byName.set(name, [...(byName.get(name) ?? []), p])
+  }
+  const shared = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return i }
+  // The same module name in two roots: the one nearest the importer wins.
+  const pick = (name, from) => [...(byName.get(name) ?? [])].sort((a, b) => shared(b, from) - shared(a, from))[0] ?? null
+  const packageOf = p => { const n = nameOf.get(p) ?? ''; return p.endsWith('__init__.py') ? n : n.split('.').slice(0, -1).join('.') }
+  const absolute = (from, base) => {
+    const dots = base.match(/^\.*/)[0].length
+    if (!dots) return base
+    const pkg = packageOf(from).split('.').filter(Boolean)
+    return [...pkg.slice(0, pkg.length - (dots - 1)), ...base.slice(dots).split('.').filter(Boolean)].join('.')
+  }
+  /** A file's imports: [{ module, names, types }] with relative modules made absolute. */
+  const importsOf = (path, src) => {
+    const code = src.replace(/("""|''')[\s\S]*?\1/g, '').replace(/(from\s+[.\w]+\s+import\s+)\(([^)]*)\)/g, (m, a, b) => a + b.replace(/#.*$/gm, '').replace(/\s+/g, ' '))
+    const out = []
+    let typeIndent = -1
+    for (const line of code.split('\n')) {
+      if (!line.trim() || /^\s*#/.test(line)) continue
+      const indent = line.match(/^\s*/)[0].length
+      if (typeIndent >= 0 && indent <= typeIndent) typeIndent = -1
+      if (/^\s*if\s+(typing\.)?TYPE_CHECKING\s*:/.test(line)) { typeIndent = indent; continue }
+      const types = typeIndent >= 0
+      let m = line.match(/^\s*import\s+([\w.,\s]+?)\s*(#.*)?$/)
+      if (m) for (const x of m[1].split(',')) { const mod = x.trim().split(/\s+as\s+/)[0]; if (mod) out.push({ module: mod, names: [], types }) }
+      m = line.match(/^\s*from\s+([.\w]+)\s+import\s+(.+)$/)
+      if (m) out.push({ module: absolute(path, m[1]), names: m[2].replace(/#.*$/, '').split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(x => /^\w+$/.test(x)), types })
+    }
+    return out
+  }
+  const mod = (name, from) => {
+    if (!name) return null
+    const hit = pick(name, from)
+    if (hit) return hit
+    // A script's own folder is on the path, so `import util` finds util.py beside it.
+    const beside = `${dirOf(from) ? `${dirOf(from)}/` : ''}${name}.py`
+    return !name.includes('.') && pyFiles.has(beside) ? beside : null
+  }
+  /** [file, name] pairs an import reaches: submodules, the module, or a re-export's source. */
+  const resolveImport = (from, imp) => {
+    if (!imp.names.length) {
+      // import a.b.c (or from a import *): the longest prefix that is a module of this repo.
+      const parts = imp.module.split('.')
+      for (let n = parts.length; n > 0; n--) { const t = mod(parts.slice(0, n).join('.'), from); if (t) return [[t, parts.at(-1)]] }
+      return []
+    }
+    const base = mod(imp.module, from)
+    const out = []
+    for (const name of imp.names) {
+      const sub = mod(imp.module ? `${imp.module}.${name}` : name, from)
+      if (sub) out.push([sub, name])
+      else if (base) out.push([definer(base, name) ?? base, name])
+    }
+    return out
+  }
+  // `from .orders import place_order` in a package's __init__.py: follow it to orders.py.
+  const definer = (path, name, depth = 0) => {
+    if (depth > 4 || !path.endsWith('__init__.py')) return null
+    for (const imp of importsOf(path, read(path))) {
+      if (!imp.names.includes(name)) continue
+      const [t] = resolveImport(path, { ...imp, names: [name] })[0] ?? []
+      if (t && t !== path) return definer(t, name, depth + 1) ?? t
+    }
+    return null
+  }
+  return { isPkg, nameOf, importsOf, resolveImport }
+}
+
+/**
+ * Go: imports of the module's own packages resolved to the file declaring each name used
+ * (`store.Open` → the file with `func Open`), and top-level names shared by the files of a package.
+ */
+function relateGo(files, projects, relate) {
+  const go = files.filter(f => f.lang === 'go')
+  const mods = projects.filter(p => p.lang === 'go' && p.module)
+  const byDir = new Map()
+  for (const f of go) {
+    f.code = stripC(f.src).replace(/`[^`]*`/g, '``')
+    f.pkg = f.code.match(/^package\s+(\w+)/m)?.[1] ?? ''
+    f.declares = new Set()
+    for (const m of f.code.matchAll(/^func\s+([A-Za-z_]\w*)\s*[[(]/gm)) f.declares.add(m[1])
+    for (const m of f.code.matchAll(/^(?:type|var|const)\s+([A-Za-z_]\w*)/gm)) f.declares.add(m[1])
+    for (const m of f.code.matchAll(/^(?:type|var|const)\s*\(([\s\S]*?)^\)/gm)) for (const l of m[1].split('\n')) { const n = l.match(/^\s+([A-Za-z_]\w*)\b/)?.[1]; if (n) f.declares.add(n) }
+    byDir.set(dirOf(f.path), [...(byDir.get(dirOf(f.path)) ?? []), f])
+  }
+  const dirFor = path => {
+    const m = mods.filter(p => path === p.module || path.startsWith(`${p.module}/`)).sort((a, b) => b.module.length - a.module.length)[0]
+    if (!m) return null
+    const d = posix.join(m.dir || '.', path.slice(m.module.length + 1) || '.')
+    return d === '.' ? '' : d
+  }
+  for (const f of go) {
+    const raw = f.src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+    const imports = []
+    for (const m of raw.matchAll(/^import\s+(?:([\w.]+)\s+)?"([^"]+)"/gm)) imports.push([m[1], m[2]])
+    for (const m of raw.matchAll(/^import\s*\(([\s\S]*?)\)/gm)) for (const l of m[1].split('\n')) { const x = l.trim().match(/^(?:([\w.]+)\s+)?"([^"]+)"/); if (x) imports.push([x[1], x[2]]) }
+    for (const [alias, path] of imports) {
+      if (alias === '_' || alias === '.') continue
+      const dir = dirFor(path)
+      const pkgFiles = dir != null ? byDir.get(dir) : null
+      if (!pkgFiles) continue
+      const name = alias ?? (pkgFiles[0].pkg || path.split('/').at(-1))
+      for (const used of new Set([...f.code.matchAll(new RegExp(`\\b${name}\\.([A-Z]\\w*)`, 'g'))].map(x => x[1]))) {
+        const t = pkgFiles.find(g => g.declares.has(used))
+        if (t) relate(f, t, used)
+      }
+    }
+    // Within a package, files use each other's top-level names without imports.
+    const used = new Set(f.code.replace(/^package\s+\w+/m, '').match(/\b[A-Za-z_]\w{2,}\b/g) ?? [])
+    for (const g of byDir.get(dirOf(f.path)) ?? []) {
+      if (g === f || g.pkg !== f.pkg) continue
+      for (const n of g.declares) if (used.has(n) && !f.declares.has(n)) relate(f, g, n)
     }
   }
 }

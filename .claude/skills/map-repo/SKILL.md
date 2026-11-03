@@ -19,7 +19,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    - the projects (hints for the deployables) and the entry points, including `main` methods;
    - the config and deploy files;
    - every file with what it uses and what uses it. Named imports through a barrel (`index.ts` re-exports) point at the file that defines the name. Type-only imports are listed apart as `types →`: the map does not draw them, and they should not decide where a file goes;
-   - under each file, the lines where it talks to another process: `route`, `call`, `store`, `schedule`, `socket`, `message`, `process` and `file`, each with its line number. These are your link evidence.
+   - under each file, the lines where it talks to another process: `route`, `call`, `store`, `queue`, `schedule`, `socket`, `message`, `process` and `file`, each with its line number. These are your link evidence.
 
    `--json` gives the same graph as data, with complete "used by" lists (the text caps long ones).
 

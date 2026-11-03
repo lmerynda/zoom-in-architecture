@@ -1,0 +1,7 @@
+[project]
+name = "shopkit"
+description = "Orders over HTTP."
+dependencies = ["fastapi", "sqlalchemy", "requests"]
+
+[project.scripts]
+shopkit = "shopkit.cli:main"

@@ -11,6 +11,8 @@
     { "id": "api", "kind": "app", "title": "Orders API", "technology": "C# · .NET", "files": ["src/**"] },
     { "id": "unity", "kind": "app", "title": "Shop game", "technology": "Unity", "files": ["unity/**"] },
     { "id": "demo", "kind": "app", "title": "Demo", "files": ["examples/**"] },
+    { "id": "py", "kind": "app", "title": "Shop kit", "technology": "Python · FastAPI", "files": ["py/**"] },
+    { "id": "goapp", "kind": "app", "title": "Go server", "technology": "Go", "files": ["goapp/**"] },
     { "id": "game", "kind": "app", "title": "Game", "technology": "Rust", "files": ["game/**", "engine/**"] },
     { "id": "db", "kind": "database", "title": "PostgreSQL" }
   ],

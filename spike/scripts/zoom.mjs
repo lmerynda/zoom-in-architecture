@@ -22,7 +22,7 @@ function header(g) {
     'Projects (from manifests; hints for the deployables):',
     ...g.projects.map(p => `  ${p.dir || '.'}  ${p.lang}  ${p.kind}  ${p.name}${p.technology ? `  · ${p.technology}` : ''}${p.description ? `  — ${p.description}` : ''}`),
     ...g.unmapped.map(p => `  ${p.dir || '.'}  ${p.name}: not mapped, ${p.reason}`),
-    `Entry points (JS/TS counts when one reaches it; C#, Rust and Java projects count whole): ${g.entries.join(', ') || '(none found)'}`,
+    `Entry points (JS/TS and scripts count when one reaches them; C#, Rust, Java and Go projects and Python packages count whole): ${g.entries.join(', ') || '(none found)'}`,
     ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
     `Config and deploy files (read them for datasources, base URLs, ports, other services): ${g.config.join(', ') || '(none)'}`,
   ]
@@ -39,7 +39,7 @@ export function graphText(g, under = '') {
   for (const e of g.edges) { if (e.types) add(typed, e.from, e.to); else { add(out, e.from, e.to); add(inn, e.to, e.from) } }
   const lines = [
     ...header(g),
-    'Files: name · lines · → uses · types → type-only imports (not drawn) · ← used by · doc; indented below: :line kind text, for routes, calls, schedules, stores and sockets',
+    'Files: name · lines · → uses · types → type-only imports (not drawn) · ← used by · doc; indented below: :line kind text, for routes, calls, stores, queues, schedules, sockets, messages, processes and file handoffs',
   ]
   let dir = null
   if (under) lines.push(`Only files under ${under}:`)

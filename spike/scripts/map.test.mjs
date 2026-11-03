@@ -17,7 +17,7 @@ describe('buildModel', () => {
   it('publishes a clean map without errors or warnings', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings).toEqual([])
-    expect(r.stats).toEqual({ nodes: 12, files: 23, relations: 21, links: 3, unplaced: 0 })
+    expect(r.stats).toEqual({ nodes: 14, files: 33, relations: 29, links: 3, unplaced: 0 })
   })
 
   it('nests nodes by id and files under the node that holds them', () => {
@@ -72,7 +72,7 @@ describe('buildModel', () => {
   })
 
   it('lists marked lines that no link cites, leaving out timers', () => {
-    expect(r.uncited.map(u => `${u.path}:${u.line} ${u.kind}`)).toEqual(['game/www/hud.js:3 message', 'src/Api/wwwroot/app.js:3 call', 'web/src/ui/cart.ts:3 store'])
+    expect(r.uncited.map(u => `${u.path}:${u.line} ${u.kind}`)).toEqual(['game/www/hud.js:3 message', 'goapp/cmd/server/main.go:12 route', 'goapp/cmd/server/main.go:13 route', 'goapp/internal/store/store.go:10 store', 'py/src/shopkit/api.py:7 route', 'py/src/shopkit/models.py:3 store', 'py/src/shopkit/orders.py:10 call', 'src/Api/wwwroot/app.js:3 call', 'web/src/ui/cart.ts:3 store'])
   })
 
   it('accepts evidence from a direct caller of a file end', () => {
@@ -123,7 +123,7 @@ describe('buildModel', () => {
     expect(loose.errors).toEqual([])
     expect(loose.warnings).toHaveLength(3)
     // The link to a deleted file is skipped; the one with a stale line still draws.
-    expect(loose.stats.relations).toBe(21)
+    expect(loose.stats.relations).toBe(29)
   })
 
   it('collects files with no placed neighbour under Unplaced', () => {
