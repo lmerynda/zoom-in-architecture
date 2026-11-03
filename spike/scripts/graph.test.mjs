@@ -19,9 +19,10 @@ describe('buildGraph', () => {
   })
 
   it('drops tests, build configs, dead code and generated migrations', () => {
-    expect(g.dropped.unreached).toEqual(['web/eslint.config.mjs', 'web/src/orphan.ts', 'web/vite.config.ts'])
-    // e2e/checkout.ts, OrdersTest.java and the xunit project's file.
-    expect(g.dropped.tests).toBe(3)
+    // scripts/stats.mjs runs from a build:stats npm script: tooling, not an entry point.
+    expect(g.dropped.unreached).toEqual(['web/eslint.config.mjs', 'web/scripts/stats.mjs', 'web/src/orphan.ts', 'web/vite.config.ts'])
+    // e2e/checkout.ts, src/test-utils.ts, OrdersTest.java and the xunit project's file.
+    expect(g.dropped.tests).toBe(4)
     expect(paths.some(p => p.includes('Migrations'))).toBe(false)
   })
 
@@ -91,7 +92,7 @@ describe('buildGraph', () => {
 
   it('prints a compact text listing for agents', () => {
     const text = graphText(g)
-    expect(text).toContain('20 application files, 16 references. Left out: 3 test files; 3 files no entry point reaches')
+    expect(text).toContain('20 application files, 16 references. Left out: 4 test files; 4 files no entry point reaches')
     expect(text).toContain('  main.ts · 6 · → api.ts, cart.ts, index.js · Starts the shop front end.')
     expect(text).toContain('      :11 route @GetMapping("/api/orders")')
   })

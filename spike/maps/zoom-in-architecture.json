@@ -15,6 +15,7 @@
     { "id": "viewer.model", "kind": "component", "title": "Model", "description": "The element tree with relations rolled up per level, synthetic landscapes, and the diff that lets a new version morph in place.", "files": ["spike/src/model.ts", "spike/src/synthetic.ts", "spike/src/live.ts"] },
     { "id": "viewer.layout", "kind": "component", "title": "Layout and routing", "description": "Packs each container's children in worker threads and routes edges through the gutters between cards.", "files": ["spike/src/layout.ts", "spike/src/layoutPool.ts", "spike/src/layout.worker.ts", "spike/src/route.ts", "spike/src/edges.ts"] },
     { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn) and flight effects.", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/fx/**"] },
+    { "id": "viewer.recorder", "kind": "component", "title": "Video recorder", "description": "A second page that encodes frames sent by the recording script into a video with WebCodecs.", "files": ["spike/src/recorder.ts"] },
     { "id": "viewer.controls", "kind": "component", "title": "Controls", "description": "Game-style controls: palette, radial menu, target cycling, routes, pins, minimap and sound.", "files": ["spike/src/controls/**", "spike/src/minimap.ts", "spike/src/sound.ts"] }
   ],
   "links": [
@@ -23,9 +24,9 @@
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
       "evidence": ["spike/scripts/graph.mjs:37"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/main.ts", "title": "publishes models/<name>.json",
-      "evidence": ["spike/scripts/map.mjs:164", "spike/src/main.ts:23"] },
+      "evidence": ["spike/scripts/map.mjs:169", "spike/src/main.ts:23"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/map.mjs:164", "spike/src/models.ts:7"] },
+      "evidence": ["spike/scripts/map.mjs:169", "spike/src/models.ts:7"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
       "evidence": ["spike/scripts/extract-likec4.mjs:42", "spike/src/main.ts:23"] }
   ]

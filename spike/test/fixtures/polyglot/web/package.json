@@ -1,1 +1,1 @@
-{ "name": "web", "private": true, "scripts": { "dev": "vite" } }
+{"name":"web","private":true,"scripts":{"dev":"vite","build:stats":"node scripts/stats.mjs"}}

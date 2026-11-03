@@ -13,10 +13,10 @@ import { basename, join, posix, resolve } from 'node:path'
 
 const LANG = { '.ts': 'js', '.tsx': 'js', '.mts': 'js', '.cts': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.cs': 'cs', '.rs': 'rs', '.java': 'java' }
 const GENERATED = /(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js)$|(^|\/)Migrations\/.*\.cs$/
-const TEST = /(^|\/)(tests?|__tests__|__mocks__|specs?|e2e|cypress|playwright|benches|examples|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|(^|\/)setupTests\.[jt]sx?$|Tests?\.cs$/
+const TEST = /(^|\/)(tests?|__tests__|__mocks__|specs?|e2e|cypress|playwright|benches|examples|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$/
 const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', 'target', 'dist', 'build', 'out', 'coverage', 'Library', 'Temp', 'Logs'])
-// npm scripts that run checks, not the app.
-const CHECK_SCRIPT = /test|lint|format|prettier|e2e|coverage|storybook|typecheck|check/
+// npm scripts that check, build, release or measure the code rather than run the app.
+const CHECK_SCRIPT = /test|lint|format|prettier|e2e|coverage|storybook|typecheck|check|build|release|publish|deploy|prepare|install|version|clean|docs?\b|locales?|stats|size|analy[sz]e|bump|changeset/
 
 const extOf = p => { const m = p.match(/\.[^./]+$/); return m ? m[0] : '' }
 const dirOf = p => (posix.dirname(p) === '.' ? '' : posix.dirname(p))
@@ -224,8 +224,8 @@ function summary(src, lang) {
 const HINTS = [
   ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
-  ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
-  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
+  ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
+  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(socketIOClient|io\.connect)\s*\(.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
   ['process', /\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
   // Files one process writes for another to read.
   ['file', /\b(writeFileSync|writeFile|renameSync|createWriteStream|File\.(WriteAll\w+|Move)|Files\.(write|move))\s*\(.*/],
