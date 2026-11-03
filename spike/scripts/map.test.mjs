@@ -16,7 +16,7 @@ describe('buildModel', () => {
   it('publishes a clean map without errors or warnings', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings).toEqual([])
-    expect(r.stats).toEqual({ nodes: 9, files: 17, relations: 17, links: 3, unplaced: 0 })
+    expect(r.stats).toEqual({ nodes: 11, files: 20, relations: 19, links: 3, unplaced: 0 })
   })
 
   it('nests nodes by id and files under the node that holds them', () => {
@@ -95,7 +95,7 @@ describe('buildModel', () => {
     expect(loose.errors).toEqual([])
     expect(loose.warnings).toHaveLength(3)
     // The link to a deleted file is skipped; the one with a stale line still draws.
-    expect(loose.stats.relations).toBe(17)
+    expect(loose.stats.relations).toBe(19)
   })
 
   it('collects files with no placed neighbour under Unplaced', () => {

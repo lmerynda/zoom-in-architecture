@@ -60,7 +60,10 @@ function discover(repo, files) {
   const unityRoots = new Set(files.filter(p => /(^|\/)ProjectSettings\/ProjectVersion\.txt$/.test(p)).map(p => p.replace(/\/?ProjectSettings\/ProjectVersion\.txt$/, '')))
   for (const u of unityRoots) {
     const version = read(`${u ? `${u}/` : ''}ProjectSettings/ProjectVersion.txt`).match(/m_EditorVersion:\s*(\S+)/)?.[1]
-    projects.push({ lang: 'cs', unity: true, dir: u, root: u ? `${u}/Assets` : 'Assets', name: basename(u || resolve(repo)), kind: 'app', technology: `Unity${version ? ` ${version.split('.')[0]}` : ''} · C#` })
+    // Unity references other source through file: packages in its manifest, not through csproj.
+    const manifest = `${u ? `${u}/` : ''}Packages/manifest.json`
+    const packages = Object.values(readJson(join(repo, manifest))?.dependencies ?? {}).filter(v => typeof v === 'string' && v.startsWith('file:')).map(v => posix.normalize(posix.join(dirOf(manifest), v.slice(5))))
+    projects.push({ lang: 'cs', unity: true, dir: u, root: u ? `${u}/Assets` : 'Assets', name: basename(u || resolve(repo)), kind: 'app', technology: `Unity${version ? ` ${version.split('.')[0]}` : ''} · C#`, packages })
   }
   for (const p of files) {
     const dir = dirOf(p), file = posix.basename(p)
@@ -139,7 +142,11 @@ function jsResolver(repo, projects, fileSet, allSet) {
     find,
     resolve(from, spec, owner) {
       if (spec.startsWith('.')) return find(posix.join(dirOf(from), spec)) ?? wasmPkg(spec)
-      if (spec.startsWith('/')) return owner ? find(posix.join(owner.dir, spec.slice(1))) : null
+      // A leading slash is the web root: the package, or the nearest served folder above the file.
+      if (spec.startsWith('/')) {
+        const webRoot = from.match(/^(.*?\/)?(wwwroot|public|www|static)\//)?.[0]
+        return (owner && find(posix.join(owner.dir, spec.slice(1)))) || (webRoot && find(posix.join(webRoot, spec.slice(1)))) || find(posix.join(dirOf(from), spec.slice(1)))
+      }
       for (const a of owner?.aliases ?? []) if (spec.startsWith(a.prefix)) { const r = find(posix.join(a.base, a.to, spec.slice(a.prefix.length))); if (r) return r }
       const p = pkgs.find(x => x !== owner && (spec === x.name || spec.startsWith(`${x.name}/`)))
       if (p) return spec === p.name ? entryOf(p) : find(posix.join(p.dir, spec.slice(p.name.length + 1)))
@@ -215,15 +222,16 @@ function summary(src, lang) {
 
 // Lines that show where one process talks to another, for the links a map adds. First match wins.
 const HINTS = [
-  ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*/],
+  ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
   ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
-  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
-  ['process', /\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new)\s*\(.*/],
+  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
+  ['process', /\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
   // Files one process writes for another to read.
   ['file', /\b(writeFileSync|writeFile|renameSync|createWriteStream|File\.(WriteAll\w+|Move)|Files\.(write|move))\s*\(.*/],
   // fetch with any string, or a string that looks like a URL path or an absolute URL, passed to a call.
-  ['call', /\bfetch\s*\(\s*['"`].*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
+  // HttpClient calls take relative paths from a BaseAddress, so any string literal counts there.
+  ['call', /\bfetch\s*\(.*|\b(Get|Post|Put|Patch|Delete|Send)(AsJson|FromJson|String|ByteArray|Stream)?Async\s*\(\s*\$?@?".*|\bHttpMethod\.\w+\s*,\s*\$?".*|\bnew\s+Uri\s*\(\s*\$?"(https?|wss?):\/\/.*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
 ]
 const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json)$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
 
@@ -275,11 +283,12 @@ export function buildGraph(repo) {
     from.edges.set(to.path, names)
   }
 
-  // Compiled languages: whatever a non-test project compiles. Unity Editor scripts are tooling.
+  // Compiled languages: whatever a non-test project compiles, Unity Editor scripts included (like
+  // any dev tool with an entry point, they are part of the system; a map can group them apart).
   const testProjects = projects.filter(pr => pr.kind === 'test')
   for (const p of candidates) {
     const pr = owner.get(p)
-    if (!pr || pr.lang === 'js' || pr.kind === 'test' || (pr.unity && /(^|\/)Editor\//.test(p))) continue
+    if (!pr || pr.lang === 'js' || pr.kind === 'test') continue
     if (testProjects.some(t => under(p, t.dir))) continue
     rec(p)
   }
@@ -327,13 +336,31 @@ export function buildGraph(repo) {
   return {
     repo,
     projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description }) => ({ lang, dir, name, kind, technology, description: description ?? '' })),
-    entries: [...new Set([...entries, ...mains])].sort(),
+    entries: [...new Set([...entries, ...pages.inline, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
     edges: appFiles.flatMap(f => [...f.edges].map(([to, names]) => ({ from: f.path, to, names: [...names] }))),
     dropped: { tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
+}
+
+/**
+ * Types another file can name: declared at the file's top level (inside a namespace in C#), and
+ * not private or protected. Nested helper types such as a private `struct Rect` stay local.
+ */
+function topLevelTypes(code, lang) {
+  const width = s => s.replace(/\t/g, '    ').length
+  let top = 0
+  if (lang === 'cs' && !/^\s*namespace\s+[\w.]+\s*;/m.test(code)) {
+    const ns = code.match(/^([ \t]*)namespace\s+[\w.]+\s*\{?/m)
+    if (ns) top = width(ns[1]) + 4
+  }
+  const out = new Set()
+  for (const m of code.matchAll(/^([ \t]*)((?:public|internal|private|protected|static|sealed|abstract|partial|readonly|ref|unsafe|file|new|final)\s+)*(?:class|struct|record(?:\s+(?:class|struct))?|interface|enum|@interface)\s+([A-Z]\w*)/gm)) {
+    if (width(m[1]) <= top && !/\b(private|protected)\b/.test(m[0])) out.add(m[3])
+  }
+  return out
 }
 
 /** C#: PascalCase identifiers that name a type declared in this project or one it references. */
@@ -344,12 +371,14 @@ function relateCs(files, projects, relate) {
   for (const f of cs) {
     f.code = stripC(f.src)
     f.declares = new Set([...f.code.matchAll(/\b(?:class|struct|record|interface|enum)\s+([A-Z]\w*)/g)].map(m => m[1]))
-    for (const t of f.declares) typeFiles.set(t, [...(typeFiles.get(t) ?? []), f])
+    // Only top-level, non-private types can be named from another file.
+    for (const t of topLevelTypes(f.code, 'cs')) typeFiles.set(t, [...(typeFiles.get(t) ?? []), f])
   }
-  for (const p of projects.filter(x => x.lang === 'cs')) {
-    // Unity sees every C# project: it references shared source through packages, not csproj.
-    if (p.unity) { p.visible = new Set(projects.filter(x => x.lang === 'cs')); continue }
-    const seen = new Set([p]), stack = [p]
+  const csProjects = projects.filter(x => x.lang === 'cs')
+  for (const p of csProjects) {
+    // Unity sees the projects its manifest's file: packages point at, and what those reference.
+    const start = p.unity ? (p.packages ?? []).map(d => csProjects.find(q => !q.unity && q.dir === d)).filter(Boolean) : []
+    const seen = new Set([p, ...start]), stack = [p, ...start]
     while (stack.length) for (const r of stack.pop().refs ?? []) { const q = byManifest.get(r); if (q && !seen.has(q)) { seen.add(q); stack.push(q) } }
     p.visible = seen
   }
@@ -393,10 +422,9 @@ function relateJava(files, relate) {
     f.code = stripC(f.src)
     f.pkg = f.code.match(/^\s*package\s+([\w.]+)\s*;/m)?.[1] ?? ''
     f.declares = new Set([...f.code.matchAll(/\b(?:class|interface|enum|record|@interface)\s+([A-Z]\w*)/g)].map(m => m[1]))
-    for (const t of f.declares) {
-      byFqn.set(`${f.pkg}.${t}`, f)
-      byPkg.set(f.pkg, [...(byPkg.get(f.pkg) ?? []), [t, f]])
-    }
+    // Nested types are reached through imports of Outer.Inner; only top-level ones are package-visible.
+    for (const t of f.declares) byFqn.set(`${f.pkg}.${t}`, f)
+    for (const t of topLevelTypes(f.code, 'java')) byPkg.set(f.pkg, [...(byPkg.get(f.pkg) ?? []), [t, f]])
   }
   // An import names a type, a nested type, or (static) a member: the longest known prefix wins.
   const typeAt = fqn => { for (let s = fqn; s.includes('.'); s = s.slice(0, s.lastIndexOf('.'))) if (byFqn.has(s)) return [s, byFqn.get(s)]; return null }

@@ -137,6 +137,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
     }
     relations.push({ source: a, target: b, title: l.title ?? '', evidence })
   }
+  for (const n of nodes.values()) if (byNode.has(n.id) && [...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" has child nodes and also holds ${byNode.get(n.id).length} files; move them into a child`)
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)
 
   // Each node with the files under it, for judging component sizes.

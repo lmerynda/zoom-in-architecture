@@ -13,8 +13,9 @@ URL parameters: `?model=<name>` (default `acme`), and `?model=synthetic&n=10000`
 ## Map your own codebase
 
 A map shows a codebase's architecture: the processes that run, the components inside them, and the files inside those. Making one takes two steps.
-- **The file graph, from code:** `npm run zoom -- graph <repo>`.
-  - It keeps only application files, meaning JS/TS that an entry point reaches through imports, plus what non-test C#, Rust and Java projects compile. Entry points are `index.html` scripts, package.json entries, `node <file>` npm scripts and `main` methods.
+- **The file graph, from code:** `npm run zoom -- graph <repo>`. For a large repo, `--folders` gives an overview by folder and `--under <folder>` lists one part.
+  - It keeps only application files, meaning JS/TS that an entry point reaches through imports, plus what non-test C#, Rust and Java projects compile.
+  - Entry points are pages' scripts (inline module scripts included), package.json entries, `node <file>` npm scripts and `main` methods. Imports of wasm-pack output lead back to the Rust crate, and Unity sees only the projects its `Packages/manifest.json` names.
   - Tests, `eslint.config`, `vite.config`, `playwright.config` and dead code drop out.
   - It resolves every reference between the files it keeps: relative imports, tsconfig paths, workspace packages, C# types through ProjectReferences, Java packages and imports, and Rust modules and crates.
   - It marks each file's routes, outbound calls, stores, schedules, sockets, process launches and file handoffs, with line numbers, and lists the config and deploy files.

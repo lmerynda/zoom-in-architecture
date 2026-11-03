@@ -2,4 +2,6 @@
 public class OrdersController
 {
     private readonly OrderService service = new();
+
+    private struct Rect { }
 }

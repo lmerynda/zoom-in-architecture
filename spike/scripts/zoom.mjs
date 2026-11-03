@@ -1,6 +1,7 @@
 // Small commands for mapping a codebase, meant to be called by an agent (see .claude/skills/map-repo).
 // usage:
-//   node scripts/zoom.mjs graph <repo> [--folders|--json] the application's file graph (--folders: an overview by folder)
+//   node scripts/zoom.mjs graph <repo> [--folders|--under <dir>|--json]   the application's file graph
+//                                                         (--folders: an overview by folder; --under: one part)
 //   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
@@ -11,7 +12,7 @@ import { buildGraph } from './graph.mjs'
 import { buildModel, publish, toName } from './map.mjs'
 
 /** The graph as compact text an agent can read: files by folder, with what each uses and who uses it. */
-export function graphText(g) {
+export function graphText(g, under = '') {
   const stems = new Map()
   for (const f of g.files) { const s = posix.basename(f.path); stems.set(s, (stems.get(s) ?? 0) + 1) }
   const short = p => (stems.get(posix.basename(p)) > 1 ? p : posix.basename(p))
@@ -22,17 +23,19 @@ export function graphText(g) {
     `${g.files.length} application files, ${g.edges.length} references. Left out: ${g.dropped.tests} test files; ${g.dropped.unreached.length} files no entry point reaches${g.dropped.unreached.length ? `: ${g.dropped.unreached.slice(0, 20).join(', ')}${g.dropped.unreached.length > 20 ? ', …' : ''}` : ''}.`,
     'Projects (from manifests; hints for the deployables):',
     ...g.projects.map(p => `  ${p.dir || '.'}  ${p.lang}  ${p.kind}  ${p.name}${p.technology ? `  · ${p.technology}` : ''}${p.description ? `  — ${p.description}` : ''}`),
-    `Entry points: ${g.entries.join(', ') || '(none found)'}`,
+    `Entry points (JS/TS counts when one reaches it; C#, Rust and Java projects count whole): ${g.entries.join(', ') || '(none found)'}`,
     ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
     `Config and deploy files (read them for datasources, base URLs, ports, other services): ${g.config.join(', ') || '(none)'}`,
     'Files: name · lines · → uses · ← used by · doc; indented below: :line kind text, for routes, calls, schedules, stores and sockets',
   ]
   let dir = null
-  for (const f of g.files) {
+  if (under) lines.push(`Only files under ${under}:`)
+  for (const f of g.files.filter(x => x.path.startsWith(under))) {
     const d = posix.dirname(f.path)
     if (d !== dir) { lines.push(`${d}/`); dir = d }
     const o = out.get(f.path) ?? [], i = inn.get(f.path) ?? []
-    lines.push(`  ${posix.basename(f.path)} · ${f.lines}${o.length ? ` · → ${o.map(short).join(', ')}` : ''}${i.length ? ` · ← ${i.length > 8 ? `${i.length} files` : i.map(short).join(', ')}` : ''}${f.doc ? ` · ${f.doc.slice(0, 120)}` : ''}`)
+    const cap = (a, n) => (a.length > n ? `${a.slice(0, n).map(short).join(', ')} +${a.length - n} more` : a.map(short).join(', '))
+    lines.push(`  ${posix.basename(f.path)} · ${f.lines}${o.length ? ` · → ${cap(o, 12)}` : ''}${i.length ? ` · ← ${i.length > 8 ? `${i.length} files` : i.map(short).join(', ')}` : ''}${f.doc ? ` · ${f.doc.slice(0, 120)}` : ''}`)
     for (const h of f.hints.slice(0, 16)) lines.push(`      :${h.line} ${h.kind} ${h.text}`)
     if (f.hints.length > 16) lines.push(`      … ${f.hints.length - 16} more`)
   }
@@ -58,7 +61,7 @@ export function folderText(g) {
 }
 
 const report = r => {
-  for (const n of r.tree) console.log(`${'  '.repeat(n.id.split('.').length - 1)}${n.id}  ${n.title} (${n.kind})${n.files ? `  ${n.files} files` : ''}`)
+  for (const n of r.tree) console.log(`${'  '.repeat(n.id.split('.').length - 1)}${n.id}  ${n.title} (${n.kind})${n.files ? `  ${n.files} file${n.files === 1 ? '' : 's'}` : ''}`)
   for (const e of r.errors) console.log(`error: ${e}`)
   for (const w of r.warnings) console.log(`warning: ${w}`)
   const s = r.stats
@@ -69,12 +72,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const json = flag('--json'); const folders = flag('--folders'); Object.assign(args, { name, json, folders }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const json = flag('--json'); const folders = flag('--folders'); Object.assign(args, { name, under, json, folders }); return args })()
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
     if (cmd === 'graph' && a) {
       const g = buildGraph(a)
-      console.log(args.json ? JSON.stringify(g, null, 1) : args.folders ? folderText(g) : graphText(g))
+      console.log(args.json ? JSON.stringify(g, null, 1) : args.folders ? folderText(g) : graphText(g, args.under ?? ''))
     } else if (cmd === 'check' && a && b) {
       const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
       report(r)
@@ -90,7 +93,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       report(r)
       if (!r.published) process.exitCode = 1
     } else {
-      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 6).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
     }
   } catch (e) {

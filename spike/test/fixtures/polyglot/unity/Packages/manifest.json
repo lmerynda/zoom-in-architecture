@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "com.shop.core": "file:../../src/Core",
+    "com.unity.ugui": "2.0.0"
+  }
+}

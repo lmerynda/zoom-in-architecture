@@ -5,9 +5,11 @@
     { "id": "web", "kind": "webapp", "title": "Storefront", "technology": "TypeScript · Vite", "description": "Where customers shop." },
     { "id": "web.shopping", "kind": "component", "title": "Shopping", "files": ["web/src/**", "shared/index.js"] },
     { "id": "web.orders", "kind": "component", "title": "Orders client", "files": ["web/src/api.ts"] },
-    { "id": "server", "kind": "app", "title": "Orders server", "technology": "Java · Spring Boot", "files": ["server/src/main/java/com/shop/ShopApplication.java"] },
+    { "id": "server", "kind": "app", "title": "Orders server", "technology": "Java · Spring Boot" },
+    { "id": "server.startup", "kind": "component", "title": "Startup", "files": ["server/src/main/java/com/shop/ShopApplication.java"] },
     { "id": "server.orders", "kind": "component", "title": "Orders", "files": ["server/src/main/java/com/shop/orders/**"] },
     { "id": "api", "kind": "app", "title": "Orders API", "technology": "C# · .NET", "files": ["src/**"] },
+    { "id": "unity", "kind": "app", "title": "Shop game", "technology": "Unity", "files": ["unity/**"] },
     { "id": "game", "kind": "app", "title": "Game", "technology": "Rust", "files": ["game/**", "engine/**"] },
     { "id": "db", "kind": "database", "title": "PostgreSQL" }
   ],

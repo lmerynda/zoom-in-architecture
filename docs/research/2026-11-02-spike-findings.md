@@ -84,6 +84,18 @@ What it taught:
 - **The agent needs the seams as facts, not as a search task.** In the first run it grepped for routes and `fetch` calls by hand, and evidence could point at the wrong line unnoticed. Its friction report drove the hints, the config-file list, the per-node file counts in `check` and the evidence check. Re-checked against those, all 19 of its links land on marked lines.
 - **Line evidence drifts.** Editing `map.mjs` moved lines that this repo's own map cited, and the evidence check caught it. Live re-publishes treat drift as a warning, so the map stays up while the code moves.
 - **A real bug surfaced as a dependency.** Notifications → Market exists only because a copy-pasted logger names `MarketController`. The map is faithful to the code, which makes such slips visible.
+**Pilot 2: a private game codebase** (a C# server and tools, a Unity client, a Rust/Wasm browser client and its relay, browser experiments; 1,300 source files). A fresh agent took about 13 minutes and produced:
+- **The graph:** 660 application files and 3,235 references. Left out were 599 test files and the art scripts no entry point reaches.
+- **The map:** 78 nodes and 32 links: WebSocket and TCP game connections, HTTP to the operator API, PostgreSQL, named pipes, launched processes and file handoffs.
+- **In the viewer:** 738 elements, layout in 403 ms, frames 0.9 ms p50 / 1.9 ms p95.
+
+What the larger repo taught:
+- **A false dependency is worse than a missing one.** Unity code was resolved against every C# project by bare type name, which gave 114 false edges into the dev tools and the server, including `UnityEngine.Rect` matching a private nested `struct Rect`. Unity now sees only the projects its `Packages/manifest.json` names as `file:` packages, and nested or private types never resolve from another file (C# and Java).
+- **Real front ends hide their entry points.** The maintained browser client loads its modules from an inline `<script type="module">`, and reaches its Rust crate through wasm-pack output (`pkg/<crate>.js`) that isn't in git. Pages anywhere in the repo now give entry points, an inline-module page is itself an application file, `pkg/<crate>.js` resolves back to the crate, and worker and service-worker paths are followed from the page's web root.
+- **The hints must learn each stack's seams.** This pilot added named pipes, HttpClient calls on a base address, `app.Map`, static-file hosting, `ProcessStartInfo`, Rust sockets and Npgsql. Unrecognised evidence lines fell from 24 to 12. The remainder are project-specific wrappers, which the skill now says to cite anyway.
+- **Large graphs need paging.** The full listing was 170 KB, and one file's uses ran to several kilobytes. `--folders` gives a 10 KB overview, `--under <folder>` pages through the rest, and use lists are capped.
+- **The agent needs placement rules, not just a format.** The skill now says when a shared library is its own node (used by two or more apps), when a small app needs no components, how `system` groups experiments, and which way links point.
+
 - **Kept from the first importer:** labels fitted by natural width (real class names overflowed), and the reference resolvers. LikeC4 is out of the import path, which removes the keyword-collision problem: generated models go straight to the viewer's JSON.
 
 ## Game-style controls
@@ -162,12 +174,12 @@ Two environment lessons:
 - Integrated or low-end GPUs, Safari and Firefox, touch and pinch.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
-- Map quality across agents and runs: one agent run on one repository so far.
+- Map quality across agents and runs: one agent run per repository so far.
 
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Map a second, larger repository with the skill (the private game codebase: C#, Rust and Unity), to test component grouping at 1,000+ files and the hints in C# and Rust.
+2. Run the skill twice on one repository and compare the maps, to see how stable the agent's grouping is.
 3. Show a link's evidence in the details panel, and list a component's relations by the component on the other side rather than by file.
 4. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
 5. Zoom past leaves into code (blockviz-style levels).
