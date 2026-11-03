@@ -31,6 +31,8 @@ A map shows a codebase's architecture: the processes that run, the components in
 
 It warns when evidence doesn't land on a line the graph marked (and quotes that line), or sits in a file at neither end of the link.
 
+`npm run zoom -- why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node.
+
 `npm run zoom -- compare <repo> <a.json> <b.json>` measures how alike two maps of one repo are, for example two agent runs. It reports grouping agreement at the process and leaf levels as an adjusted Rand index, pairs each group with its closest match by file overlap, and lists the links only one map has. Relations between files always come from the graph, so a map cannot invent a dependency.
 
 The map format is in the skill. [maps/zoom-in-architecture.json](maps/zoom-in-architecture.json) is this repository's map, and the tours and recordings use it.

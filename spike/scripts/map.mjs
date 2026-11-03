@@ -212,7 +212,7 @@ export function compareMaps(graph, a, b) {
   const ari = (pa, pb) => {
     const cells = new Map(), ra = new Map(), rb = new Map()
     const bump = (m, k) => m.set(k, (m.get(k) ?? 0) + 1)
-    for (const f of files) { bump(cells, `${pa.get(f)} ${pb.get(f)}`); bump(ra, pa.get(f)); bump(rb, pb.get(f)) }
+    for (const f of files) { bump(cells, `${pa.get(f)} > ${pb.get(f)}`); bump(ra, pa.get(f)); bump(rb, pb.get(f)) }
     const sum = m => [...m.values()].reduce((t, n) => t + c2(n), 0)
     const index = sum(cells), sa = sum(ra), sb = sum(rb), expected = (sa * sb) / c2(files.length), max = (sa + sb) / 2
     return max === expected ? 1 : (index - expected) / (max - expected)

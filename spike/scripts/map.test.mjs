@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -141,5 +142,12 @@ describe('compareMaps', () => {
     expect(c.pairs.find(p => p.a === 'Shopping')).toMatchObject({ b: 'Shopping', files: 3 })
     expect(c.processLinks.onlyA).toEqual(['Orders server → [database]'])
     expect(c.fileLinks).toEqual({ a: 1, b: 1, shared: 1 })
+  })
+})
+
+describe('zoom why', () => {
+  it('shows where a file sits and who uses it, by node', () => {
+    const out = execFileSync(process.execPath, ['scripts/zoom.mjs', 'why', 'test/fixtures/polyglot', 'test/fixtures/polyglot-map.json', 'web/src/api.ts'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' })
+    expect(out.split('\n')).toEqual(['web/src/api.ts is in web.orders', 'Used by 2 files:', '  web.shopping  2  main.ts, cart.ts', 'Uses 0 files:', ''])
   })
 })

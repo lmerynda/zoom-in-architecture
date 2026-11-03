@@ -5,6 +5,7 @@
 //   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
+//   node scripts/zoom.mjs why <repo> <map.json> <file>    where a file sits, and who uses it and what it uses, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
@@ -88,6 +89,17 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       report(r)
       console.log(r.published ? `published "${r.name}" in ${r.ms} ms; open ?model=${r.name}` : 'not published: fix the errors above')
       if (!r.published) process.exitCode = 1
+    } else if (cmd === 'why' && a && b && args[3]) {
+      const g = buildGraph(a)
+      const { model } = buildModel(g, readMap(b), { name: toName(a), loose: true })
+      const nodeOf = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e.parent]))
+      const file = args[3].replace(/\\/g, '/')
+      if (!nodeOf.has(file)) throw new Error(`${file} is not an application file`)
+      const byNode = paths => { const m = new Map(); for (const p of paths) m.set(nodeOf.get(p), [...(m.get(nodeOf.get(p)) ?? []), posix.basename(p)]); return [...m].sort((x, y) => y[1].length - x[1].length) }
+      const list = (label, paths) => { console.log(`${label} ${paths.length} files:`); for (const [n, fs] of byNode(paths)) console.log(`  ${n}  ${fs.length}  ${fs.join(', ')}`) }
+      console.log(`${file} is in ${nodeOf.get(file)}`)
+      list('Used by', g.edges.filter(e => e.to === file).map(e => e.from))
+      list('Uses', g.edges.filter(e => e.from === file).map(e => e.to))
     } else if (cmd === 'compare' && a && b && args[3]) {
       const c = compareMaps(buildGraph(a), readMap(b), readMap(args[3]))
       const pct = x => `${Math.round(x * 100)}%`
@@ -104,7 +116,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       report(r)
       if (!r.published) process.exitCode = 1
     } else {
-      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 9).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
     }
   } catch (e) {
