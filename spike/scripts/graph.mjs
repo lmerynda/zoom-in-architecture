@@ -13,7 +13,7 @@ import { basename, join, posix, resolve } from 'node:path'
 
 const LANG = { '.ts': 'js', '.tsx': 'js', '.mts': 'js', '.cts': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.cs': 'cs', '.rs': 'rs', '.java': 'java' }
 const GENERATED = /(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js)$|(^|\/)Migrations\/.*\.cs$/
-const TEST = /(^|\/)(tests?|__tests__|__mocks__|specs?|e2e|cypress|playwright|benches|examples|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$/
+const TEST = /(^|\/)(tests?|__tests__|__mocks__|specs?|e2e|cypress|playwright|benches|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$/
 const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', 'target', 'dist', 'build', 'out', 'coverage', 'Library', 'Temp', 'Logs'])
 // npm scripts that check, build, release or measure the code rather than run the app.
 const CHECK_SCRIPT = /test|lint|format|prettier|e2e|coverage|storybook|typecheck|check|build|release|publish|deploy|prepare|install|version|clean|docs?\b|locales?|stats|size|analy[sz]e|bump|changeset/
@@ -224,18 +224,19 @@ function summary(src, lang) {
 const HINTS = [
   ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
-  ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
+  ['store', /\b(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(.*|\bindexedDB\.open\s*\(.*|\bcreateStore\s*\(\s*['"].*|\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
   ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(socketIOClient|io\.connect)\s*\(.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
-  ['process', /\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
+  ['message', /\.postMessage\s*\(.*|\baddEventListener\s*\(\s*['"]message['"].*|\bonmessage\s*=.*/],
+  ['process', /\bnew\s+(?:Shared)?Worker\s*\(.*|\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
   // Files one process writes for another to read.
   ['file', /\b(writeFileSync|writeFile|renameSync|createWriteStream|File\.(WriteAll\w+|Move)|Files\.(write|move))\s*\(.*/],
   // fetch with any string, or a string that looks like a URL path or an absolute URL, passed to a call.
   // HttpClient calls take relative paths from a BaseAddress, so any string literal counts there.
-  ['call', /\bfetch\s*\(.*|\b(Get|Post|Put|Patch|Delete|Send)(AsJson|FromJson|String|ByteArray|Stream)?Async\s*\(\s*\$?@?".*|\bHttpMethod\.\w+\s*,\s*\$?".*|\bnew\s+Uri\s*\(\s*\$?"(https?|wss?):\/\/.*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
+  ['call', /\bfetch\s*\(.*|\bwindow\.open\s*\(.*|\bSentry\.init\s*\(.*|\b(Get|Post|Put|Patch|Delete|Send)(AsJson|FromJson|String|ByteArray|Stream)?Async\s*\(\s*\$?@?".*|\bHttpMethod\.\w+\s*,\s*\$?".*|\bnew\s+Uri\s*\(\s*\$?"(https?|wss?):\/\/.*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
 ]
 const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json)$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
 
-/** Route, call, schedule, store, socket, process and file lines of a file, with their line numbers. */
+/** Route, call, schedule, store, socket, message, process and file lines of a file, with their line numbers. */
 function hintsOf(src) {
   const out = []
   src.split('\n').forEach((line, i) => {
@@ -276,11 +277,13 @@ export function buildGraph(repo) {
     }
     return recs.get(p)
   }
-  const relate = (from, to, name) => {
+  // An edge is type-only while every reference along it is a type import.
+  const relate = (from, to, name, types = false) => {
     if (!from || !to || from === to) return
-    const names = from.edges.get(to.path) ?? new Set()
-    if (name) names.add(name)
-    from.edges.set(to.path, names)
+    const e = from.edges.get(to.path) ?? { names: new Set(), types: true }
+    if (name) e.names.add(name)
+    e.types &&= types
+    from.edges.set(to.path, e)
   }
 
   // Compiled languages: whatever a non-test project compiles, Unity Editor scripts included (like
@@ -301,19 +304,72 @@ export function buildGraph(repo) {
   // Static and dynamic imports, require, workers or assets loaded with new URL(…, import.meta.url),
   // and workers started from a path (new Worker('w.js'), serviceWorker.register('sw.js')).
   const importSpec = /(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"](\.[^'"]+)['"]\s*,\s*import\.meta\.url|(?:serviceWorker\.register|new\s+(?:Shared)?Worker)\(\s*['"]([^'"]+)['"]/g
+  const codeOf = f => (f.lang === 'html' ? inlineScripts(f.src) : f.src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+  // What a module exports: names it declares, names it re-exports from elsewhere, and export * sources.
+  const exportsOf = new Map()
+  const exportInfo = path => {
+    if (exportsOf.has(path)) return exportsOf.get(path)
+    const f = rec(path), code = codeOf(f)
+    const info = { locals: new Set(), named: new Map(), stars: [] }
+    for (const m of code.matchAll(/\bexport\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:abstract\s+)?(?:function\*?|class|const|let|var|type|interface|enum|namespace)\s+([A-Za-z_$][\w$]*)/g)) info.locals.add(m[1])
+    if (/\bexport\s+default\b/.test(code)) info.locals.add('default')
+    for (const m of code.matchAll(/\bexport\s+(?:type\s+)?\{([^}]*)\}\s*(?:from\s*['"]([^'"]+)['"])?/g)) {
+      for (const s of m[1].split(',').map(x => x.trim().replace(/^type\s+/, '')).filter(Boolean)) {
+        const [orig, as = orig] = s.split(/\s+as\s+/)
+        if (m[2]) info.named.set(as, { spec: m[2], orig })
+        else info.locals.add(as)
+      }
+    }
+    for (const m of code.matchAll(/\bexport\s+\*\s+as\s+([\w$]+)\s+from\s*['"]([^'"]+)['"]/g)) info.named.set(m[1], { spec: m[2], orig: null })
+    for (const m of code.matchAll(/\bexport\s+\*\s+from\s*['"]([^'"]+)['"]/g)) info.stars.push(m[1])
+    exportsOf.set(path, info)
+    return info
+  }
+  // The file that defines `name`, followed through barrels (index files that only re-export).
+  const definer = (path, name, depth = 0) => {
+    if (depth > 8 || !fileSet.has(path)) return null
+    const info = exportInfo(path), f = recs.get(path)
+    if (info.locals.has(name)) return path
+    const n = info.named.get(name)
+    if (n) { const t = js.resolve(path, n.spec, f.project); return t && (n.orig ? definer(t, n.orig, depth + 1) ?? t : t) }
+    for (const spec of info.stars) { const t = js.resolve(path, spec, f.project); const d = t && definer(t, name, depth + 1); if (d) return d }
+    return null
+  }
+  // Static imports and re-exports with their clause, so names and type-only imports are known.
+  const staticSpec = /\b(import|export)\s+(type\s+)?([^'"`;]*?)\s*from\s*['"]([^'"]+)['"]/g
   const queue = [...new Set([...entries, ...pages.inline])]
   const seen = new Set(queue)
+  const reach = target => { if (!seen.has(target) && fileSet.has(target)) { seen.add(target); queue.push(target) } }
   while (queue.length) {
     const f = rec(queue.shift())
-    const code = (f.lang === 'html' ? inlineScripts(f.src) : f.src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+    const code = codeOf(f)
+    const label = spec => (spec.startsWith('.') ? posix.basename(spec).replace(/\.\w+$/, '') : spec)
+    for (const m of code.matchAll(staticSpec)) {
+      const target = js.resolve(f.path, m[4], f.project)
+      if (!target) continue
+      reach(target)
+      const clause = m[3].trim()
+      const braces = clause.match(/\{([^}]*)\}/)?.[1].split(',').map(x => x.trim()).filter(Boolean) ?? []
+      const types = !!m[2] || (braces.length > 0 && braces.every(x => x.startsWith('type ')) && !/^[\w$]+\s*,/.test(clause))
+      const names = braces.map(x => x.replace(/^type\s+/, '').split(/\s+as\s+/)[0])
+      if (/^[\w$]+(\s*,|$)/.test(clause) && m[1] === 'import') names.push('default')
+      // Named imports go to the file defining each name; default, namespace and export * to the module.
+      if (!names.length || !fileSet.has(target)) { relate(f, rec(target), label(m[4]), types); continue }
+      for (const name of names) {
+        const d = definer(target, name) ?? target
+        reach(d)
+        relate(f, rec(d), name === 'default' ? label(m[4]) : name, types)
+      }
+    }
     for (const m of code.matchAll(importSpec)) {
+      if (m[1] != null) continue // static imports were handled above
       // A worker path is a URL, so a bare name is relative to the file, not a package.
-      const spec = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? (m[6] && (/^[./]/.test(m[6]) ? m[6] : `./${m[6]}`))
+      const spec = m[2] ?? m[3] ?? m[4] ?? m[5] ?? (m[6] && (/^[./]/.test(m[6]) ? m[6] : `./${m[6]}`))
       const target = js.resolve(f.path, spec, f.project)
       if (!target) continue
-      relate(f, rec(target), spec.startsWith('.') ? posix.basename(spec).replace(/\.\w+$/, '') : spec)
+      relate(f, rec(target), label(spec))
       // A Rust crate behind wasm-pack output is linked to, not read as JS.
-      if (!seen.has(target) && fileSet.has(target)) { seen.add(target); queue.push(target) }
+      reach(target)
     }
   }
 
@@ -335,12 +391,14 @@ export function buildGraph(repo) {
   const mains = appFiles.filter(f => f.lang === 'java' ? /\bstatic\s+void\s+main\s*\(/.test(f.src) : f.lang === 'cs' ? /\bstatic\s+(async\s+)?[\w<>]+\s+Main\s*\(/.test(f.src) || posix.basename(f.path) === 'Program.cs' : f.lang === 'rs' && (posix.basename(f.path) === 'main.rs' || /\/bin\//.test(f.path))).map(f => f.path)
   return {
     repo,
+    // Manifests with no application code, and why: a docs site or a monorepo root, say.
+    unmapped: projects.filter(p => p.kind !== 'test' && !p.unity && !appFiles.some(f => f.project === p)).map(p => ({ dir: p.dir, name: p.name, reason: candidates.some(c => owner.get(c) === p) ? 'no entry point reaches its code' : 'no source files' })),
     projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description }) => ({ lang, dir, name, kind, technology, description: description ?? '' })),
     entries: [...new Set([...entries, ...pages.inline, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
-    edges: appFiles.flatMap(f => [...f.edges].map(([to, names]) => ({ from: f.path, to, names: [...names] }))),
+    edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}) }))),
     dropped: { tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
 }

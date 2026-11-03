@@ -10,11 +10,11 @@ const edge = (from, to) => g.edges.find(e => e.from === from && e.to === to)
 describe('buildGraph', () => {
   it('keeps only application code: entry-reached JS/TS and what non-test projects compile', () => {
     expect(paths.sort()).toEqual([
-      'engine/src/lib.rs', 'engine/src/physics.rs', 'game/src/main.rs', 'game/www/hud.js', 'game/www/index.html', 'game/www/sw.js',
+      'engine/src/lib.rs', 'engine/src/physics.rs', 'examples/demo/index.js', 'game/src/main.rs', 'game/www/hud.js', 'game/www/index.html', 'game/www/sw.js',
       'server/src/main/java/com/shop/ShopApplication.java', 'server/src/main/java/com/shop/orders/OrderController.java',
       'server/src/main/java/com/shop/orders/OrderRepository.java', 'server/src/main/java/com/shop/orders/model/Order.java',
       'shared/index.js', 'src/Api/Controllers/OrdersController.cs', 'src/Api/wwwroot/app.js', 'src/Api/wwwroot/sw.js', 'src/Core/Order.cs', 'src/Core/OrderService.cs', 'unity/Assets/Scripts/ShopView.cs',
-      'web/src/api.ts', 'web/src/main.ts', 'web/src/ui/cart.ts',
+      'web/src/api.ts', 'web/src/main.ts', 'web/src/ui/cart.ts', 'web/src/ui/index.ts', 'web/src/ui/types.ts',
     ])
   })
 
@@ -27,7 +27,7 @@ describe('buildGraph', () => {
   })
 
   it('finds entry points: index.html scripts, package entries and main methods', () => {
-    expect(g.entries).toEqual(['game/src/main.rs', 'game/www/index.html', 'server/src/main/java/com/shop/ShopApplication.java', 'shared/index.js', 'src/Api/wwwroot/app.js', 'web/src/main.ts'])
+    expect(g.entries).toEqual(['examples/demo/index.js', 'game/src/main.rs', 'game/www/index.html', 'server/src/main/java/com/shop/ShopApplication.java', 'shared/index.js', 'src/Api/wwwroot/app.js', 'web/src/main.ts'])
   })
 
   it('follows pages: inline module scripts, wasm-pack output back to its crate, service workers', () => {
@@ -57,11 +57,15 @@ describe('buildGraph', () => {
     expect(hints('server/src/main/java/com/shop/orders/OrderController.java')).toEqual([':11 route @GetMapping("/api/orders")'])
     expect(hints('server/src/main/java/com/shop/orders/OrderRepository.java')).toEqual([':5 store extends JpaRepository<Order, Long> {}'])
     expect(hints('web/src/api.ts')).toEqual([":1 call fetch('/api/orders')).json()"])
+    expect(hints('web/src/ui/cart.ts')).toEqual([":3 store localStorage.setItem('cart', JSON.stringify(items)))"])
+    expect(hints('game/www/hud.js')).toEqual([":3 message .postMessage('ready', '*')"])
   })
 
   it('takes deployable hints from manifests', () => {
     const p = Object.fromEntries(g.projects.map(x => [x.dir, `${x.kind} ${x.technology}`]))
+    expect(g.unmapped).toEqual([{ dir: 'docs', name: 'docs', reason: 'no source files' }])
     expect(p).toEqual({
+      'examples/demo': 'library ',
       server: 'app Java · Spring Boot', engine: 'library Rust', game: 'app Rust', shared: 'library ',
       'src/Api': 'app C# · net10.0', 'src/Core': 'library C# · net10.0', web: 'app ', unity: 'app Unity 6000 · C#',
     })
@@ -70,8 +74,12 @@ describe('buildGraph', () => {
   it('resolves references in every language', () => {
     // JS/TS: relative, tsconfig alias, workspace package.
     expect(edge('web/src/main.ts', 'web/src/api.ts')).toBeTruthy()
-    expect(edge('web/src/main.ts', 'web/src/ui/cart.ts').names).toEqual(['@/ui/cart'])
-    expect(edge('web/src/main.ts', 'shared/index.js').names).toEqual(['shared'])
+    // A named import through a barrel goes to the file that defines the name.
+    expect(edge('web/src/main.ts', 'web/src/ui/cart.ts')).toEqual({ from: 'web/src/main.ts', to: 'web/src/ui/cart.ts', names: ['cart'] })
+    expect(edge('web/src/main.ts', 'web/src/ui/index.ts')).toBeUndefined()
+    // A type-only import is kept, marked, and not drawn in maps.
+    expect(edge('web/src/main.ts', 'web/src/ui/types.ts')).toMatchObject({ names: ['Item'], types: true })
+    expect(edge('web/src/main.ts', 'shared/index.js').names).toEqual(['money'])
     // C#: through a ProjectReference.
     expect(edge('src/Api/Controllers/OrdersController.cs', 'src/Core/OrderService.cs').names).toEqual(['OrderService'])
     // Java: same package, explicit import, wildcard import.
@@ -92,15 +100,15 @@ describe('buildGraph', () => {
 
   it('prints a compact text listing for agents', () => {
     const text = graphText(g)
-    expect(text).toContain('20 application files, 16 references. Left out: 4 test files; 4 files no entry point reaches')
-    expect(text).toContain('  main.ts · 6 · → api.ts, cart.ts, index.js · Starts the shop front end.')
+    expect(text).toContain('23 application files, 20 references (2 type-only). Left out: 4 test files; 4 files no entry point reaches')
+    expect(text).toContain('  main.ts · 7 · → api.ts, cart.ts, shared/index.js · types → types.ts · Starts the shop front end.')
     expect(text).toContain('      :11 route @GetMapping("/api/orders")')
   })
 
   it('prints a folder overview for large repos', () => {
     const text = folderText(g)
-    expect(text).toContain('20 application files in 13 folders')
-    expect(text).toContain('game/www/ · 3 · 18 · → engine/src (1)')
+    expect(text).toContain('14 folders.')
+    expect(text).toContain('game/www/ · 3 · 19 · 1 message · → engine/src (1)')
     expect(text).toContain('server/src/main/java/com/shop/orders/ · 2 · 20 · 1 route, 1 store · → server/src/main/java/com/shop/orders/model (2)')
   })
 })

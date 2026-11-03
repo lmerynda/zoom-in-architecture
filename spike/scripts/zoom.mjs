@@ -5,7 +5,7 @@
 //   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
-//   node scripts/zoom.mjs why <repo> <map.json> <file>    where a file sits, and who uses it and what it uses, by node
+//   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
@@ -13,31 +13,41 @@ import { pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { buildModel, compareMaps, publish, toName } from './map.mjs'
 
+/** The graph's header: what was left out, the projects, entry points and config files. */
+function header(g) {
+  return [
+    `${g.repo}`,
+    `${g.files.length} application files, ${g.edges.length} references (${g.edges.filter(e => e.types).length} type-only). Left out: ${g.dropped.tests} test files; ${g.dropped.unreached.length} files no entry point reaches${g.dropped.unreached.length ? `: ${g.dropped.unreached.slice(0, 20).join(', ')}${g.dropped.unreached.length > 20 ? ', …' : ''}` : ''}.`,
+    'Projects (from manifests; hints for the deployables):',
+    ...g.projects.map(p => `  ${p.dir || '.'}  ${p.lang}  ${p.kind}  ${p.name}${p.technology ? `  · ${p.technology}` : ''}${p.description ? `  — ${p.description}` : ''}`),
+    ...g.unmapped.map(p => `  ${p.dir || '.'}  ${p.name}: not mapped, ${p.reason}`),
+    `Entry points (JS/TS counts when one reaches it; C#, Rust and Java projects count whole): ${g.entries.join(', ') || '(none found)'}`,
+    ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
+    `Config and deploy files (read them for datasources, base URLs, ports, other services): ${g.config.join(', ') || '(none)'}`,
+  ]
+}
+
 /** The graph as compact text an agent can read: files by folder, with what each uses and who uses it. */
 export function graphText(g, under = '') {
   const stems = new Map()
   for (const f of g.files) { const s = posix.basename(f.path); stems.set(s, (stems.get(s) ?? 0) + 1) }
   const short = p => (stems.get(posix.basename(p)) > 1 ? p : posix.basename(p))
-  const out = new Map(), inn = new Map()
-  for (const e of g.edges) { out.set(e.from, [...(out.get(e.from) ?? []), e.to]); inn.set(e.to, [...(inn.get(e.to) ?? []), e.from]) }
+  // Type-only imports are listed apart: they couple files at compile time, but the map does not draw them.
+  const out = new Map(), inn = new Map(), typed = new Map()
+  const add = (m, k, v) => m.set(k, [...(m.get(k) ?? []), v])
+  for (const e of g.edges) { if (e.types) add(typed, e.from, e.to); else { add(out, e.from, e.to); add(inn, e.to, e.from) } }
   const lines = [
-    `${g.repo}`,
-    `${g.files.length} application files, ${g.edges.length} references. Left out: ${g.dropped.tests} test files; ${g.dropped.unreached.length} files no entry point reaches${g.dropped.unreached.length ? `: ${g.dropped.unreached.slice(0, 20).join(', ')}${g.dropped.unreached.length > 20 ? ', …' : ''}` : ''}.`,
-    'Projects (from manifests; hints for the deployables):',
-    ...g.projects.map(p => `  ${p.dir || '.'}  ${p.lang}  ${p.kind}  ${p.name}${p.technology ? `  · ${p.technology}` : ''}${p.description ? `  — ${p.description}` : ''}`),
-    `Entry points (JS/TS counts when one reaches it; C#, Rust and Java projects count whole): ${g.entries.join(', ') || '(none found)'}`,
-    ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
-    `Config and deploy files (read them for datasources, base URLs, ports, other services): ${g.config.join(', ') || '(none)'}`,
-    'Files: name · lines · → uses · ← used by · doc; indented below: :line kind text, for routes, calls, schedules, stores and sockets',
+    ...header(g),
+    'Files: name · lines · → uses · types → type-only imports (not drawn) · ← used by · doc; indented below: :line kind text, for routes, calls, schedules, stores and sockets',
   ]
   let dir = null
   if (under) lines.push(`Only files under ${under}:`)
   for (const f of g.files.filter(x => x.path.startsWith(under))) {
     const d = posix.dirname(f.path)
     if (d !== dir) { lines.push(`${d}/`); dir = d }
-    const o = out.get(f.path) ?? [], i = inn.get(f.path) ?? []
+    const o = out.get(f.path) ?? [], i = inn.get(f.path) ?? [], t = typed.get(f.path) ?? []
     const cap = (a, n) => (a.length > n ? `${a.slice(0, n).map(short).join(', ')} +${a.length - n} more` : a.map(short).join(', '))
-    lines.push(`  ${posix.basename(f.path)} · ${f.lines}${o.length ? ` · → ${cap(o, 12)}` : ''}${i.length ? ` · ← ${i.length > 8 ? `${i.length} files` : i.map(short).join(', ')}` : ''}${f.doc ? ` · ${f.doc.slice(0, 120)}` : ''}`)
+    lines.push(`  ${posix.basename(f.path)} · ${f.lines}${o.length ? ` · → ${cap(o, 12)}` : ''}${t.length ? ` · types → ${cap(t, 6)}` : ''}${i.length ? ` · ← ${i.length > 8 ? `${i.length} files` : i.map(short).join(', ')}` : ''}${f.doc ? ` · ${f.doc.slice(0, 120)}` : ''}`)
     for (const h of f.hints.slice(0, 16)) lines.push(`      :${h.line} ${h.kind} ${h.text}`)
     if (f.hints.length > 16) lines.push(`      … ${f.hints.length - 16} more`)
   }
@@ -55,9 +65,10 @@ export function folderText(g) {
     for (const h of f.hints) d.hints[h.kind] = (d.hints[h.kind] ?? 0) + 1
     folders.set(dir(f.path), d)
   }
-  for (const e of g.edges) if (dir(e.from) !== dir(e.to)) { const o = folders.get(dir(e.from)).out; o.set(dir(e.to), (o.get(dir(e.to)) ?? 0) + 1) }
+  for (const e of g.edges) if (!e.types && dir(e.from) !== dir(e.to)) { const o = folders.get(dir(e.from)).out; o.set(dir(e.to), (o.get(dir(e.to)) ?? 0) + 1) }
   return [
-    `${g.repo}: ${g.files.length} application files in ${folders.size} folders. Folder · files · lines · hints · → folders it references (references)`,
+    ...header(g),
+    `${folders.size} folders. Folder · files · lines · hints · → folders it references (runtime references)`,
     ...[...folders].map(([d, x]) => `${d}/ · ${x.files} · ${x.lines}${Object.keys(x.hints).length ? ` · ${Object.entries(x.hints).map(([k, n]) => `${n} ${k}`).join(', ')}` : ''}${x.out.size ? ` · → ${[...x.out].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} (${n})`).join(', ')}` : ''}`),
   ].join('\n')
 }
@@ -93,13 +104,15 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const g = buildGraph(a)
       const { model } = buildModel(g, readMap(b), { name: toName(a), loose: true })
       const nodeOf = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e.parent]))
-      const file = args[3].replace(/\\/g, '/')
-      if (!nodeOf.has(file)) throw new Error(`${file} is not an application file`)
       const byNode = paths => { const m = new Map(); for (const p of paths) m.set(nodeOf.get(p), [...(m.get(nodeOf.get(p)) ?? []), posix.basename(p)]); return [...m].sort((x, y) => y[1].length - x[1].length) }
       const list = (label, paths) => { console.log(`${label} ${paths.length} files:`); for (const [n, fs] of byNode(paths)) console.log(`  ${n}  ${fs.length}  ${fs.join(', ')}`) }
-      console.log(`${file} is in ${nodeOf.get(file)}`)
-      list('Used by', g.edges.filter(e => e.to === file).map(e => e.from))
-      list('Uses', g.edges.filter(e => e.from === file).map(e => e.to))
+      // Several files in one call; type-only imports are left out, as in the map.
+      for (const file of args.slice(3).map(x => x.replace(/\\/g, '/'))) {
+        if (!nodeOf.has(file)) { console.log(`${file} is not an application file`); process.exitCode = 1; continue }
+        console.log(`${file} is in ${nodeOf.get(file)}`)
+        list('Used by', g.edges.filter(e => e.to === file && !e.types).map(e => e.from))
+        list('Uses', g.edges.filter(e => e.from === file && !e.types).map(e => e.to))
+      }
     } else if (cmd === 'compare' && a && b && args[3]) {
       const c = compareMaps(buildGraph(a), readMap(b), readMap(args[3]))
       const pct = x => `${Math.round(x * 100)}%`

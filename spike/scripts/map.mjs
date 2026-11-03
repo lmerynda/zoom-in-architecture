@@ -116,7 +116,8 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   }
 
   // Relations: the graph's, between files, then the map's links.
-  const relations = graph.edges.map(e => ({ source: fileId.get(e.from), target: fileId.get(e.to), title: e.names.length > 3 ? `${e.names.slice(0, 3).join(', ')} +${e.names.length - 3}` : e.names.join(', ') }))
+  // Type-only imports are compile-time coupling, not runtime use, so the map does not draw them.
+  const relations = graph.edges.filter(e => !e.types).map(e => ({ source: fileId.get(e.from), target: fileId.get(e.to), title: e.names.length > 3 ? `${e.names.slice(0, 3).join(', ')} +${e.names.length - 3}` : e.names.join(', ') }))
   const endOf = s => (nodes.has(s) ? s : fileId.get(s))
   const kindOf = s => nodes.get(s)?.kind ?? 'code'
   // Whether a file is a link end, or under the node that is one.
@@ -137,7 +138,11 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       // in a file at one end of the link (config and other non-code files can back any link).
       const hints = app.get(m[1])?.hints
       if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
-      else if (hints && !hints.some(h => h.line >= from && h.line <= to)) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}`)
+      else if (hints && !hints.some(h => h.line >= from && h.line <= to)) {
+        // Code moves under a map; the nearest marked line is usually where the evidence went.
+        const near = hints.filter(h => Math.abs(h.line - from) <= 20).sort((x, y) => Math.abs(x.line - from) - Math.abs(y.line - from))[0]
+        warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}`)
+      }
     }
     relations.push({ source: a, target: b, title: l.title ?? '', evidence })
   }

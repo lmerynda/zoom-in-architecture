@@ -10,6 +10,7 @@
     { "id": "server.orders", "kind": "component", "title": "Orders", "files": ["server/src/main/java/com/shop/orders/**"] },
     { "id": "api", "kind": "app", "title": "Orders API", "technology": "C# · .NET", "files": ["src/**"] },
     { "id": "unity", "kind": "app", "title": "Shop game", "technology": "Unity", "files": ["unity/**"] },
+    { "id": "demo", "kind": "app", "title": "Demo", "files": ["examples/**"] },
     { "id": "game", "kind": "app", "title": "Game", "technology": "Rust", "files": ["game/**", "engine/**"] },
     { "id": "db", "kind": "database", "title": "PostgreSQL" }
   ],

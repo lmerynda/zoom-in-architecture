@@ -17,7 +17,7 @@ describe('buildModel', () => {
   it('publishes a clean map without errors or warnings', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings).toEqual([])
-    expect(r.stats).toEqual({ nodes: 11, files: 20, relations: 19, links: 3, unplaced: 0 })
+    expect(r.stats).toEqual({ nodes: 12, files: 23, relations: 21, links: 3, unplaced: 0 })
   })
 
   it('nests nodes by id and files under the node that holds them', () => {
@@ -25,7 +25,7 @@ describe('buildModel', () => {
     expect(el('web.shopping').parent).toBe('web')
     expect(el('customer')).toMatchObject({ parent: null, kind: 'actor', shape: 'person' })
     expect(at(r, 'web/src/main.ts')).toMatchObject({ id: 'web.shopping.main', parent: 'web.shopping', kind: 'code', title: 'main', description: 'Starts the shop front end.' })
-    expect(at(r, 'web/src/main.ts').metadata).toMatchObject({ lines: '6' })
+    expect(at(r, 'web/src/main.ts').metadata).toMatchObject({ lines: '7' })
   })
 
   it('lets an exact path beat a glob, and a longer glob beat a shorter one', () => {
@@ -43,7 +43,7 @@ describe('buildModel', () => {
 
   it('draws relations between files from the graph only, and links from the map', () => {
     const rel = (a, b) => r.model.relations.find(x => x.source === a && x.target === b)
-    expect(rel(at(r, 'web/src/main.ts').id, at(r, 'web/src/ui/cart.ts').id).title).toBe('@/ui/cart')
+    expect(rel(at(r, 'web/src/main.ts').id, at(r, 'web/src/ui/cart.ts').id).title).toBe('cart')
     expect(rel('customer', 'web').title).toBe('shops in a browser')
     expect(rel(at(r, 'web/src/api.ts').id, at(r, 'server/src/main/java/com/shop/orders/OrderController.java').id).evidence).toHaveLength(2)
   })
@@ -71,6 +71,12 @@ describe('buildModel', () => {
     expect(r3.warnings).toEqual([])
   })
 
+  it('names the nearest marked line when evidence has drifted', () => {
+    const r2 = build(edit(m => { m.links[1].evidence = ['web/src/api.ts:1', 'server/src/main/java/com/shop/orders/OrderController.java:12'] }))
+    expect(r2.warnings).toHaveLength(1)
+    expect(r2.warnings[0]).toContain('(nearest marked line: server/src/main/java/com/shop/orders/OrderController.java:11 route @GetMapping("/api/orders"))')
+  })
+
   it('refuses bad nodes and files that are not application code', () => {
     const bad = build(edit(m => {
       m.nodes.push({ id: 'web.x.y', kind: 'component', title: 'Orphan' })
@@ -88,7 +94,7 @@ describe('buildModel', () => {
   it('places files the map misses beside their neighbours, an error unless loose', () => {
     const partial = edit(m => { m.nodes.find(n => n.id === 'web.shopping').files = ['shared/index.js', 'web/src/main.ts'] })
     const strict = build(partial)
-    expect(strict.errors).toEqual(['1 application files are not in the map: web/src/ui/cart.ts'])
+    expect(strict.errors).toEqual(['3 application files are not in the map: web/src/ui/cart.ts, web/src/ui/index.ts, web/src/ui/types.ts'])
     const loose = build(partial, { loose: true })
     expect(loose.errors).toEqual([])
     // cart.ts imports api.ts (Orders client) and is imported by main.ts (Shopping): a tie goes to the first vote.
@@ -106,7 +112,7 @@ describe('buildModel', () => {
     expect(loose.errors).toEqual([])
     expect(loose.warnings).toHaveLength(3)
     // The link to a deleted file is skipped; the one with a stale line still draws.
-    expect(loose.stats.relations).toBe(19)
+    expect(loose.stats.relations).toBe(21)
   })
 
   it('collects files with no placed neighbour under Unplaced', () => {
@@ -139,7 +145,7 @@ describe('compareMaps', () => {
     const c = compareMaps(graph, map, b)
     expect(c.topLevel).toBe(1)
     expect(c.leaf).toBeLessThan(1)
-    expect(c.pairs.find(p => p.a === 'Shopping')).toMatchObject({ b: 'Shopping', files: 3 })
+    expect(c.pairs.find(p => p.a === 'Shopping')).toMatchObject({ b: 'Orders client', files: 5 })
     expect(c.processLinks.onlyA).toEqual(['Orders server → [database]'])
     expect(c.fileLinks).toEqual({ a: 1, b: 1, shared: 1 })
   })
