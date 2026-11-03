@@ -9,7 +9,10 @@ mkdirSync(out, { recursive: true })
 
 const text = v => (v == null ? '' : typeof v === 'string' ? v : String(v.text ?? ''))
 
+// Workspace names on the command line limit extraction to them (the live watcher passes one).
+const only = new Set(process.argv.slice(2))
 for (const name of readdirSync(root)) {
+  if (only.size && !only.has(name)) continue
   const dir = join(root, name)
   if (!statSync(dir).isDirectory()) continue
   const likec4 = await LikeC4.fromWorkspace(dir, { printErrors: true, watch: false })

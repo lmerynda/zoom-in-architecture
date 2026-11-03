@@ -19,6 +19,14 @@ npm run extract                                            # or restart npm run 
 
 The scanner builds system → area → project → folder → name cluster → file from the code, takes each file's `/// <summary>` as its description, derives relations from type references between files (limited to referenced projects), and adds the WebSocket, TCP and database seams by hand.
 
+## Live mode
+
+With `npm run dev` running, saving any `model/<name>/*.c4` file re-extracts that workspace and the open map updates in place: unchanged containers keep their exact layout, survivors glide to their new places, new cards grow out of their parent, changed cards glow (green added, amber changed), and a toast lists what was removed. The camera stays on the selection, or on what is under the screen centre. If `model/galaxy-wars` exists and the Galaxy Wars checkout is at `GALAXY_WARS_REPO` (default `F:/projects/galaxy-wars`), saving a `.cs` or `.rs` file there re-runs the scanner too.
+
+`node scripts/live-test.mjs` edits `model/acme/model.c4` while the map is open, checks the update, then restores the file.
+
+## Controls
+
 Controls borrow from games. Press `?` in the app for the full sheet.
 
 | Pattern | Control |
@@ -46,6 +54,7 @@ DPR=2 node scripts/probe.mjs "model=synthetic&n=10000"    # same at device pixel
 node scripts/layout-bench.mjs 1000                         # ELK option sets: card fill and time
 DPR=2 node scripts/tour.mjs                                # screenshot walkthrough into shots/tour/
 node scripts/ux-tour.mjs                                   # drives every control with real input into shots/ux/
+node scripts/live-test.mjs                                 # edits a model while the map is open, checks the live update
 node scripts/record.mjs gw-controls gw-dive                # frame-exact MP4s into shots/video/
 ```
 
@@ -61,6 +70,8 @@ node scripts/record.mjs gw-controls gw-dive                # frame-exact MP4s in
 - `src/camera.ts` — float64 camera, cursor-anchored eased zoom, inertia, fly-to about a fixed point.
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
+- `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
+- `src/controls/` — game-style controls: palette, history, control groups, wheel, routes, pins, tooltips.
 - `model/acme/` — the realistic sample model.
 - `scripts/scan-galaxy-wars.mjs` — code scanner that generates the Galaxy Wars model.
 - `src/synthetic.ts` — deterministic five-level landscapes for scale tests.

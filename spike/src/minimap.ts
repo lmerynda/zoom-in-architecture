@@ -11,7 +11,7 @@ export class Minimap {
   private ox = 0
   private oy = 0
 
-  constructor(private canvas: HTMLCanvasElement, private tree: Tree, private world: World) {
+  constructor(private canvas: HTMLCanvasElement, public tree: Tree, public world: World) {
     const toWorld = (e: PointerEvent): [number, number] => [(e.offsetX - this.ox) / this.scale, (e.offsetY - this.oy) / this.scale]
     canvas.addEventListener('pointerdown', e => {
       canvas.setPointerCapture(e.pointerId)

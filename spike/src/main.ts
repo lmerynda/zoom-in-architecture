@@ -7,6 +7,7 @@ import { layoutJobs, placeWorld, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
+import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 import { Renderer } from './render'
 import { Sound } from './sound'
@@ -32,18 +33,20 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 async function main() {
   const t0 = performance.now()
   const model = await loadModel()
-  const tree = new Tree(model)
+  // The current model version; live updates replace all four.
+  let tree = new Tree(model)
+  let jobs = layoutJobs(tree)
   const tLayout = performance.now()
-  const local = await runLayout(layoutJobs(tree))
+  let local = await runLayout(jobs)
   const layoutMs = performance.now() - tLayout
-  const world: World = placeWorld(tree, local)
+  let world: World = placeWorld(tree, local)
 
   const app = new Application()
   await app.init({ resizeTo: window, background: '#04060c', antialias: true, autoDensity: true, resolution: devicePixelRatio, preference: 'webgl' })
   $('stage').appendChild(app.canvas)
   Renderer.installFont()
   const cam = new Camera()
-  const renderer = new Renderer(app, tree, world, cam)
+  let renderer = new Renderer(app, tree, world, cam)
   app.stage.addChild(renderer.stage)
   const minimap = new Minimap($<HTMLCanvasElement>('minimap'), tree, world)
   const altimeter = new Altimeter(tree)
@@ -101,6 +104,95 @@ async function main() {
   const soundBtn = $<HTMLButtonElement>('sound')
   soundBtn.onclick = () => { const on = sound.toggle(); soundBtn.textContent = on ? 'Sound on' : 'Sound off'; soundBtn.classList.toggle('on', on) }
 
+  // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
+  // version replaces the old in place: unchanged containers keep their layout, survivors glide
+  // to their new places, new cards grow out of their parent, and changes glow for a moment.
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number] } | null = null
+  let liveVersion = 0
+  const swapModel = async (json: ModelJson, extractMs = 0) => {
+    const swapStart = performance.now()
+    const next = new Tree(json)
+    const nextJobs = layoutJobs(next)
+    stableOrder(tree, jobs, next, nextJobs)
+    const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
+    const fresh = rerun.length ? await runLayout(rerun) : new Map()
+    const nextLocal = new Map([...reused, ...fresh])
+    const target = placeWorld(next, nextLocal)
+    const diff = diffModels(tree, next)
+    const start = startRects(world, next, target, diff.oldIndex)
+    const live: World = { rect: start.rect.slice(), content: start.content.slice(), local: nextLocal }
+
+    // Keep what you are looking at where it is on screen, the selection if there is one, else
+    // what is under the screen centre: the camera moves with it.
+    const cam0: [number, number, number] = [cam.x, cam.y, cam.z]
+    let cam1 = cam0
+    let anchor = renderer.selected > 0 ? renderer.selected : renderer.pick(cam.w / 2, cam.h / 2)
+    while (anchor > 0 && !next.byId.has(tree.els[anchor].id)) anchor = tree.parent[anchor]
+    if (anchor > 0) {
+      const o = world.rect, n = target.rect, a = next.byId.get(tree.els[anchor].id)!
+      const z1 = cam.z * (o[anchor * 4 + 2] / n[a * 4 + 2])
+      const [sx, sy] = cam.toScreen(o[anchor * 4], o[anchor * 4 + 1])
+      cam1 = [n[a * 4] - (sx - cam.w / 2) / z1, n[a * 4 + 1] - (sy - cam.h / 2) / z1, z1]
+    }
+
+    const prev = renderer
+    const remap = (i: number) => (i > 0 ? next.byId.get(tree.els[i].id) ?? -1 : -1)
+    const nextRenderer = new Renderer(app, next, live, cam)
+    nextRenderer.onOpen = () => sound.chime()
+    nextRenderer.hud = prev.hud
+    nextRenderer.pointer = prev.pointer
+    nextRenderer.selected = remap(prev.selected)
+    nextRenderer.target = remap(prev.target)
+    if (prev.route) {
+      const hops = prev.route.map(h => ({ ...h, from: remap(h.from), to: remap(h.to) }))
+      if (hops.every(h => h.from > 0 && h.to > 0)) { nextRenderer.route = hops; nextRenderer.routeStep = prev.routeStep }
+    }
+    const t = now()
+    for (const i of diff.changed) nextRenderer.flash.set(i, { color: 0xfbbf24, t0: t })
+    for (const i of diff.added) nextRenderer.flash.set(i, { color: 0x4ade80, t0: t })
+    app.stage.removeChild(prev.stage)
+    app.stage.addChildAt(nextRenderer.stage, 0)
+    prev.destroy()
+
+    tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
+    lenses.splice(0, lenses.length, ...buildLenses(next))
+    renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
+    minimap.tree = next; minimap.world = live
+    altimeter.setTree(next)
+    banner.tree = next
+    controls.swap({ tree: next, world: live, renderer })
+    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) })
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
+    liveVersion++
+    const parts = [diff.added.length && `+${diff.added.length} added`, diff.changed.length && `${diff.changed.length} changed`, diff.removed.length && `−${diff.removed.length} removed (${diff.removed.slice(0, 3).map(id => id.split('.').pop()).join(', ')}${diff.removed.length > 3 ? '…' : ''})`].filter(Boolean)
+    controls.toast.show(`Model updated · ${parts.join(' · ') || 'no visible change'}`, `${rerun.length} of ${nextJobs.length} layouts redone · extract ${extractMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
+  }
+  /** Advances the morph: positions and the camera move together from the old version to the new. */
+  const stepMorph = (t: number) => {
+    if (!morph) return
+    const u = Math.min(1, (t - morph.t0) / morph.dur)
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2
+    const r = world.rect, c = world.content, fr = morph.from.rect, fc = morph.from.content, tr = morph.to.rect, tc = morph.to.content
+    for (let k = 0; k < r.length; k++) r[k] = fr[k] + (tr[k] - fr[k]) * e
+    for (let k = 0; k < c.length; k++) c[k] = fc[k] + (tc[k] - fc[k]) * e
+    const [x0, y0, z0] = morph.cam0, [x1, y1, z1] = morph.cam1
+    if (!cam.flying && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
+      const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
+      cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
+    }
+    renderer.router.invalidate()
+    if (u >= 1) morph = null
+  }
+  let pending: Promise<void> = Promise.resolve()
+  import.meta.hot?.on('model:update', ({ name, ms }: { name: string; ms: number }) => {
+    if (name !== modelName) return
+    // One swap at a time, in order.
+    pending = pending.then(async () => {
+      const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
+      if (res.ok) await swapModel(await res.json(), ms)
+    }).catch(e => console.error(e))
+  })
+
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)
   let last = renderer.frame(now())
@@ -111,6 +203,7 @@ async function main() {
     const t = now()
     controls.tick(dt, t)
     cam.step(t, dt)
+    stepMorph(t)
     last = renderer.frame(t)
     const path = renderer.breadcrumb()
     altimeter.update(path, renderer.altitude(path), cam.z / ((cam.w * 0.92) / world.rect[2]))
@@ -145,7 +238,9 @@ async function main() {
   const dbg = gl?.getExtension('WEBGL_debug_renderer_info')
   Object.assign(window, {
     __spike: {
-      ready: true, tree, world, cam, renderer, controls, layoutMs, loadMs: performance.now() - t0,
+      ready: true, cam, controls, layoutMs, loadMs: performance.now() - t0,
+      get tree() { return tree }, get world() { return world }, get renderer() { return renderer },
+      get liveVersion() { return liveVersion }, get morphing() { return morph != null }, swapModel,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
       fit, fly: (i: number) => controls.go(i), select, setLens, unhover: () => { renderer.pointer = null }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),

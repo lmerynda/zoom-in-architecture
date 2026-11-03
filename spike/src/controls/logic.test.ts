@@ -54,7 +54,7 @@ describe('findRoute', () => {
 describe('History', () => {
   it('goes back and forward and drops forward on a new jump', () => {
     const h = new History()
-    const v = (x: number, z = 1) => ({ x, y: 0, z, selected: -1 })
+    const v = (x: number, z = 1) => ({ x, y: 0, z, selected: null })
     h.push(v(0), 1000)
     h.push(v(5000), 1000)
     expect(h.goBack(v(9000))!.x).toBe(5000)
@@ -66,8 +66,8 @@ describe('History', () => {
 
   it('does not record views close to the last one', () => {
     const h = new History()
-    h.push({ x: 0, y: 0, z: 1, selected: -1 }, 1000)
-    h.push({ x: 10, y: 0, z: 1.05, selected: -1 }, 1000)
+    h.push({ x: 0, y: 0, z: 1, selected: null }, 1000)
+    h.push({ x: 10, y: 0, z: 1.05, selected: null }, 1000)
     expect(h.back.length).toBe(1)
   })
 })

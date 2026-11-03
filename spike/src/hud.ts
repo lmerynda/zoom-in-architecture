@@ -21,15 +21,23 @@ export class Altimeter {
   private ticks: HTMLElement[] = []
 
   constructor(private tree: Tree) {
+    this.root.append(el('div', 'alt-title', 'DEPTH'), this.rail, this.readout)
+    document.body.append(this.root)
+    this.setTree(tree)
+  }
+
+  /** One tick per level: rebuilt when a new model version has a different depth. */
+  setTree(tree: Tree) {
+    this.tree = tree
+    if (!this.marker.parentNode) this.rail.append(this.marker)
+    for (const t of this.ticks) t.remove()
+    this.ticks = []
     for (let d = 0; d <= tree.maxDepth; d++) {
       const t = el('div', 'alt-tick')
       t.style.top = `${(d / tree.maxDepth) * 100}%`
-      this.rail.append(t)
+      this.rail.insertBefore(t, this.marker)
       this.ticks.push(t)
     }
-    this.rail.append(this.marker)
-    this.root.append(el('div', 'alt-title', 'DEPTH'), this.rail, this.readout)
-    document.body.append(this.root)
   }
 
   update(path: number[], altitude: number, zoom: number) {
@@ -53,7 +61,7 @@ export class Banner {
   private pending = -1
   private since = 0
 
-  constructor(private tree: Tree) {
+  constructor(public tree: Tree) {
     this.root.append(el('div', 'banner-kicker', 'ENTERING'), this.title, this.sub)
     document.body.append(this.root)
   }

@@ -37,7 +37,11 @@ export class BookmarkBar {
   onRecall: (slot: number) => void = () => {}
 
   constructor(private key: string) {
-    try { const saved = JSON.parse(localStorage.getItem(key) ?? 'null'); if (Array.isArray(saved)) this.slots = saved } catch { /* fresh start */ }
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? 'null')
+      // Older saves held a selection index; ids are the only thing stable across model versions.
+      if (Array.isArray(saved)) this.slots = saved.map(b => (b ? { ...b, selected: typeof b.selected === 'string' ? b.selected : null } : null))
+    } catch { /* fresh start */ }
     document.body.append(this.root)
     this.render()
   }
@@ -76,7 +80,7 @@ export class Palette {
   private active = 0
   isOpen = false
 
-  constructor(private tree: Tree, private commands: () => Command[], private warp: (i: number, shift: boolean) => void) {
+  constructor(public tree: Tree, private commands: () => Command[], private warp: (i: number, shift: boolean) => void) {
     this.input.placeholder = 'Travel to…  (type to search, > for commands, Shift+Enter routes from the selection)'
     this.root.append(this.input, this.list)
     document.body.append(this.root)
@@ -204,7 +208,7 @@ export class Tooltips {
   private inside = false
   private linkTimer = 0
 
-  constructor(private tree: Tree, private relations: (i: number) => { out: { other: number; title: string }[]; inn: { other: number; title: string }[] }, private go: (i: number) => void, private clock: () => number) {}
+  constructor(public tree: Tree, private relations: (i: number) => { out: { other: number; title: string }[]; inn: { other: number; title: string }[] }, private go: (i: number) => void, private clock: () => number) {}
 
   /** Call every frame with the card under the pointer. */
   /** `node` is -1 when the pointer is off the map, which includes being over a tooltip. */
@@ -274,7 +278,7 @@ export class Tooltips {
 export class RoutePanel {
   private root = el('div', 'routepanel panel')
   onStep: (k: number) => void = () => {}
-  constructor(private tree: Tree) { document.body.append(this.root) }
+  constructor(public tree: Tree) { document.body.append(this.root) }
 
   show(route: Hop[] | null, step: number) {
     this.root.hidden = !route

@@ -81,7 +81,7 @@ describe('placeWorld', () => {
     for (let i = 0; i < tree.size; i++) {
       const c = tree.children[i]
       if (!c.length) continue
-      local.set(i, { id: i, w: 300 * c.length, h: 200, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), routes: [] })
+      local.set(i, { id: i, w: 300 * c.length, h: 200, children: c, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), routes: [] })
     }
     const w = placeWorld(tree, local)
     for (let i = 1; i < tree.size; i++) {

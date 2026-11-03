@@ -51,8 +51,8 @@ export function findRoute(tree: Tree, a: number, b: number): Hop[] | null {
   return null
 }
 
-/** A camera view to come back to. */
-export interface View { x: number; y: number; z: number; selected: number }
+/** A camera view to come back to; the selection is an element id, stable across model versions. */
+export interface View { x: number; y: number; z: number; selected: string | null }
 
 /** Back/forward through places visited, like a browser or an RPG's "return to last location". */
 export class History {

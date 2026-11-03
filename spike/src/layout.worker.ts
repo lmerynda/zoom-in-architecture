@@ -46,7 +46,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       const r = grid.route(rect(e.s), rect(e.t), used)
       return r ? [{ s: e.s, t: e.t, ...r }] : []
     })
-    return { id: job.id, w: c.width!, h: c.height!, pos, routes }
+    return { id: job.id, w: c.width!, h: c.height!, children: job.children, pos, routes }
   })
 }
 

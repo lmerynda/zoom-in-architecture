@@ -17,11 +17,17 @@ export class EdgeRouter {
 
   constructor(private tree: Tree, private world: World) {}
 
+  /** Forgets routes that depend on world positions, while those positions are animating. */
+  invalidate() {
+    this.exits.clear()
+    this.composed.clear()
+  }
+
   private grid(container: number) {
     let g = this.grids.get(container)
     if (!g) {
       const L = this.world.local.get(container)!
-      const cards = this.tree.children[container].map((_, k) => ({ x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: CARD_W, h: CARD_H }))
+      const cards = L.children.map((_, k) => ({ x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: CARD_W, h: CARD_H }))
       g = new ChannelGrid(cards, GUTTER / 2)
       this.grids.set(container, g)
     }
@@ -30,8 +36,8 @@ export class EdgeRouter {
 
   private localRect(child: number) {
     const p = this.tree.parent[child]
-    const k = this.tree.children[p].indexOf(child)
     const L = this.world.local.get(p)!
+    const k = L.children.indexOf(child)
     return { x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: CARD_W, h: CARD_H }
   }
 

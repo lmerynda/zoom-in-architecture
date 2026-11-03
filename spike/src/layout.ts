@@ -31,7 +31,9 @@ export interface LocalLayout {
   id: number
   w: number
   h: number
-  /** x, y per child, same order as the job's children. */
+  /** Children in the order they were laid out; pos follows this order. */
+  children: number[]
+  /** x, y per child, in `children` order. */
   pos: number[]
   routes: SiblingRoute[]
 }
@@ -96,7 +98,7 @@ export function placeWorld(tree: Tree, local: Map<number, LocalLayout>): World {
       oy = b.y + (b.h - L.h * s) / 2
     }
     content.set([ox, oy, s], i * 3)
-    tree.children[i].forEach((c, k) => {
+    L.children.forEach((c, k) => {
       rect.set([ox + L.pos[k * 2] * s, oy + L.pos[k * 2 + 1] * s, CARD_W * s, CARD_H * s], c * 4)
     })
   }

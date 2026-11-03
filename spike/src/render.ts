@@ -25,6 +25,7 @@ const OUT = 0xfbbf24
 const IN = 0x22d3ee
 const ROUTE = 0x4ade80
 const PIN = 0xf472b6
+const FLASH_MS = 3200
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -123,6 +124,8 @@ export class Renderer {
   pins: { node: number; note: string }[] = []
   private routeG = new Graphics()
   private markers: Chip[] = []
+  /** Cards changed by a live model update glow for a while: green added, amber changed. */
+  flash = new Map<number, { color: number; t0: number }>()
   /** Active lens, or null for the structure view. */
   lens: Lens | null = null
   hover = -1
@@ -368,6 +371,8 @@ export class Renderer {
     const dim = (this.selected > 0 || this.route) && this.related[i] !== this.frameNo ? 0.32 : 1
     const ends = this.endpoint[i] === this.frameNo && !sel
     const endColor = this.endKind[i] === 2 ? IN : OUT
+    const fl = this.flash.get(i)
+    const flashA = fl ? Math.max(0, 1 - (this.time - fl.t0) / FLASH_MS) : 0
     const cards = this.cardLayers[d]
 
     const heat = this.lens ? heatColor(this.lens.heat[i]) : -1
@@ -376,7 +381,7 @@ export class Renderer {
       p.visible = true
       p.position.set(x, y)
       p.width = w; p.height = h
-      p.tint = sel ? 0xffffff : ends ? endColor : heat >= 0 ? mix(heat, BG, isContainer ? 0.45 : 0.15) : mix(color, BG, isContainer ? 0.55 : 0.35)
+      p.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : heat >= 0 ? mix(heat, BG, isContainer ? 0.45 : 0.15) : mix(color, BG, isContainer ? 0.55 : 0.35)
       p.alpha = alpha * dim
       return
     }
@@ -411,17 +416,17 @@ export class Renderer {
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
-    border.tint = sel ? 0xffffff : ends ? endColor : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
+    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
     border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : isContainer ? 0.55 : 0.45) * dim
 
-    if (sel || ends) {
+    if (sel || ends || flashA > 0.02) {
       const glow = v.glow!
       const sp = Math.min(26, Math.max(10, w * 0.06))
       glow.visible = true
       glow.position.set(x - sp, y - sp)
       glow.width = w + sp * 2; glow.height = h + sp * 2
-      glow.tint = sel ? 0xffffff : endColor
-      glow.alpha = alpha * (sel ? 0.75 : 0.6)
+      glow.tint = sel ? 0xffffff : ends ? endColor : fl!.color
+      glow.alpha = alpha * (sel ? 0.75 : ends ? 0.6 : 0.85 * flashA * (0.75 + 0.25 * Math.sin(this.time / 120)))
     }
 
     const texts = this.textLayers[d]
@@ -757,6 +762,11 @@ export class Renderer {
     c.text.tint = 0x1f0614
     c.text.position.set(px + 7, py + (ch - 12 * 1.25) / 2)
     c.bg.visible = c.text.visible = true
+  }
+
+  /** Removes everything this renderer drew, when a new model version replaces it. */
+  destroy() {
+    this.stage.destroy({ children: true })
   }
 
   /** Screen rect of a node, for overlays positioned by the controls. */

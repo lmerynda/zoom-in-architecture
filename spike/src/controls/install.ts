@@ -31,7 +31,9 @@ export interface Ctx {
  * palette, control groups, history, target cycling, routes, pins and tooltips.
  */
 export function installControls(c: Ctx) {
-  const { tree, world, cam, renderer, sound } = c
+  const { cam, sound } = c
+  // The model can be swapped live; every closure below reads these, and swap() reassigns them.
+  let tree = c.tree, world = c.world, renderer = c.renderer
   const toast = new Toast()
   const history = new History()
   const help = new Help()
@@ -39,10 +41,11 @@ export function installControls(c: Ctx) {
   const routePanel = new RoutePanel(tree)
   const bookmarks = new BookmarkBar(`zoom:bookmarks:${c.model}`)
   const pinKey = `zoom:pins:${c.model}`
-  try { renderer.pins = (JSON.parse(localStorage.getItem(pinKey) ?? '[]') as { id: string; note: string }[]).map(p => ({ node: tree.byId.get(p.id) ?? -1, note: p.note })).filter(p => p.node > 0) } catch { /* none */ }
+  const loadPins = () => { try { renderer.pins = (JSON.parse(localStorage.getItem(pinKey) ?? '[]') as { id: string; note: string }[]).map(p => ({ node: tree.byId.get(p.id) ?? -1, note: p.note })).filter(p => p.node > 0) } catch { /* none */ } }
+  loadPins()
   const savePins = () => { try { localStorage.setItem(pinKey, JSON.stringify(renderer.pins.map(p => ({ id: tree.els[p.node].id, note: p.note })))) } catch { /* private mode */ } }
 
-  const view = (): View => ({ x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected })
+  const view = (): View => ({ x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected > 0 ? tree.els[renderer.selected].id : null })
   /** Every jump records where you were, so Backspace brings you back. */
   const go = (i: number) => {
     history.push(view(), cam.w)
@@ -59,7 +62,7 @@ export function installControls(c: Ctx) {
   const goView = (v: View) => {
     cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
     sound.whoosh(cam.flightMs / 1000)
-    c.select(v.selected)
+    c.select(v.selected ? tree.byId.get(v.selected) ?? -1 : -1)
   }
   const back = () => { const v = history.goBack(view()); if (v) { goView(v); toast.show('Back', 'Alt+→ forward') } else toast.show('No earlier place') }
   const forward = () => { const v = history.goForward(view()); if (v) goView(v) }
@@ -264,7 +267,8 @@ export function installControls(c: Ctx) {
       e.preventDefault()
       if (e.ctrlKey || e.metaKey) return saveSlot(slot)
       // Double tap, like an RTS control group: also selects what the view was about.
-      if (lastRecall.slot === slot && performance.now() - lastRecall.at < 400 && bookmarks.slots[slot]) { c.select(bookmarks.slots[slot]!.selected) }
+      const again = bookmarks.slots[slot]
+      if (lastRecall.slot === slot && performance.now() - lastRecall.at < 400 && again?.selected) c.select(tree.byId.get(again.selected) ?? -1)
       return recallSlot(slot)
     }
     if (k === '?') return help.toggle()
@@ -334,6 +338,15 @@ export function installControls(c: Ctx) {
       const p = renderer.pointer
       tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || picking)
     },
-    go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, saveSlot, recallSlot, palette, radial, help,
+    go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, saveSlot, recallSlot, palette, radial, help, toast,
+    /** Points every control at a new model version; the caller carries selection, route and target over. */
+    swap(next: { tree: typeof tree; world: typeof world; renderer: typeof renderer }) {
+      tree = next.tree; world = next.world; renderer = next.renderer
+      palette.tree = tree; tooltips.tree = tree; routePanel.tree = tree
+      tooltips.closeAll()
+      loadPins()
+      cycle = null
+      routePanel.show(renderer.route, renderer.routeStep)
+    },
   }
 }

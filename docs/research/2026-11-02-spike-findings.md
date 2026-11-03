@@ -104,6 +104,22 @@ The motion work from the same pass stays, but secondary:
 - the altimeter and region banner;
 - lenses.
 
+## Live mode, and layout stability across edits
+
+The spike's open question was whether positions survive model edits, not just zooming. With live mode they mostly do:
+
+- **Layouts are reused.** The viewer diffs model versions by element id. A container whose children and sibling edges did not change keeps its previous layout exactly; only changed containers run ELK again.
+  - Adding one service to Acme redid 2 of 28 layouts, and 0 of 80 elements outside the edited domain moved.
+  - Re-scanning Galaxy Wars with no code change redid 0 of 94, and the swap took 25 ms.
+- **Child order is stable.** Rectpacking places children in input order, so the first version inserted the new service first and reflowed every sibling; the selected card jumped 300 px. Laying out children in their previous order, with new ones appended, keeps siblings in place as far as the packing allows.
+- **The camera holds still.** It is anchored on the selection, or on what is under the screen centre, and moves with it during the morph. In the test the selected card stayed exactly in place (0 px).
+- **The update is fast.** It lands 0.7–0.9 s after saving a .c4 file: extraction is about 0.4 s, the swap about 0.2 s.
+- **State carries over.** Selection, target, route, pins, bookmarks and history all follow the new version. They are keyed by element id, not index; history and bookmarks used to store indices, which would have broken across versions (and across page reloads after an edit).
+
+Two environment lessons:
+- Vite's watcher does not report files outside its module graph, such as the .c4 sources. The plugin uses Node's recursive `fs.watch` instead.
+- The plugin must not start under Vitest, or the test run cannot exit.
+
 ## Known rough edges
 
 - **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.
