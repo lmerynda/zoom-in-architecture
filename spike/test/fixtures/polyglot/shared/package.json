@@ -1,0 +1,1 @@
+{ "name": "shared", "main": "index.js", "description": "Helpers shared by front ends." }

@@ -7,6 +7,7 @@ import { layoutJobs, placeWorld, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
+import { renderModelTabs } from './models'
 import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 import { Renderer } from './render'
@@ -32,6 +33,7 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 async function main() {
   const t0 = performance.now()
+  renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'))
   const model = await loadModel()
   // The current model version; live updates replace all four.
   let tree = new Tree(model)

@@ -56,20 +56,18 @@ The three questions the spike was for:
 - **Previews from 1.5 px stop popping.** The design choice that matters most is to open on legibility (child card width), not at fixed zoom levels.
 - **LikeC4 works as a data layer.** Extraction takes about 200 ms per workspace. `fromWorkspace` keeps the process alive (a watcher), so the CLI must dispose and exit.
 
-## A real codebase: Galaxy Wars
+## Real codebases, imported from code
 
-`scripts/scan-galaxy-wars.mjs` generates a LikeC4 model of the Galaxy Wars repository straight from its code:
-- **Size:** 717 elements (621 files, 30 folders, 42 name clusters) and 3,261 relations.
-- **Levels:** system → area → project → folder → cluster → file.
-- **Descriptions:** each file's `/// <summary>`.
-- **Relations:** type references between files, limited to the projects each project references. The WebSocket, TCP and database seams are declared by hand.
-
-Layout takes 325 ms, and frames take 1.6 ms p50 / 4.6 ms p95 with the busiest class selected (`SectorRuntime`, 136 outgoing relations).
+`scripts/import-code.mjs` turns a repository into a model straight from its code: projects from manifests (.csproj, Cargo.toml, package.json, Unity), relations from references between files. A config can add what code cannot show: actors, databases and network seams. It was proven on a private game codebase (C# server and tools, a Rust/Wasm browser client, a Unity client):
+- **Size:** 28 projects, 1,255 files, 1,421 elements and 8,658 relations, imported in about 0.5 s.
+- **Speed in the viewer:** layout takes 372 ms, and frames take 0.6 ms p50 / 0.9 ms p95 at the landscape.
 
 What it taught:
-- **Clustering by name prefix makes big flat folders readable.** The server's Simulation folder (79 files) becomes Experiences, Sector, Mining, Snapshot and Pilot. The Unity client (135 scripts) becomes Flight, Mission, Sector, Hangar and so on. Folders whose names share no prefixes stay flat rather than collapse into one "Other".
-- **File-level type references give useful relations without any annotation.** Selecting the Browser Bridge shows exactly the WebSocket inbound from the browser client and its use of Client Transport and the shared contracts.
+- **Clustering by name prefix makes big flat folders readable.** A 79-file simulation folder became five clusters by name prefix. Folders whose names share no prefixes stay flat rather than collapse into one "Other".
+- **File-level references give useful relations without any annotation.** Selecting a relay service showed exactly its inbound WebSocket and the shared contracts it uses.
 - **Real names exposed a bug the sample models hid.** Labels were fitted against their already-scaled width, so long class names overflowed. Labels are now fitted by natural width, and edge labels are capped to fit the gaps between cards.
+- **Generated ids must avoid the DSL's keywords.** A file named `Order` became the id `order`, a LikeC4 keyword, and the model failed to compile. The importer now reserves every keyword in LikeC4's grammar.
+- **The first version was a scanner for one repository**, with its projects and seams written into the script. Making it generic moved that knowledge into a config that stays with the user, so the tool holds no project's data.
 
 ## Game-style controls
 
@@ -87,7 +85,7 @@ The goal is the control vocabulary of games, not their graphics. Each borrowed p
 | "Let me just move around" | RTS minimap | Minimap click and drag; arrow keys |
 | "Get me out of this" | Layered Esc | Closes the innermost layer first |
 
-All of these were driven with real mouse and keyboard input by `scripts/ux-tour.mjs`, and recorded by `scripts/record.mjs gw-controls`. Driving them found three real bugs:
+All of these were driven with real mouse and keyboard input by `scripts/ux-tour.mjs`, and recorded by `scripts/record.mjs acme-controls`. Driving them found three real bugs:
 - The closed palette kept keyboard focus and swallowed every later key.
 - Moving onto a tooltip counted as leaving the map and closed it.
 - Back restored the place but not the selection, because the jump was recorded after the selection changed.
@@ -124,7 +122,7 @@ The spike's open question was whether positions survive model edits, not just zo
 
 - **Layouts are reused.** The viewer diffs model versions by element id. A container whose children and sibling edges did not change keeps its previous layout exactly; only changed containers run ELK again.
   - Adding one service to Acme redid 2 of 28 layouts, and 0 of 80 elements outside the edited domain moved.
-  - Re-scanning Galaxy Wars with no code change redid 0 of 94, and the swap took 25 ms.
+  - Re-importing a large codebase with no code change redid 0 of 94 layouts, and the swap took 25 ms.
 - **Child order is stable.** Rectpacking places children in input order, so the first version inserted the new service first and reflowed every sibling; the selected card jumped 300 px. Laying out children in their previous order, with new ones appended, keeps siblings in place as far as the packing allows.
 - **The camera holds still.** It is anchored on the selection, or on what is under the screen centre, and moves with it during the morph. In the test the selected card stayed exactly in place (0 px).
 - **The update is fast.** It lands 0.7–0.9 s after saving a .c4 file: extraction is about 0.4 s, the swap about 0.2 s.

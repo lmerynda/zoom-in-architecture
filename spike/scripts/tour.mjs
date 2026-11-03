@@ -1,8 +1,9 @@
-// Scripted screenshot tour of the Acme model and the 10k synthetic model.
+// Scripted screenshot tour of the Acme model, this repository imported as code, and the 10k synthetic model.
 // usage: node scripts/tour.mjs [outDir]   (dev server running; DPR env sets device pixel ratio)
 import puppeteer from 'puppeteer-core'
-import { existsSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { SELF, selfImport } from './self-import.mjs'
 
 const outDir = process.argv[2] ?? 'shots/tour'
 const base = process.env.SPIKE_URL ?? 'http://localhost:5180/'
@@ -92,30 +93,20 @@ await sheet.screenshot({ path: join(outDir, '00-zoom-sequence.png'), fullPage: t
 await sheet.close()
 console.log('shot 00-zoom-sequence')
 
-if (existsSync('public/models/galaxy-wars.json')) {
-  await select(null)
-  await open('model=galaxy-wars')
-  await page.mouse.move(1590, 990)
-  await shot('gw-01-landscape')
-  await fit('galaxyWars')
-  await page.mouse.move(1590, 990)
-  await shot('gw-02-system')
-  await fit('galaxyWars.server.gameServer')
-  await page.mouse.move(1590, 990)
-  await shot('gw-03-game-server')
-  await fit('galaxyWars.server.gameServer.simulation')
-  await page.mouse.move(1590, 990)
-  await shot('gw-04-simulation')
-  await select('galaxyWars.server.gameServer.simulation.sector.sectorRuntime')
-  await fit('galaxyWars.server.gameServer.simulation.sector')
-  await page.mouse.move(1590, 990)
-  await shot('gw-05-sector-runtime-selected')
-  await select('galaxyWars.clients.browserBridge')
-  await fit('galaxyWars.clients')
-  await page.mouse.move(1590, 990)
-  await shot('gw-06-clients-bridge-selected')
-  await select(null)
-}
+// A real codebase: this repository, imported.
+selfImport()
+await select(null)
+await open(`model=${SELF}`)
+await page.mouse.move(1590, 990)
+await shot('code-01-landscape')
+await fit('zoomInArchitecture.zoomSpike.src')
+await page.mouse.move(1590, 990)
+await shot('code-02-src')
+await select('zoomInArchitecture.zoomSpike.src.controls.install')
+await fit('zoomInArchitecture.zoomSpike.src.controls')
+await page.mouse.move(1590, 990)
+await shot('code-03-controls-selected')
+await select(null)
 
 await open('model=synthetic&n=10000')
 await page.mouse.move(1590, 500)

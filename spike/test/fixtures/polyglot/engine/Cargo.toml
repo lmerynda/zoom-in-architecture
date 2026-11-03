@@ -1,0 +1,3 @@
+[package]
+name = "game-engine"
+description = "Physics and rules."

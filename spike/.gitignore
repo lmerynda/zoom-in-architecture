@@ -2,4 +2,5 @@ node_modules/
 dist/
 public/models/
 shots/
-model/galaxy-wars/
+# Local imports of other codebases (scripts/import-code.mjs) and their configs.
+imports/

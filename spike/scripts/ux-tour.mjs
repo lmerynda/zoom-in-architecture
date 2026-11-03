@@ -18,7 +18,7 @@ const errors = []
 page.on('pageerror', e => errors.push(String(e)))
 page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
 const sleep = ms => new Promise(r => setTimeout(r, ms))
-await page.goto(`${base}?model=galaxy-wars`, { waitUntil: 'load' })
+await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
 await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
 await page.evaluate(() => localStorage.clear())
 await sleep(500)
@@ -47,7 +47,7 @@ const wheel = async (id, label) => {
 // 1. Command palette: type a few letters, fuzzy results.
 await key('k', ['Control'])
 await sleep(200)
-await page.keyboard.type('secrun', { delay: 40 })
+await page.keyboard.type('chkout', { delay: 40 })
 await sleep(300)
 await shot('01-palette')
 await key('Enter')
@@ -55,7 +55,7 @@ await landed()
 await sleep(400)
 await shot('02-palette-travelled')
 
-// 2. Target cycling: look at what SectorRuntime calls without losing it.
+// 2. Target cycling: look at what Checkout calls without losing it.
 await key(']'); await landed(); await key(']'); await landed()
 await shot('03-target-cycling')
 await key('Enter'); await landed()
@@ -66,7 +66,7 @@ await key('Backspace'); await landed()
 await shot('05-back')
 
 // 4. Radial command wheel on a card.
-const [rx, ry] = await centre('galaxyWars.server.gameServer.simulation.sector.sectorRegistry')
+const [rx, ry] = await centre('acme.ordering.checkout')
 await page.mouse.move(rx, ry)
 await page.mouse.click(rx, ry, { button: 'right' })
 await sleep(350)
@@ -76,9 +76,9 @@ await shot('07-radial-wheel')
 await key('Escape')
 
 // 5. Route: select a start, then "Route here" on the destination's wheel; click a stop to go there.
-await page.evaluate(() => { const s = window.__spike; s.select(s.id('galaxyWars.clients.browserClient.session')); s.fly(0) })
+await page.evaluate(() => { const s = window.__spike; s.select(s.id('acme.storefront.web')); s.fly(s.id('acme')) })
 await landed()
-await wheel('galaxyWars.postgreSQL', 'Route here')
+await wheel('acme.payments', 'Route here')
 await landed()
 await sleep(500)
 await shot('08-route')
@@ -87,9 +87,9 @@ await shot('09-route-waypoint')
 await key('Escape'); await key('Escape')
 
 // 6. Nested tooltips: hover, hold to lock, hover a name inside.
-await page.evaluate(() => { const s = window.__spike; s.select(-1); s.fly(s.id('galaxyWars.server.gameServer.transport')) })
+await page.evaluate(() => { const s = window.__spike; s.select(-1); s.fly(s.id('acme.ordering')) })
 await landed()
-const [tx, ty] = await centre('galaxyWars.server.gameServer.transport.tcpGameServer')
+const [tx, ty] = await centre('acme.ordering.checkout')
 await page.mouse.move(tx, ty)
 await sleep(1600)
 const link = await page.$('.tip .tip-link')
@@ -99,9 +99,9 @@ await page.mouse.move(5, 500)
 await sleep(300)
 
 // 7. Pins, from the wheel, point the way when off screen.
-await wheel('galaxyWars.server.gameServer.transport.tcpGameServer', 'Pin')
+await wheel('acme.ordering.checkout', 'Pin')
 await sleep(200)
-await page.evaluate(() => { const s = window.__spike; s.fly(s.id('galaxyWars.tooling.devTool')) })
+await page.evaluate(() => { const s = window.__spike; s.fly(s.id('acme.customer')) })
 await landed()
 await page.mouse.move(5, 500)
 await sleep(300)

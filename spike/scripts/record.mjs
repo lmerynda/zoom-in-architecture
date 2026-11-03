@@ -4,6 +4,7 @@
 import puppeteer from 'puppeteer-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { SELF, selfImport } from './self-import.mjs'
 
 const base = process.env.SPIKE_URL ?? 'http://localhost:5180/'
 const outDir = 'shots/video'
@@ -118,44 +119,45 @@ async function record(name, model, script) {
   await page.close()
 }
 
-const SR = 'galaxyWars.server.gameServer.simulation.sector.sectorRuntime'
+// Code-level scenes run on this repository, imported as a model (see scripts/self-import.mjs).
+const FILE = 'zoomInArchitecture.zoomSpike.src.controls.install'
 const scenes = {
-  // One continuous dive from the landscape to a single class, then lock on to it.
-  'gw-dive': () => record('gw-dive', 'galaxy-wars', async s => {
+  // One continuous dive from the landscape to a single file, then lock on to it.
+  'code-dive': () => { selfImport(); return record('code-dive', SELF, async s => {
     await s.hold(800)
-    await s.dive(SR, 14, 1.15)
+    await s.dive(FILE, 14, 1.15)
     await s.hold(500)
-    await s.select(SR)
+    await s.select(FILE)
     await s.hold(3200)
-  }),
+  }) },
   // Far jumps between distant elements: pull back, glide, dive in, with warp streaks.
-  'gw-warp': () => record('gw-warp', 'galaxy-wars', async s => {
-    await s.fly(SR)
+  'acme-warp': () => record('acme-warp', 'acme', async s => {
+    await s.fly('acme.ordering.checkout')
     await s.land(200)
-    await s.select(SR)
+    await s.select('acme.ordering.checkout')
     await s.hold(1200)
-    await s.select('galaxyWars.clients.browserBridge')
-    await s.fly('galaxyWars.clients.browserBridge')
+    await s.select('acme.fulfilment.shipping')
+    await s.fly('acme.fulfilment.shipping')
     await s.land(1800)
-    await s.select('galaxyWars.tooling.devTool')
-    await s.fly('galaxyWars.tooling.devTool')
+    await s.select('acme.customer.notify')
+    await s.fly('acme.customer.notify')
     await s.land(1800)
     await s.select(null)
     await s.fly(null)
     await s.land(1200)
   }),
-  // Strategy-game lenses over the server.
-  'gw-lenses': () => record('gw-lenses', 'galaxy-wars', async s => {
-    await s.fly('galaxyWars.server')
+  // Strategy-game lenses over the spike's own code: lines, coupling and git churn.
+  'code-lenses': () => { selfImport(); return record('code-lenses', SELF, async s => {
+    await s.fly('zoomInArchitecture.zoomSpike.src')
     await s.land(1000)
     for (const l of ['size', 'coupling', 'churn', 'structure']) { await s.lens(l); await s.hold(1800) }
-  }),
+  }) },
   // The game-style controls in use: palette travel, target cycling, walk, back, the command
   // wheel, a route from the wheel with its waypoints, and the controls screen.
-  'gw-controls': () => record('gw-controls', 'galaxy-wars', async s => {
+  'acme-controls': () => record('acme-controls', 'acme', async s => {
     await s.hold(700)
     await s.key('k', ['Control'])
-    await s.type('secrun')
+    await s.type('chkout')
     await s.hold(700)
     await s.key('Enter')
     await s.land(900)
@@ -163,16 +165,16 @@ const scenes = {
     await s.key(']'); await s.land(1300)
     await s.key('Enter'); await s.land(1100)
     await s.key('Backspace'); await s.land(1100)
-    const [rx, ry] = await s.at('galaxyWars.server.gameServer.simulation.sector.sectorRegistry')
+    const [rx, ry] = await s.at('acme.ordering.checkout')
     await s.move(rx, ry, 500)
     await s.click('right')
     await s.hold(400)
     await s.move(rx + 92, ry - 40, 350)
     await s.hold(900)
     await s.key('Escape')
-    await s.select('galaxyWars.clients.browserBridge')
-    await s.fly(null); await s.land(500)
-    const [dx, dy] = await s.at('galaxyWars.postgreSQL')
+    await s.select('acme.storefront.web')
+    await s.fly('acme'); await s.land(500)
+    const [dx, dy] = await s.at('acme.payments')
     await s.move(dx, dy, 600)
     await s.click('right')
     await s.hold(500)
@@ -180,7 +182,7 @@ const scenes = {
     await s.move(ix, iy, 350)
     await s.click()
     await s.land(1600)
-    for (const k of [2, 3, 4]) {
+    for (const k of [1, 2]) {
       const [px, py] = await s.centreOf(`.rp-stop:nth-of-type(${k + 1})`)
       await s.move(px, py, 300)
       await s.click()

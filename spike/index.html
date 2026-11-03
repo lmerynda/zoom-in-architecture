@@ -17,6 +17,10 @@
     #models { display: flex; gap: 2px; padding: 3px; }
     #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; }
     #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
+    #models a.imported { color: #fde68a; }
+    #models button { background: none; border: 1px dashed #334155; color: var(--dim); font: inherit; padding: 4px 9px; border-radius: 7px; cursor: pointer; margin-left: 4px; }
+    #models button:hover { color: var(--accent); border-color: rgba(251, 191, 36, 0.5); }
+    .import-status { color: #94a3b8; padding: 12px 18px; font-size: 13px; }
     #crumbs { position: fixed; top: 64px; left: 24px; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
     #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
@@ -137,14 +141,7 @@
   <div id="stage"></div>
   <div id="top" class="panel">
     <div id="brand" class="panel" style="position: static">Zoom spike</div>
-    <nav id="models" class="panel" style="position: static">
-      <a href="?model=galaxy-wars">Galaxy Wars</a>
-      <a href="?model=acme">Acme</a>
-      <a href="?model=boutique">Boutique</a>
-      <a href="?model=bigbank">Big Bank</a>
-      <a href="?model=synthetic&n=1000">1k</a>
-      <a href="?model=synthetic&n=10000">10k</a>
-    </nav>
+    <nav id="models" class="panel" style="position: static"></nav>
     <button id="travel">Travel to…<kbd>Ctrl K</kbd></button>
     <button id="sound">Sound off</button>
   </div>
@@ -153,10 +150,6 @@
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
   <div id="help">scroll to zoom · drag to pan · right-click: command wheel · Ctrl K: travel · ] [: look around · ⌫: back · ?: controls</div>
-  <script>
-    const q = location.search || '?model=acme'
-    for (const a of document.querySelectorAll('#models a')) if (a.getAttribute('href') === q) a.className = 'on'
-  </script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
