@@ -98,7 +98,13 @@ function discover(repo, files) {
   return projects
 }
 
-/** JS/TS module resolution: relative paths, tsconfig paths and baseUrl, the repo's own packages. */
+/** The module code of a page's inline scripts. */
+const inlineScripts = html => [...html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n')
+
+/**
+ * JS/TS module resolution: relative paths, tsconfig paths and baseUrl, the repo's own packages,
+ * and wasm-pack output (pkg/<crate>.js) back to the Rust crate it is built from.
+ */
 function jsResolver(repo, projects, fileSet, allSet) {
   const tryExts = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js', '/index.jsx', '/index.mjs']
   const find = base => {
@@ -123,24 +129,45 @@ function jsResolver(repo, projects, fileSet, allSet) {
     const main = (typeof ex === 'string' ? ex : ex?.['.']?.import ?? ex?.['.']?.default ?? (typeof ex?.['.'] === 'string' ? ex['.'] : null)) ?? p.pkg?.module ?? p.pkg?.main
     return (main && find(posix.join(p.dir, main))) || find(posix.join(p.dir, 'src/index')) || find(posix.join(p.dir, 'index'))
   }
+  const crates = projects.filter(p => p.lang === 'rs')
+  const wasmPkg = spec => {
+    const name = spec.match(/(?:^|\/)pkg\/([\w-]+)\.js$/)?.[1]?.replace(/-/g, '_')
+    const c = name && crates.find(x => x.crate === name)
+    return c ? ['lib.rs', 'main.rs'].map(f => `${c.root}/${f}`).find(f => allSet.has(f)) ?? null : null
+  }
   return {
     find,
     resolve(from, spec, owner) {
-      if (spec.startsWith('.')) return find(posix.join(dirOf(from), spec))
+      if (spec.startsWith('.')) return find(posix.join(dirOf(from), spec)) ?? wasmPkg(spec)
       if (spec.startsWith('/')) return owner ? find(posix.join(owner.dir, spec.slice(1))) : null
       for (const a of owner?.aliases ?? []) if (spec.startsWith(a.prefix)) { const r = find(posix.join(a.base, a.to, spec.slice(a.prefix.length))); if (r) return r }
       const p = pkgs.find(x => x !== owner && (spec === x.name || spec.startsWith(`${x.name}/`)))
       if (p) return spec === p.name ? entryOf(p) : find(posix.join(p.dir, spec.slice(p.name.length + 1)))
       return owner?.baseUrl ? find(posix.join(owner.baseUrl, spec)) : null
     },
-    /** Where a package's app starts: index.html scripts, package.json entries, npm scripts. */
-    entries(p) {
-      const out = new Set()
-      const add = rel => { const f = find(posix.join(p.dir, rel)); if (f) out.add(f) }
-      for (const html of ['index.html', 'public/index.html', 'src/index.html']) {
-        const f = posix.join(p.dir, html)
-        if (allSet.has(f)) for (const m of readFileSync(join(repo, f), 'utf8').matchAll(/<script[^>]*\bsrc=["']([^"']+)["']/g)) if (!/^https?:/.test(m[1])) add(m[1].replace(/^\//, ''))
+    /**
+     * Every page in the repo: its local script files are entry points, and a page with inline
+     * module code is an application file itself, whose imports are followed.
+     */
+    pages() {
+      const scripts = [], inline = []
+      for (const page of [...allSet].filter(f => extOf(f) === '.html' && !TEST.test(f))) {
+        const html = readFileSync(join(repo, page), 'utf8')
+        const pkg = pkgs.filter(p => under(page, p.dir)).sort((a, b) => b.dir.length - a.dir.length)[0]
+        for (const m of html.matchAll(/<script[^>]*\bsrc=["']([^"']+)["']/g)) {
+          if (/^(https?:)?\/\//.test(m[1])) continue
+          // A leading slash means the page's server root: the page's folder, or its package's.
+          const f = m[1].startsWith('/') ? find(posix.join(dirOf(page), m[1].slice(1))) ?? (pkg && find(posix.join(pkg.dir, m[1].slice(1)))) : find(posix.join(dirOf(page), m[1]))
+          if (f) scripts.push(f)
+        }
+        if (/\bimport\b/.test(inlineScripts(html))) inline.push(page)
       }
+      return { scripts, inline }
+    },
+    /** Where a package's app starts: its pages' scripts, package.json entries, npm scripts. */
+    entries(p, pageScripts) {
+      const out = new Set(pageScripts.filter(f => under(f, p.dir)))
+      const add = rel => { const f = find(posix.join(p.dir, rel)); if (f) out.add(f) }
       const e = entryOf(p)
       if (e && (p.pkg?.main || p.pkg?.module || p.pkg?.exports)) out.add(e)
       const bin = p.pkg?.bin
@@ -158,6 +185,7 @@ function jsResolver(repo, projects, fileSet, allSet) {
 }
 
 function summary(src, lang) {
+  if (lang === 'html') return src.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? ''
   if (lang === 'cs') {
     const m = src.match(/\/\/\/\s*<summary>([\s\S]*?)<\/summary>/)
     return m ? m[1].replace(/^\s*\/\/\/\s?/gm, ' ').replace(/<see\s+cref="(?:[A-Z]:)?([^"]+)"\s*\/>/g, '$1').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() : ''
@@ -189,8 +217,8 @@ function summary(src, lang) {
 const HINTS = [
   ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
-  ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|:\s*DbContext\b.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
-  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
+  ['store', /\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
+  ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
   ['process', /\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new)\s*\(.*/],
   // Files one process writes for another to read.
   ['file', /\b(writeFileSync|writeFile|renameSync|createWriteStream|File\.(WriteAll\w+|Move)|Files\.(write|move))\s*\(.*/],
@@ -236,7 +264,7 @@ export function buildGraph(repo) {
   const rec = p => {
     if (!recs.has(p)) {
       const src = readFileSync(join(repo, p), 'utf8')
-      recs.set(p, { path: p, lang: LANG[extOf(p)], project: owner.get(p), src, edges: new Map() })
+      recs.set(p, { path: p, lang: extOf(p) === '.html' ? 'html' : LANG[extOf(p)], project: owner.get(p) ?? null, src, edges: new Map() })
     }
     return recs.get(p)
   }
@@ -259,20 +287,24 @@ export function buildGraph(repo) {
   // JS/TS: what the entry points reach through imports.
   const fileSet = new Set(candidates.filter(p => LANG[extOf(p)] === 'js'))
   const js = jsResolver(repo, projects, fileSet, new Set(all))
-  const entries = projects.filter(p => p.lang === 'js').flatMap(p => js.entries(p))
-  // Static and dynamic imports, require, and workers or assets loaded with new URL(…, import.meta.url).
-  const importSpec = /(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"](\.[^'"]+)['"]\s*,\s*import\.meta\.url/g
-  const queue = [...new Set(entries)]
+  const pages = js.pages()
+  const entries = [...pages.scripts, ...projects.filter(p => p.lang === 'js').flatMap(p => js.entries(p, pages.scripts))]
+  // Static and dynamic imports, require, workers or assets loaded with new URL(…, import.meta.url),
+  // and workers started from a path (new Worker('w.js'), serviceWorker.register('sw.js')).
+  const importSpec = /(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"](\.[^'"]+)['"]\s*,\s*import\.meta\.url|(?:serviceWorker\.register|new\s+(?:Shared)?Worker)\(\s*['"]([^'"]+)['"]/g
+  const queue = [...new Set([...entries, ...pages.inline])]
   const seen = new Set(queue)
   while (queue.length) {
     const f = rec(queue.shift())
-    const code = f.src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
+    const code = (f.lang === 'html' ? inlineScripts(f.src) : f.src).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ')
     for (const m of code.matchAll(importSpec)) {
-      const spec = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5]
+      // A worker path is a URL, so a bare name is relative to the file, not a package.
+      const spec = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? (m[6] && (/^[./]/.test(m[6]) ? m[6] : `./${m[6]}`))
       const target = js.resolve(f.path, spec, f.project)
       if (!target) continue
       relate(f, rec(target), spec.startsWith('.') ? posix.basename(spec).replace(/\.\w+$/, '') : spec)
-      if (!seen.has(target)) { seen.add(target); queue.push(target) }
+      // A Rust crate behind wasm-pack output is linked to, not read as JS.
+      if (!seen.has(target) && fileSet.has(target)) { seen.add(target); queue.push(target) }
     }
   }
 

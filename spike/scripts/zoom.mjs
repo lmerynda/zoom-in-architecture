@@ -1,6 +1,6 @@
 // Small commands for mapping a codebase, meant to be called by an agent (see .claude/skills/map-repo).
 // usage:
-//   node scripts/zoom.mjs graph <repo> [--json]           the application's file graph
+//   node scripts/zoom.mjs graph <repo> [--folders|--json] the application's file graph (--folders: an overview by folder)
 //   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
@@ -39,6 +39,24 @@ export function graphText(g) {
   return lines.join('\n')
 }
 
+/** A folder-level overview for large repos: each folder's size, hints, and the folders it references. */
+export function folderText(g) {
+  const dir = p => posix.dirname(p)
+  const folders = new Map()
+  for (const f of g.files) {
+    const d = folders.get(dir(f.path)) ?? { files: 0, lines: 0, hints: {}, out: new Map() }
+    d.files++
+    d.lines += f.lines
+    for (const h of f.hints) d.hints[h.kind] = (d.hints[h.kind] ?? 0) + 1
+    folders.set(dir(f.path), d)
+  }
+  for (const e of g.edges) if (dir(e.from) !== dir(e.to)) { const o = folders.get(dir(e.from)).out; o.set(dir(e.to), (o.get(dir(e.to)) ?? 0) + 1) }
+  return [
+    `${g.repo}: ${g.files.length} application files in ${folders.size} folders. Folder · files · lines · hints · → folders it references (references)`,
+    ...[...folders].map(([d, x]) => `${d}/ · ${x.files} · ${x.lines}${Object.keys(x.hints).length ? ` · ${Object.entries(x.hints).map(([k, n]) => `${n} ${k}`).join(', ')}` : ''}${x.out.size ? ` · → ${[...x.out].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} (${n})`).join(', ')}` : ''}`),
+  ].join('\n')
+}
+
 const report = r => {
   for (const n of r.tree) console.log(`${'  '.repeat(n.id.split('.').length - 1)}${n.id}  ${n.title} (${n.kind})${n.files ? `  ${n.files} files` : ''}`)
   for (const e of r.errors) console.log(`error: ${e}`)
@@ -51,12 +69,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const json = flag('--json'); args.name = name; args.json = json; return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const json = flag('--json'); const folders = flag('--folders'); Object.assign(args, { name, json, folders }); return args })()
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
     if (cmd === 'graph' && a) {
       const g = buildGraph(a)
-      console.log(args.json ? JSON.stringify(g, null, 1) : graphText(g))
+      console.log(args.json ? JSON.stringify(g, null, 1) : args.folders ? folderText(g) : graphText(g))
     } else if (cmd === 'check' && a && b) {
       const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
       report(r)

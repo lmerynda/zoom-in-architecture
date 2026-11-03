@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<head><title>Game</title></head>
+<body>
+<script type="module">
+  import init from './pkg/game_engine.js'
+  import { hud } from './hud.js'
+  await init()
+  hud()
+</script>
+</body>
+</html>

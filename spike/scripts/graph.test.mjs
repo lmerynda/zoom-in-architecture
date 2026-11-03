@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { graphText } from './zoom.mjs'
+import { folderText, graphText } from './zoom.mjs'
 
 const g = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const paths = g.files.map(f => f.path)
@@ -10,7 +10,7 @@ const edge = (from, to) => g.edges.find(e => e.from === from && e.to === to)
 describe('buildGraph', () => {
   it('keeps only application code: entry-reached JS/TS and what non-test projects compile', () => {
     expect(paths.sort()).toEqual([
-      'engine/src/lib.rs', 'engine/src/physics.rs', 'game/src/main.rs',
+      'engine/src/lib.rs', 'engine/src/physics.rs', 'game/src/main.rs', 'game/www/hud.js', 'game/www/index.html', 'game/www/sw.js',
       'server/src/main/java/com/shop/ShopApplication.java', 'server/src/main/java/com/shop/orders/OrderController.java',
       'server/src/main/java/com/shop/orders/OrderRepository.java', 'server/src/main/java/com/shop/orders/model/Order.java',
       'shared/index.js', 'src/Api/Controllers/OrdersController.cs', 'src/Core/Order.cs', 'src/Core/OrderService.cs',
@@ -27,6 +27,13 @@ describe('buildGraph', () => {
 
   it('finds entry points: index.html scripts, package entries and main methods', () => {
     expect(g.entries).toEqual(['game/src/main.rs', 'server/src/main/java/com/shop/ShopApplication.java', 'shared/index.js', 'web/src/main.ts'])
+  })
+
+  it('follows pages: inline module scripts, wasm-pack output back to its crate, service workers', () => {
+    expect(g.files.find(f => f.path === 'game/www/index.html')).toMatchObject({ lang: 'html', doc: 'Game' })
+    expect(edge('game/www/index.html', 'engine/src/lib.rs').names).toEqual(['game_engine'])
+    expect(edge('game/www/index.html', 'game/www/hud.js')).toBeTruthy()
+    expect(edge('game/www/hud.js', 'game/www/sw.js')).toBeTruthy()
   })
 
   it('lists config and deploy files, which name the other processes', () => {
@@ -73,7 +80,15 @@ describe('buildGraph', () => {
 
   it('prints a compact text listing for agents', () => {
     const text = graphText(g)
-    expect(text).toContain('14 application files, 11 references. Left out: 3 test files; 3 files no entry point reaches')
+    expect(text).toContain('17 application files, 14 references. Left out: 3 test files; 3 files no entry point reaches')
     expect(text).toContain('  main.ts · 6 · → api.ts, cart.ts, index.js · Starts the shop front end.')
+    expect(text).toContain('      :11 route @GetMapping("/api/orders")')
+  })
+
+  it('prints a folder overview for large repos', () => {
+    const text = folderText(g)
+    expect(text).toContain('17 application files in 11 folders')
+    expect(text).toContain('game/www/ · 3 · 18 · → engine/src (1)')
+    expect(text).toContain('server/src/main/java/com/shop/orders/ · 2 · 20 · 1 route, 1 store · → server/src/main/java/com/shop/orders/model (2)')
   })
 })

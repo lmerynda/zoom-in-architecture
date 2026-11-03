@@ -20,6 +20,8 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    - the config and deploy files;
    - every file with what it uses and what uses it;
    - under each file, the lines where it talks to another process: `route`, `call`, `store`, `schedule`, `socket`, `process` and `file`, each with its line number. These are your link evidence.
+
+   Over about 300 files, start with `graph <repo> --folders`: each folder with its size, its hints and the folders it references. Then write the full graph to a scratch file and read it in parts.
 2. **Start from the previous map** if `imports/<name>/map.json` exists (`<name>` is the repo folder in kebab case, such as `knights-of-darkness`). Keep its ids, so the viewer morphs instead of rebuilding, and change only what the code changed.
 3. **Read the code that defines the structure.** Not every file:
    - entry points, routers, controllers and API clients;
