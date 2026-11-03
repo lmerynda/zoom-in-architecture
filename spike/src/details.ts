@@ -27,12 +27,16 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
   if (tree.children[i].length) tags.append(el('span', '', `${tree.children[i].length} inside`))
 
   const { out, inn } = renderer.relationsOf(i)
+  // A container's relations are listed by what is on the other side at its own level (a sibling
+  // component, another app), naming the elements reached inside it; a leaf's by the exact element.
+  const rollUp = (o: number) => (tree.children[i].length ? tree.childUnder(tree.lca(i, o), o) : o)
   const list = (title: string, cls: string, all: { other: number; title: string }[], arrow: string) => {
     if (!all.length) return []
     // One row per element on the other side, however many of our children talk to it.
     const byOther = new Map<number, Set<string>>()
-    for (const r of all) byOther.set(r.other, (byOther.get(r.other) ?? new Set()).add(r.title))
-    const rows = [...byOther].map(([other, titles]) => ({ other, title: [...titles].join(', ') }))
+    for (const r of all) { const o = rollUp(r.other); byOther.set(o, (byOther.get(o) ?? new Set()).add(o === r.other ? r.title : tree.els[r.other].title)) }
+    const names = (s: Set<string>) => { const a = [...s]; return a.length > 4 ? `${a.slice(0, 4).join(', ')} +${a.length - 4}` : a.join(', ') }
+    const rows = [...byOther].sort((a, b) => b[1].size - a[1].size).map(([other, titles]) => ({ other, title: names(titles) }))
     const box = el('div', `d-rels ${cls}`)
     box.append(el('h3', '', `${title} · ${rows.length}`))
     for (const r of rows.slice(0, 40)) {

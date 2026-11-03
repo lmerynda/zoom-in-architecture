@@ -37,6 +37,13 @@ describe('Tree', () => {
     expect(e.get(id('a'))).toEqual([{ s: id('a.a1'), t: id('a.a2'), count: 1 }])
   })
 
+  it('finds the counterpart at a container’s own level, for its details panel', () => {
+    const counterpart = (i: string, o: string) => tree.els[tree.childUnder(tree.lca(id(i), id(o)), id(o))].id
+    expect(counterpart('a.a2', 'b.b1')).toBe('b')
+    expect(counterpart('a.a2', 'a.a1')).toBe('a.a1')
+    expect(counterpart('a', 'b.b1')).toBe('b')
+  })
+
   it('merges both directions into one edge with two heads', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
