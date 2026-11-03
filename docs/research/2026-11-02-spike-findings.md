@@ -96,6 +96,23 @@ What the larger repo taught:
 - **Large graphs need paging.** The full listing was 170 KB, and one file's uses ran to several kilobytes. `--folders` gives a 10 KB overview, `--under <folder>` pages through the rest, and use lists are capped.
 - **The agent needs placement rules, not just a format.** The skill now says when a shared library is its own node (used by two or more apps), when a small app needs no components, how `system` groups experiments, and which way links point.
 
+**Stability across runs.** Five fresh agents mapped Knights of Darkness, and `zoom compare` scored each pair. It uses the adjusted Rand index of how files are grouped, because node ids differ between runs; 1 is identical and 0 is chance.
+
+| Pair | Processes | Leaf groups | HTTP links |
+|---|---|---|---|
+| Two runs on the same skill | 1.00 | 0.84 | 9 of 9 the same |
+| Two runs after tightening the skill | 1.00 | 0.90 | 9 of 9 the same |
+| Runs across skill versions (6 pairs) | 1.00 | 0.81–0.91 | 9 of 9 the same |
+
+- **The top level and the links never varied.** Every run found the same processes, the same 9 HTTP links and the same 9 store links.
+- **Feature components mostly match exactly:** Market, Alliances, Bots, Notifications, Sign-in.
+- **Disagreement sits in judgement calls:**
+  - how a large component splits (which child gets each entity);
+  - where code that belongs to no feature goes (wiring, seeders, utilities, shared enums);
+  - front-end shell boundaries.
+- **Explicit placement rules remove it where they apply.** After the skill named Startup, Shared model and the app shell, both runs placed those identically. The remaining gaps got one more rule each: config classes, files shared by several features, entities in a split, base-URL evidence. That last round is not measured yet.
+- **Reruns start from the previous map,** so a live repository keeps its ids. The variance matters for a first map, not for updates.
+
 - **Kept from the first importer:** labels fitted by natural width (real class names overflowed), and the reference resolvers. LikeC4 is out of the import path, which removes the keyword-collision problem: generated models go straight to the viewer's JSON.
 
 ## Game-style controls
@@ -174,12 +191,12 @@ Two environment lessons:
 - Integrated or low-end GPUs, Safari and Firefox, touch and pinch.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
-- Map quality across agents and runs: one agent run per repository so far.
+- Map quality on repositories other than the two pilots; stability was measured on one repository only.
 
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Run the skill twice on one repository and compare the maps, to see how stable the agent's grouping is.
+2. Measure the last round of skill rules with two more runs, and try a third repository with a different shape (a Python or Go service, a monorepo).
 3. Show a link's evidence in the details panel, and list a component's relations by the component on the other side rather than by file.
 4. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
 5. Zoom past leaves into code (blockviz-style levels).
