@@ -138,7 +138,6 @@ export function installControls(c: Ctx) {
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Clear route', hint: 'Esc', run: clearRoute },
     { name: 'Toggle sound', run: () => document.getElementById('sound')?.click() },
-    ...(document.getElementById('import') ? [{ name: 'Import project…', run: () => document.getElementById('import')?.click() }] : []),
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
   const palette = new Palette(tree, commands, (i, shift) => {

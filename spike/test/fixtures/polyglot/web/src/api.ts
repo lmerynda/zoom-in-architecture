@@ -1,1 +1,1 @@
-export const load = async () => 1
+export const load = async () => (await fetch('/api/orders')).json()

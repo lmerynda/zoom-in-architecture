@@ -1,0 +1,5 @@
+{
+  // Vite-style config with an alias.
+  "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/*"] } },
+  "include": ["src/**/*.ts"]
+}

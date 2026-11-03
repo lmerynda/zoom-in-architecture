@@ -56,18 +56,35 @@ The three questions the spike was for:
 - **Previews from 1.5 px stop popping.** The design choice that matters most is to open on legibility (child card width), not at fixed zoom levels.
 - **LikeC4 works as a data layer.** Extraction takes about 200 ms per workspace. `fromWorkspace` keeps the process alive (a watcher), so the CLI must dispose and exit.
 
-## Real codebases, imported from code
+## Real codebases: a file graph from code, the structure from an agent
 
-`scripts/import-code.mjs` turns a repository into a model straight from its code: projects from manifests (.csproj, Cargo.toml, package.json, Unity), relations from references between files. A config can add what code cannot show: actors, databases and network seams. It was proven on a private game codebase (C# server and tools, a Rust/Wasm browser client, a Unity client):
-- **Size:** 28 projects, 1,255 files, 1,421 elements and 8,658 relations, imported in about 0.5 s.
-- **Speed in the viewer:** layout takes 372 ms, and frames take 0.6 ms p50 / 0.9 ms p95 at the landscape.
+**The first importer mapped folders, not architecture.** It built system → top folder → project → folder → name cluster → file from manifests and paths. That shows how the files are stored, not what the application does, and it included every config file. On a standard frontend repo, `eslint.config`, `playwright.config` and the like took up a large part of the map. Folders are the wrong source for structure.
+
+The importer is now split along what each side is good at:
+- **Code supplies the facts** (`scripts/graph.mjs`, deterministic):
+  - **Which files are the application.** JS/TS is what an entry point reaches through imports. C#, Rust and Java are what a non-test project compiles. Entry points are `index.html` scripts, package entries, `node <file>` npm scripts and `main` methods. Tests, build configs and dead code drop out with no ignore list.
+  - **Every reference between those files.**
+  - **The lines where processes meet:** routes, outbound calls, stores, schedules, sockets, process launches and file handoffs.
+- **An agent supplies the meaning** (the [map-repo skill](../../.claude/skills/map-repo/SKILL.md)):
+  - It groups files into processes and components by responsibility, and names and describes them.
+  - It links what code references cannot see, such as browser API client → controller, or repository → database.
+  - `check` holds it to the facts. Every application file must be placed. Every link needs `file:line` evidence that exists, and evidence that misses a marked line is quoted back. Relations between files come only from the graph.
+
+**Pilot: Knights of Darkness** (React + Vite browser client, Java Spring Boot backend; 256 source files). A fresh agent that knew only the skill mapped it:
+- **The graph:** 211 application files and 649 references, in 0.9 s. Left out were 42 test files, plus the two eslint configs and `vite.config.ts`, which no entry point reaches.
+- **The map:**
+  - Player, Game client, Game server and Game database at the top.
+  - 8 client components and 9 server components below them, by domain: Market, Alliances, Kingdom (with five sub-components), Bots and so on.
+  - 9 HTTP links from each API client to its controller, and 9 repository → database links.
+  - It took about 4 minutes, and `check` passed on the first run.
+- **In the viewer:** layout takes 202 ms, and frames take 0.5 ms p50 / 1.1 ms p95.
 
 What it taught:
-- **Clustering by name prefix makes big flat folders readable.** A 79-file simulation folder became five clusters by name prefix. Folders whose names share no prefixes stay flat rather than collapse into one "Other".
-- **File-level references give useful relations without any annotation.** Selecting a relay service showed exactly its inbound WebSocket and the shared contracts it uses.
-- **Real names exposed a bug the sample models hid.** Labels were fitted against their already-scaled width, so long class names overflowed. Labels are now fitted by natural width, and edge labels are capped to fit the gaps between cards.
-- **Generated ids must avoid the DSL's keywords.** A file named `Order` became the id `order`, a LikeC4 keyword, and the model failed to compile. The importer now reserves every keyword in LikeC4's grammar.
-- **The first version was a scanner for one repository**, with its projects and seams written into the script. Making it generic moved that knowledge into a config that stays with the user, so the tool holds no project's data.
+- **Reachability from entry points is the right filter.** It needs no ignore list, and it also catches dead code.
+- **The agent needs the seams as facts, not as a search task.** In the first run it grepped for routes and `fetch` calls by hand, and evidence could point at the wrong line unnoticed. Its friction report drove the hints, the config-file list, the per-node file counts in `check` and the evidence check. Re-checked against those, all 19 of its links land on marked lines.
+- **Line evidence drifts.** Editing `map.mjs` moved lines that this repo's own map cited, and the evidence check caught it. Live re-publishes treat drift as a warning, so the map stays up while the code moves.
+- **A real bug surfaced as a dependency.** Notifications → Market exists only because a copy-pasted logger names `MarketController`. The map is faithful to the code, which makes such slips visible.
+- **Kept from the first importer:** labels fitted by natural width (real class names overflowed), and the reference resolvers. LikeC4 is out of the import path, which removes the keyword-collision problem: generated models go straight to the viewer's JSON.
 
 ## Game-style controls
 
@@ -123,9 +140,10 @@ The spike's open question was whether positions survive model edits, not just zo
 - **Layouts are reused.** The viewer diffs model versions by element id. A container whose children and sibling edges did not change keeps its previous layout exactly; only changed containers run ELK again.
   - Adding one service to Acme redid 2 of 28 layouts, and 0 of 80 elements outside the edited domain moved.
   - Re-importing a large codebase with no code change redid 0 of 94 layouts, and the swap took 25 ms.
+- **All writers use one path.** The dev server watches `public/models/`, so the sample extractor, an agent's publish and a live re-publish all reach open viewers the same way. Writes are atomic (temp file, then rename), so a viewer never reads half a file.
 - **Child order is stable.** Rectpacking places children in input order, so the first version inserted the new service first and reflowed every sibling; the selected card jumped 300 px. Laying out children in their previous order, with new ones appended, keeps siblings in place as far as the packing allows.
 - **The camera holds still.** It is anchored on the selection, or on what is under the screen centre, and moves with it during the morph. In the test the selected card stayed exactly in place (0 px).
-- **The update is fast.** It lands 0.7–0.9 s after saving a .c4 file: extraction is about 0.4 s, the swap about 0.2 s.
+- **The update is fast.** It lands 0.7–0.9 s after saving a .c4 file: extraction is about 0.4 s, the swap about 0.2 s. A source edit in a mapped repository re-publishes in about 1.5 s; new files go beside the files they reference.
 - **State carries over.** Selection, target, route, pins, bookmarks and history all follow the new version. They are keyed by element id, not index; history and bookmarks used to store indices, which would have broken across versions (and across page reloads after an edit).
 
 Two environment lessons:
@@ -144,11 +162,14 @@ Two environment lessons:
 - Integrated or low-end GPUs, Safari and Firefox, touch and pinch.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
+- Map quality across agents and runs: one agent run on one repository so far.
 
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
-3. Zoom past leaves into code (blockviz-style levels).
+2. Map a second, larger repository with the skill (the private game codebase: C#, Rust and Unity), to test component grouping at 1,000+ files and the hints in C# and Rust.
+3. Show a link's evidence in the details panel, and list a component's relations by the component on the other side rather than by file.
+4. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
+5. Zoom past leaves into code (blockviz-style levels).
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

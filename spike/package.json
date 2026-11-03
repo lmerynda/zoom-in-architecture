@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "extract": "node scripts/extract-likec4.mjs",
+    "zoom": "node scripts/zoom.mjs",
     "predev": "npm run extract",
     "dev": "vite --port 5180 --strictPort",
     "prebuild": "npm run extract",

@@ -1,0 +1,111 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { buildGraph } from './graph.mjs'
+import { buildModel, toName } from './map.mjs'
+
+const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
+const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
+const edit = f => { const m = structuredClone(map); f(m); return m }
+const build = (m = map, opts = {}) => buildModel(graph, m, { name: 'shop', ...opts })
+const at = (r, path) => r.model.elements.find(e => e.metadata?.path === path)
+
+describe('buildModel', () => {
+  const r = build()
+
+  it('publishes a clean map without errors or warnings', () => {
+    expect(r.errors).toEqual([])
+    expect(r.warnings).toEqual([])
+    expect(r.stats).toEqual({ nodes: 9, files: 14, relations: 14, links: 3, unplaced: 0 })
+  })
+
+  it('nests nodes by id and files under the node that holds them', () => {
+    const el = id => r.model.elements.find(e => e.id === id)
+    expect(el('web.shopping').parent).toBe('web')
+    expect(el('customer')).toMatchObject({ parent: null, kind: 'actor', shape: 'person' })
+    expect(at(r, 'web/src/main.ts')).toMatchObject({ id: 'web.shopping.main', parent: 'web.shopping', kind: 'code', title: 'main', description: 'Starts the shop front end.' })
+    expect(at(r, 'web/src/main.ts').metadata).toMatchObject({ lines: '6' })
+  })
+
+  it('lets an exact path beat a glob, and a longer glob beat a shorter one', () => {
+    expect(at(r, 'web/src/api.ts').parent).toBe('web.orders')
+    expect(at(r, 'web/src/ui/cart.ts').parent).toBe('web.shopping')
+  })
+
+  it('tells same-named files in one node apart by folder', () => {
+    // game/src/main.rs and engine/src/lib.rs are fine; give the game two mains.
+    const twin = build(edit(m => { m.nodes.find(n => n.id === 'web.shopping').files.push('game/src/main.rs') }))
+    expect(at(twin, 'web/src/main.ts').title).toBe('src/main')
+    expect(at(twin, 'game/src/main.rs').title).toBe('src/main')
+    expect(at(twin, 'web/src/main.ts').id).not.toBe(at(twin, 'game/src/main.rs').id)
+  })
+
+  it('draws relations between files from the graph only, and links from the map', () => {
+    const rel = (a, b) => r.model.relations.find(x => x.source === a && x.target === b)
+    expect(rel(at(r, 'web/src/main.ts').id, at(r, 'web/src/ui/cart.ts').id).title).toBe('@/ui/cart')
+    expect(rel('customer', 'web').title).toBe('shops in a browser')
+    expect(rel(at(r, 'web/src/api.ts').id, at(r, 'server/src/main/java/com/shop/orders/OrderController.java').id).evidence).toHaveLength(2)
+  })
+
+  it('refuses links without evidence, with broken evidence, or to unknown ends', () => {
+    const bad = build(edit(m => {
+      m.links.push({ from: 'web.orders', to: 'db', title: 'guess' })
+      m.links.push({ from: 'web.orders', to: 'db', evidence: ['web/src/api.ts:99'] })
+      m.links.push({ from: 'web.orders', to: 'web/eslint.config.mjs', evidence: ['web/src/api.ts:1'] })
+    }))
+    expect(bad.errors).toEqual([
+      'link web.orders → db needs evidence: file:line where the code makes the call',
+      'link web.orders → db: evidence "web/src/api.ts:99" is past the end of the file (2 lines)',
+      'link web.orders → web/eslint.config.mjs: web/eslint.config.mjs is neither a node id nor an application file',
+    ])
+  })
+
+  it('refuses bad nodes and files that are not application code', () => {
+    const bad = build(edit(m => {
+      m.nodes.push({ id: 'web.x.y', kind: 'component', title: 'Orphan' })
+      m.nodes.push({ id: 'Bad Id', kind: 'component', title: 'x' })
+      m.nodes.push({ id: 'tools', kind: 'gadget', title: 'Tools', files: ['web/vite.config.ts'] })
+    }))
+    expect(bad.errors).toEqual([
+      'node id "Bad Id" must be dot-separated segments like "web.checkout"',
+      'node "tools" has kind "gadget"; use one of actor, system, app, webapp, library, component, database, queue, external',
+      'node "web.x.y" has no parent node "web.x"',
+      'node "tools" lists web/vite.config.ts, which is not an application file (no entry point reaches it)',
+    ])
+  })
+
+  it('places files the map misses beside their neighbours, an error unless loose', () => {
+    const partial = edit(m => { m.nodes.find(n => n.id === 'web.shopping').files = ['shared/index.js', 'web/src/main.ts'] })
+    const strict = build(partial)
+    expect(strict.errors).toEqual(['1 application files are not in the map: web/src/ui/cart.ts'])
+    const loose = build(partial, { loose: true })
+    expect(loose.errors).toEqual([])
+    // cart.ts imports api.ts (Orders client) and is imported by main.ts (Shopping): a tie goes to the first vote.
+    expect(['web.shopping', 'web.orders']).toContain(at(loose, 'web/src/ui/cart.ts').parent)
+  })
+
+  it('lets live re-imports publish through code drift, as warnings', () => {
+    const drifted = edit(m => {
+      m.nodes.find(n => n.id === 'web.orders').files.push('web/src/deleted.ts')
+      m.links.push({ from: 'web/src/deleted.ts', to: 'db', evidence: ['web/src/api.ts:1'] })
+      m.links[1].evidence = ['web/src/api.ts:40']
+    })
+    expect(build(drifted).errors).toHaveLength(3)
+    const loose = build(drifted, { loose: true })
+    expect(loose.errors).toEqual([])
+    expect(loose.warnings).toHaveLength(3)
+    // The link to a deleted file is skipped; the one with a stale line still draws.
+    expect(loose.stats.relations).toBe(14)
+  })
+
+  it('collects files with no placed neighbour under Unplaced', () => {
+    const r2 = build(edit(m => { m.nodes = m.nodes.filter(n => n.id !== 'game') }), { loose: true })
+    expect(at(r2, 'game/src/main.rs').parent).toBe('unplaced')
+    expect(r2.model.elements.find(e => e.id === 'unplaced').title).toBe('Unplaced')
+  })
+
+  it('names models after the repo folder', () => {
+    expect(toName('C:/code/KnightsOfDarkness')).toBe('knights-of-darkness')
+    expect(toName('/src/my_shop')).toBe('my-shop')
+  })
+})

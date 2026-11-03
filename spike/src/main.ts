@@ -111,7 +111,7 @@ async function main() {
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
   let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number] } | null = null
   let liveVersion = 0
-  const swapModel = async (json: ModelJson, extractMs = 0) => {
+  const swapModel = async (json: ModelJson, buildMs = 0) => {
     const swapStart = performance.now()
     const next = new Tree(json)
     const nextJobs = layoutJobs(next)
@@ -167,7 +167,7 @@ async function main() {
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
     const parts = [diff.added.length && `+${diff.added.length} added`, diff.changed.length && `${diff.changed.length} changed`, diff.removed.length && `−${diff.removed.length} removed (${diff.removed.slice(0, 3).map(id => id.split('.').pop()).join(', ')}${diff.removed.length > 3 ? '…' : ''})`].filter(Boolean)
-    controls.toast.show(`Model updated · ${parts.join(' · ') || 'no visible change'}`, `${rerun.length} of ${nextJobs.length} layouts redone · extract ${extractMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
+    controls.toast.show(`Model updated · ${parts.join(' · ') || 'no visible change'}`, `${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
   }
   /** Advances the morph: positions and the camera move together from the old version to the new. */
   const stepMorph = (t: number) => {
@@ -186,14 +186,16 @@ async function main() {
     if (u >= 1) morph = null
   }
   let pending: Promise<void> = Promise.resolve()
-  import.meta.hot?.on('model:update', ({ name, ms }: { name: string; ms: number }) => {
+  import.meta.hot?.on('model:update', ({ name }: { name: string }) => {
     if (name !== modelName) return
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
-      if (res.ok) await swapModel(await res.json(), ms)
+      if (res.ok) { const json = await res.json(); await swapModel(json, json.buildMs ?? 0) }
     }).catch(e => console.error(e))
   })
+  // A newly published map gets its tab without a reload.
+  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n')))
 
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)

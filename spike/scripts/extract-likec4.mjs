@@ -1,22 +1,22 @@
-// Turns each LikeC4 workspace into public/models/<name>.json for the viewer, and lists them all
-// in public/models/index.json. Workspaces are the samples under model/ and the local imports
-// under imports/ (see scripts/import-code.mjs).
+// Turns each LikeC4 sample workspace under model/ into public/models/<name>.json for the viewer,
+// and lists every model in public/models/index.json. Imported codebases are published by
+// scripts/zoom.mjs instead.
 import { LikeC4 } from 'likec4'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeIndex } from './map.mjs'
 
-const roots = { model: 'sample', imports: 'import' }
 const out = 'public/models'
 mkdirSync(out, { recursive: true })
 
 const text = v => (v == null ? '' : typeof v === 'string' ? v : String(v.text ?? ''))
-const workspaces = Object.entries(roots).flatMap(([root, source]) =>
-  existsSync(root) ? readdirSync(root).filter(n => statSync(join(root, n)).isDirectory()).map(name => ({ name, dir: join(root, name), source })) : [])
+const workspaces = readdirSync('model').filter(n => statSync(join('model', n)).isDirectory()).map(name => ({ name, dir: join('model', name) }))
 
 // Workspace names on the command line limit extraction to them (the live watcher passes one).
 const only = new Set(process.argv.slice(2))
 for (const { name, dir } of workspaces) {
   if (only.size && !only.has(name)) continue
+  const t0 = Date.now()
   const likec4 = await LikeC4.fromWorkspace(dir, { printErrors: true, watch: false })
   if (likec4.hasErrors()) process.exitCode = 1
   const model = await likec4.computedModel()
@@ -37,11 +37,13 @@ for (const { name, dir } of workspaces) {
     target: r.target.id,
     title: text(r.title),
   }))
-  writeFileSync(join(out, `${name}.json`), JSON.stringify({ name, elements, relations }))
+  // The dev server watches public/models; a half-written file must never be read.
+  const file = join(out, `${name}.json`)
+  writeFileSync(`${file}.tmp`, JSON.stringify({ name, elements, relations, buildMs: Date.now() - t0 }))
+  renameSync(`${file}.tmp`, file)
   console.log(`${name}: ${elements.length} elements, ${relations.length} relations`)
   await likec4.dispose?.()
 }
 
-const titleOf = ({ dir, name }) => { try { return JSON.parse(readFileSync(join(dir, 'source.json'), 'utf8')).title } catch { return name } }
-writeFileSync(join(out, 'index.json'), JSON.stringify(workspaces.filter(w => existsSync(join(out, `${w.name}.json`))).map(w => ({ name: w.name, title: titleOf(w), source: w.source }))))
+writeIndex()
 process.exit()

@@ -120,7 +120,7 @@ async function record(name, model, script) {
 }
 
 // Code-level scenes run on this repository, imported as a model (see scripts/self-import.mjs).
-const FILE = 'zoomInArchitecture.zoomSpike.src.controls.install'
+const FILE = 'viewer.controls.install'
 const scenes = {
   // One continuous dive from the landscape to a single file, then lock on to it.
   'code-dive': () => { selfImport(); return record('code-dive', SELF, async s => {
@@ -146,9 +146,9 @@ const scenes = {
     await s.fly(null)
     await s.land(1200)
   }),
-  // Strategy-game lenses over the spike's own code: lines, coupling and git churn.
+  // Strategy-game lenses over the viewer's own code: lines, coupling and git churn.
   'code-lenses': () => { selfImport(); return record('code-lenses', SELF, async s => {
-    await s.fly('zoomInArchitecture.zoomSpike.src')
+    await s.fly('viewer')
     await s.land(1000)
     for (const l of ['size', 'coupling', 'churn', 'structure']) { await s.lens(l); await s.hold(1800) }
   }) },
