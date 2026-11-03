@@ -14,8 +14,8 @@ URL parameters: `?model=<name>` (default `acme`), and `?model=synthetic&n=10000`
 
 A map shows a codebase's architecture: the processes that run, the components inside them, and the files inside those. Making one takes two steps.
 - **The file graph, from code:** `npm run zoom -- graph <repo>`. For a large repo, `--folders` gives an overview by folder and `--under <folder>` lists one part.
-  - It keeps only application files, meaning JS/TS that an entry point reaches through imports, plus what non-test C#, Rust and Java projects compile.
-  - Entry points are pages' scripts (inline module scripts included), package.json entries, `node <file>` npm scripts and `main` methods. Imports of wasm-pack output lead back to the Rust crate, and Unity sees only the projects its `Packages/manifest.json` names.
+  - It keeps only application files: JS/TS that an entry point reaches through imports, what non-test C#, Rust, Java and Go projects compile, and Python packages plus the scripts and app modules that start them.
+  - Entry points are pages' scripts (inline module scripts included), package.json entries, `node <file>` npm scripts and `main` methods. Imports of wasm-pack output lead back to the Rust crate, Unity sees only the projects its `Packages/manifest.json` names, Go `//go:embed` files and build-tag variants count, and Python imports resolve through `__init__.py` re-exports (`TYPE_CHECKING` imports are type-only).
   - Tests, `eslint.config`, `vite.config`, `playwright.config` and dead code drop out.
   - It resolves every reference between the files it keeps: relative imports, tsconfig paths, workspace packages, C# types through ProjectReferences, Java packages and imports, and Rust modules and crates.
   - Named imports through a barrel (an `index.ts` that re-exports) point at the file that defines the name. Type-only imports are listed but not drawn, since they are compile-time coupling, not runtime use.

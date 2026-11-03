@@ -66,7 +66,9 @@ function liveModels(): Plugin {
       // Each import remembers its repository; edits there re-publish it from its stored map.
       const follow = (name: string) => {
         unfollow(name)
-        const { repo } = JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')) as { repo: string }
+        // A source.json being written by another process can be read half-done; the next change retries.
+        let repo: string
+        try { repo = (JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')) as { repo: string }).repo } catch { return }
         if (!existsSync(repo)) return
         const w = watch(repo, { recursive: true }, (_ev, f) => { if (f && SOURCE.test(f) && !IGNORED.test(f)) republish(name) })
         // The repository can disappear under the watcher; that must not take the server down.

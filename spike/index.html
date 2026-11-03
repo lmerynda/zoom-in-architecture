@@ -14,8 +14,8 @@
     #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; }
     #top > * { pointer-events: auto; }
     #brand { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: var(--accent); padding: 8px 12px; }
-    #models { display: flex; gap: 2px; padding: 3px; }
-    #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; }
+    #models { display: flex; gap: 2px; padding: 3px; max-width: 46vw; overflow-x: auto; scrollbar-width: none; }
+    #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; flex: none; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
     #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
     #models a.imported { color: #fde68a; }
     #crumbs { position: fixed; top: 64px; left: 24px; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; }

@@ -1,0 +1,5 @@
+on: workflow_dispatch
+jobs:
+  release:
+    steps:
+      - run: uv run python py/scripts/release.py

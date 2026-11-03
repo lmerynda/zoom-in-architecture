@@ -122,9 +122,11 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const kindOf = s => nodes.get(s)?.kind ?? 'code'
   // Whether a file is a link end, or under the node that is one.
   const atEnd = (end, path) => end === path || (nodes.has(end) && (placed.get(path) === end || placed.get(path)?.startsWith(`${end}.`)))
-  // A direct caller or callee of a file end can back its link too (the line that builds the URL a helper fetches).
-  const adjacent = new Set(graph.edges.filter(e => !e.types).flatMap(e => [`${e.from}>${e.to}`, `${e.to}>${e.from}`]))
-  const nearEnd = (end, path) => adjacent.has(`${end}>${path}`)
+  // A file up to two references from a file end can back its link too: the line that builds the URL
+  // a helper fetches, or the router that mounts a route file under a prefix.
+  const near = new Map()
+  for (const e of graph.edges) if (!e.types) { near.set(e.from, [...(near.get(e.from) ?? []), e.to]); near.set(e.to, [...(near.get(e.to) ?? []), e.from]) }
+  const nearEnd = (end, path) => (near.get(end) ?? []).some(n => n === path || (near.get(n) ?? []).includes(path))
   const cited = new Set()
   for (const l of map.links ?? []) {
     const a = endOf(l.from), b = endOf(l.to)
@@ -196,8 +198,9 @@ export function publish(repo, map, { name = toName(repo), loose = false } = {}) 
   const dir = join('imports', name)
   mkdirSync(dir, { recursive: true })
   mkdirSync('public/models', { recursive: true })
-  writeFileSync(join(dir, 'map.json'), `${JSON.stringify(map, null, 2)}\n`)
-  writeFileSync(join(dir, 'source.json'), `${JSON.stringify({ repo: graph.repo, title: built.model.title }, null, 2)}\n`)
+  // The dev server watches imports/ too, and reads these as soon as they change.
+  writeAtomic(join(dir, 'map.json'), `${JSON.stringify(map, null, 2)}\n`)
+  writeAtomic(join(dir, 'source.json'), `${JSON.stringify({ repo: graph.repo, title: built.model.title }, null, 2)}\n`)
   writeAtomic(join('public/models', `${name}.json`), JSON.stringify({ ...built.model, buildMs: Date.now() - t0 }))
   writeIndex()
   return { name, ...built, published: true, ms: Date.now() - t0 }

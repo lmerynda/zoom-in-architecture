@@ -18,12 +18,12 @@ import { auditPlacement, buildModel, compareMaps, publish, toName } from './map.
 function header(g) {
   return [
     `${g.repo}`,
-    `${g.files.length} application files, ${g.edges.length} references (${g.edges.filter(e => e.types).length} type-only). Left out: ${g.dropped.tests} test files; ${g.dropped.unreached.length} files no entry point reaches${g.dropped.unreached.length ? `: ${g.dropped.unreached.slice(0, 20).join(', ')}${g.dropped.unreached.length > 20 ? ', …' : ''}` : ''}.`,
+    `${g.files.length} application files, ${g.edges.length} references (${g.edges.filter(e => e.types).length} type-only). Left out: ${g.dropped.tests} test files; ${g.dropped.generated} generated files (migrations, protobuf, designer code); ${g.dropped.unreached.length} files no entry point reaches${g.dropped.unreached.length ? `: ${g.dropped.unreached.slice(0, 20).join(', ')}${g.dropped.unreached.length > 20 ? ', …' : ''}` : ''}.`,
     'Projects (from manifests; hints for the deployables):',
     ...g.projects.map(p => `  ${p.dir || '.'}  ${p.lang}  ${p.kind}  ${p.name}${p.technology ? `  · ${p.technology}` : ''}${p.description ? `  — ${p.description}` : ''}`),
     ...g.unmapped.map(p => `  ${p.dir || '.'}  ${p.name}: not mapped, ${p.reason}`),
     `Entry points (JS/TS and scripts count when one reaches them; C#, Rust, Java and Go projects and Python packages count whole): ${g.entries.join(', ') || '(none found)'}`,
-    ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
+    ...g.projects.filter(p => g.entries.filter(e => g.files.find(f => f.path === e)?.project === p.dir).length > 1 && p.lang !== 'js').map(p => p.lang === 'go' ? `  ${p.dir || '.'} has several package main binaries (cmd/*): each one users run is a deployable; dev-only ones are tools` : `  ${p.dir || '.'} has several entry points; extra ones are often dev tools, not the service`),
     `Config and deploy files (read them for datasources, base URLs, ports, other services): ${g.config.join(', ') || '(none)'}`,
   ]
 }
@@ -113,7 +113,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const g = buildGraph(a)
       const { model } = buildModel(g, readMap(b), { name: toName(a), loose: true })
       const nodeOf = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e.parent]))
-      const byNode = paths => { const m = new Map(); for (const p of paths) m.set(nodeOf.get(p), [...(m.get(nodeOf.get(p)) ?? []), posix.basename(p)]); return [...m].sort((x, y) => y[1].length - x[1].length) }
+      // A basename, or the path when two application files share it.
+      const counts = new Map()
+      for (const f of g.files) counts.set(posix.basename(f.path), (counts.get(posix.basename(f.path)) ?? 0) + 1)
+      const label = p => (counts.get(posix.basename(p)) > 1 ? p : posix.basename(p))
+      const byNode = paths => { const m = new Map(); for (const p of paths) m.set(nodeOf.get(p), [...(m.get(nodeOf.get(p)) ?? []), label(p)]); return [...m].sort((x, y) => y[1].length - x[1].length) }
       const list = (label, paths) => { console.log(`${label} ${paths.length} files:`); for (const [n, fs] of byNode(paths)) console.log(`  ${n}  ${fs.length}  ${fs.join(', ')}`) }
       // Several files in one call; type-only imports are left out, as in the map.
       for (const file of args.slice(3).map(x => x.replace(/\\/g, '/'))) {

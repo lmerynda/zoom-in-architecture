@@ -12,27 +12,31 @@ describe('buildGraph', () => {
     expect(paths.sort()).toEqual([
       'engine/src/lib.rs', 'engine/src/physics.rs', 'examples/demo/index.js', 'game/src/main.rs',
       'game/www/hud.js', 'game/www/index.html', 'game/www/sw.js', 'goapp/cmd/server/handler.go',
-      'goapp/cmd/server/main.go', 'goapp/internal/store/orders.go', 'goapp/internal/store/store.go', 'py/scripts/seed.py',
-      'py/src/shopkit/__init__.py', 'py/src/shopkit/api.py', 'py/src/shopkit/cli.py', 'py/src/shopkit/models.py',
-      'py/src/shopkit/orders.py', 'server/src/main/java/com/shop/ShopApplication.java', 'server/src/main/java/com/shop/orders/OrderController.java', 'server/src/main/java/com/shop/orders/OrderRepository.java',
-      'server/src/main/java/com/shop/orders/model/Order.java', 'shared/index.js', 'src/Api/Controllers/OrdersController.cs', 'src/Api/wwwroot/app.js',
-      'src/Api/wwwroot/sw.js', 'src/Core/Order.cs', 'src/Core/OrderService.cs', 'unity/Assets/Scripts/ShopView.cs',
-      'web/src/api.ts', 'web/src/main.ts', 'web/src/ui/cart.ts', 'web/src/ui/index.ts',
-      'web/src/ui/types.ts',
+      'goapp/cmd/server/main.go', 'goapp/internal/store/orders.go', 'goapp/internal/store/store.go', 'goapp/internal/view/assets_dev.go',
+      'goapp/internal/view/assets_prod.go', 'goapp/internal/view/view.go', 'goapp/web/assets/app.js', 'goapp/web/embed.go',
+      'py/alembic/env.py', 'py/scripts/seed.py', 'py/src/shopkit/__init__.py', 'py/src/shopkit/api.py',
+      'py/src/shopkit/cli.py', 'py/src/shopkit/models.py', 'py/src/shopkit/orders.py', 'server/src/main/java/com/shop/ShopApplication.java',
+      'server/src/main/java/com/shop/orders/OrderController.java', 'server/src/main/java/com/shop/orders/OrderRepository.java', 'server/src/main/java/com/shop/orders/model/Order.java', 'shared/index.js',
+      'src/Api/Controllers/OrdersController.cs', 'src/Api/wwwroot/app.js', 'src/Api/wwwroot/sw.js', 'src/Core/Order.cs',
+      'src/Core/OrderService.cs', 'unity/Assets/Scripts/ShopView.cs', 'web/src/api.ts', 'web/src/main.ts',
+      'web/src/ui/cart.ts', 'web/src/ui/index.ts', 'web/src/ui/types.ts',
     ])
   })
 
   it('drops tests, build configs, dead code and generated migrations', () => {
     // scripts/stats.mjs runs from a build:stats npm script: tooling, not an entry point.
-    expect(g.dropped.unreached).toEqual(['py/scripts/lint_helper.py', 'web/eslint.config.mjs', 'web/scripts/stats.mjs', 'web/src/orphan.ts', 'web/vite.config.ts'])
+    // tools.go has a build tag the normal build never sets; release.py only runs in CI.
+    expect(g.dropped.unreached).toEqual(['goapp/tools.go', 'py/scripts/lint_helper.py', 'py/scripts/release.py', 'web/eslint.config.mjs', 'web/scripts/stats.mjs', 'web/src/orphan.ts', 'web/vite.config.ts'])
     // e2e/checkout.ts, src/test-utils.ts, OrdersTest.java, the xunit project's file, test_orders.py, store_test.go, and the Go mock package.
     expect(g.dropped.tests).toBe(7)
-    expect(paths.some(p => p.includes('migrations'))).toBe(false)
+    expect(paths.some(p => /migrations|versions/.test(p))).toBe(false)
+    // Two EF Core migrations, a Django-style migration and an alembic revision.
+    expect(g.dropped.generated).toBe(4)
     expect(paths.some(p => p.includes('Migrations'))).toBe(false)
   })
 
   it('finds entry points: index.html scripts, package entries and main methods', () => {
-    expect(g.entries).toEqual(['examples/demo/index.js', 'game/src/main.rs', 'game/www/index.html', 'goapp/cmd/server/main.go', 'py/scripts/seed.py', 'py/src/shopkit/cli.py', 'server/src/main/java/com/shop/ShopApplication.java', 'shared/index.js', 'src/Api/wwwroot/app.js', 'web/src/main.ts'])
+    expect(g.entries).toEqual(['examples/demo/index.js', 'game/src/main.rs', 'game/www/index.html', 'goapp/cmd/server/main.go', 'goapp/web/assets/app.js', 'py/alembic/env.py', 'py/scripts/seed.py', 'py/src/shopkit/api.py', 'py/src/shopkit/cli.py', 'server/src/main/java/com/shop/ShopApplication.java', 'shared/index.js', 'src/Api/wwwroot/app.js', 'web/src/main.ts'])
   })
 
   it('follows pages: inline module scripts, wasm-pack output back to its crate, service workers', () => {
@@ -51,7 +55,12 @@ describe('buildGraph', () => {
     expect(edge('py/src/shopkit/orders.py', 'py/src/shopkit/models.py')).toMatchObject({ names: ['Order'], types: true })
     expect(edge('py/scripts/seed.py', 'py/src/shopkit/models.py').names).toEqual(['engine'])
     const hints = p => g.files.find(f => f.path === p).hints.map(h => `:${h.line} ${h.kind}`)
-    expect([hints('py/src/shopkit/api.py'), hints('py/src/shopkit/models.py'), hints('py/src/shopkit/orders.py')]).toEqual([[':7 route'], [':3 store'], [':10 call']])
+    expect([hints('py/src/shopkit/api.py'), hints('py/src/shopkit/models.py'), hints('py/src/shopkit/orders.py')]).toEqual([[':7 route', ':9 store', ':13 route'], [':3 store'], [':10 call']])
+    // A decorator split over lines keeps its path; alembic's env.py is an entry point.
+    expect(g.files.find(f => f.path === 'py/src/shopkit/api.py').hints[2].text).toBe('@app.get( "/orders/{order_id}"')
+    expect(edge('py/alembic/env.py', 'py/src/shopkit/models.py').names).toEqual(['engine'])
+    // A pyproject with only tool config (a uv workspace root) is no project.
+    expect(g.projects.some(p => p.lang === 'py' && p.dir === '')).toBe(false)
     expect(g.files.find(f => f.path === 'py/src/shopkit/orders.py').doc).toBe('Placing orders.')
   })
 
@@ -62,7 +71,13 @@ describe('buildGraph', () => {
     expect(edge('goapp/internal/store/orders.go', 'goapp/internal/store/store.go').names).toEqual(['Store'])
     expect(edge('goapp/cmd/server/handler.go', 'goapp/cmd/server/main.go')).toBeUndefined()
     const hints = p => g.files.find(f => f.path === p).hints.map(h => `:${h.line} ${h.kind}`)
-    expect([hints('goapp/cmd/server/main.go'), hints('goapp/internal/store/store.go')]).toEqual([[':12 route', ':13 route'], [':10 store']])
+    expect([hints('goapp/cmd/server/main.go'), hints('goapp/internal/store/store.go')]).toEqual([[':13 route', ':15 route'], [':10 store']])
+    // Build-tag variants are both dependencies; a name only generated code declares still reaches its package.
+    expect(edge('goapp/cmd/server/main.go', 'goapp/internal/view/assets_dev.go').names).toEqual(['Assets'])
+    expect(edge('goapp/cmd/server/main.go', 'goapp/internal/view/assets_prod.go').names).toEqual(['Assets'])
+    expect(edge('goapp/cmd/server/main.go', 'goapp/internal/view/view.go').names).toEqual(['IndexTemplate'])
+    // //go:embed makes the embedded script application code.
+    expect(edge('goapp/web/embed.go', 'goapp/web/assets/app.js').names).toEqual(['go:embed'])
     expect(g.files.find(f => f.path === 'goapp/internal/store/store.go').doc).toBe('Package store keeps orders.')
   })
 
@@ -78,7 +93,7 @@ describe('buildGraph', () => {
   })
 
   it('lists config and deploy files, which name the other processes', () => {
-    expect(g.config).toEqual(['server/src/main/resources/application.properties'])
+    expect(g.config).toEqual(['.github/workflows/release.yml', 'py/alembic.ini', 'server/src/main/resources/application.properties'])
   })
 
   it('marks the lines where one process talks to another', () => {
@@ -86,6 +101,8 @@ describe('buildGraph', () => {
     expect(hints('server/src/main/java/com/shop/orders/OrderController.java')).toEqual([':11 route @GetMapping("/api/orders")'])
     expect(hints('server/src/main/java/com/shop/orders/OrderRepository.java')).toEqual([':5 store extends JpaRepository<Order, Long> {}'])
     expect(hints('web/src/api.ts')).toEqual([":1 call fetch('/api/orders')).json()"])
+    // url: in a type literal is a type, not a call.
+    expect(hints('web/src/ui/types.ts')).toEqual([])
     expect(hints('web/src/ui/cart.ts')).toEqual([":3 store localStorage.setItem('cart', JSON.stringify(items)))"])
     expect(hints('game/www/hud.js')).toEqual([":3 message .postMessage('ready', '*')"])
   })
@@ -131,14 +148,14 @@ describe('buildGraph', () => {
 
   it('prints a compact text listing for agents', () => {
     const text = graphText(g)
-    expect(text).toContain('33 application files, 29 references (3 type-only). Left out: 7 test files; 5 files no entry point reaches')
+    expect(text).toContain('39 application files, 34 references (3 type-only). Left out: 7 test files; 4 generated files (migrations, protobuf, designer code); 7 files no entry point reaches')
     expect(text).toContain('  main.ts · 7 · → api.ts, cart.ts, shared/index.js · types → types.ts · Starts the shop front end.')
     expect(text).toContain('      :11 route @GetMapping("/api/orders")')
   })
 
   it('prints a folder overview for large repos', () => {
     const text = folderText(g)
-    expect(text).toContain('18 folders.')
+    expect(text).toContain('22 folders.')
     expect(text).toContain('game/www/ · 3 · 19 · 1 message · → engine/src (1)')
     expect(text).toContain('server/src/main/java/com/shop/orders/ · 2 · 20 · 1 route, 1 store · → server/src/main/java/com/shop/orders/model (2)')
   })

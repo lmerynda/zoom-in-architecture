@@ -9,6 +9,7 @@ export async function renderModelTabs(nav: HTMLElement, current: string, n: stri
     const a = document.createElement('a')
     a.href = href
     a.textContent = label
+    a.title = label
     a.className = [on ? 'on' : '', cls].filter(Boolean).join(' ')
     return a
   }

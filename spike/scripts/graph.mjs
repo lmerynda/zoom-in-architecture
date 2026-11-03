@@ -101,6 +101,7 @@ function discover(repo, files) {
     } else if (['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'].includes(file)) {
       // One Python project per folder, whichever manifest it has.
       const src = read(p)
+      if (file === 'pyproject.toml' && !/^\[(project|tool\.poetry)\]/m.test(src)) continue
       const known = projects.find(x => x.lang === 'py' && x.dir === dir)
       const frameworks = ['Django', 'FastAPI', 'Flask', 'Starlette', 'aiohttp', 'Celery', 'SQLAlchemy', 'SQLModel'].filter(fw => new RegExp(`(^|[\\s"'\\[,])${fw}\\b`, 'im').test(src))
       const scripts = [...(src.match(/^\[(?:project|tool\.poetry)\.scripts\]([\s\S]*?)(?=^\[|$(?![\s\S]))/m)?.[1] ?? '').matchAll(/=\s*['"]([\w.]+):/g)].map(m => m[1])
@@ -258,26 +259,29 @@ const HINTS = [
   // fetch with any string, or a string that looks like a URL path or an absolute URL, passed to a call.
   // HttpClient calls take relative paths from a BaseAddress, so any string literal counts there.
   // Python and Go seams.
-  ['route', /@(app|bp|blueprint|router|api|\w+_router)\.(route|get|post|put|delete|patch|websocket|api_route)\s*\(.*|\b(re_)?path\s*\(\s*r?['"][^'"]*['"]\s*,.*|\.(HandleFunc|Handle)\s*\(\s*"\/.*|\b\w+\.(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|Delete|Patch)\s*\(\s*"\/.*|\bhttp\.ListenAndServe\w*\s*\(.*/],
+  ['route', /@(app|bp|blueprint|router|api|\w+_router)\.(route|get|post|put|delete|patch|websocket|api_route)\s*\(.*|\b(re_)?path\s*\(\s*r?['"][^'"]*['"]\s*,.*|\.(HandleFunc|Handle)\s*\(\s*"\/.*|\b\w+\.(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|Delete|Patch)\s*\(\s*"\/.*|\bhttp\.ListenAndServe(TLS)?\s*\(.*|\.(PathPrefix|Path|Methods|Host)\s*\(\s*"\/.*|\bAPIRouter\s*\(.*|\.include_router\s*\(.*|\bBlueprint\s*\(.*|\.register_blueprint\s*\(.*|\.mount\s*\(\s*['"]\/.*|\bStaticFiles\s*\(.*/],
   ['queue', /\bCelery\s*\(.*|@(shared_task|\w+\.task)\b.*|\.(delay|apply_async)\s*\(.*|\bpika\.\w*Connection\s*\(.*|\bKafka(Producer|Consumer)\s*\(.*|\bamqp\.Dial\s*\(.*|\bnats\.Connect\s*\(.*|\bkafka\.New(Writer|Reader)\s*\(.*/],
-  ['store', /\bcreate_(async_)?engine\s*\(.*|\b(psycopg2?|sqlite3|pymysql|asyncpg|aiosqlite)\.connect\s*\(.*|\bredis\.(Redis|StrictRedis|from_url)\s*\(.*|\bMongoClient\s*\(.*|\bclass\s+\w+\s*\((models\.Model|[^)]*table\s*=\s*True)[^)]*\).*|\bsql\.Open\s*\(.*|\bgorm\.Open\s*\(.*|\bpgx(pool)?\.(Connect|New)\w*\s*\(.*|\bredis\.NewClient\s*\(.*|\bmongo\.Connect\s*\(.*|\bbolt\.Open\s*\(.*/],
-  ['socket', /\bwebsockets\.(connect|serve)\s*\(.*|\bsocket\.socket\s*\(.*|\bnet\.(Listen|Dial)\w*\s*\(.*|\bwebsocket\.Upgrader\b.*|\bgrpc\.(NewServer|Dial|NewClient)\s*\(.*/],
+  ['store', /\bsession\.(exec|add|add_all|commit|delete|query|execute|scalars|merge|refresh|flush)\s*\(.*|\bSession\s*\(\s*engine\b.*|\b(tx|db|conn|stmt)\.(Exec|Query|QueryRow|Prepare)(Context)?\s*\(.*|\bcreate_(async_)?engine\s*\(.*|\b(psycopg2?|sqlite3|pymysql|asyncpg|aiosqlite)\.connect\s*\(.*|\bredis\.(Redis|StrictRedis|from_url)\s*\(.*|\bMongoClient\s*\(.*|\bclass\s+\w+\s*\((models\.Model|[^)]*table\s*=\s*True)[^)]*\).*|\bsql\.Open\s*\(.*|\bgorm\.Open\s*\(.*|\bpgx(pool)?\.(Connect|New)\w*\s*\(.*|\bredis\.NewClient\s*\(.*|\bmongo\.Connect\s*\(.*|\bbolt\.Open\s*\(.*/],
+  ['socket', /\bautocert\.(NewListener|Manager)\b.*|\bwebsockets\.(connect|serve)\s*\(.*|\bsocket\.socket\s*\(.*|\bnet\.(Listen|Dial)\w*\s*\(.*|\bwebsocket\.Upgrader\b.*|\bgrpc\.(NewServer|Dial|NewClient)\s*\(.*/],
   ['process', /\bsubprocess\.(run|Popen|call|check_output|check_call)\s*\(.*|\bos\.system\s*\(.*|\bexec\.Command(Context)?\s*\(.*/],
-  ['call', /\b(requests|httpx)\.(get|post|put|patch|delete|request|AsyncClient|Client)\s*\(.*|\burlopen\s*\(.*|\bhttp\.(Get|Post|PostForm|Head)\s*\(.*|\bhttp\.NewRequest(WithContext)?\s*\(.*/],
+  ['call', /\b\w*[Cc]lient\.Do\s*\(.*|\bhttp\.DefaultClient\.\w+\s*\(.*|\.Exchange\s*\(\s*ctx\b.*|\brollbar\.\w+\s*\(.*|\bsentry_sdk\.init\s*\(.*|\bsmtplib\.SMTP\w*\s*\(.*|\.send\s*\([^)]*\bsmtp\s*=.*|\b(requests|httpx)\.(get|post|put|patch|delete|request|AsyncClient|Client)\s*\(.*|\burlopen\s*\(.*|\bhttp\.(Get|Post|PostForm|Head)\s*\(.*|\bhttp\.NewRequest(WithContext)?\s*\(.*/],
   // Generated API clients pass the path in an options object.
-  ['call', /\b(url|baseURL|baseUrl)\s*:\s*['"`](\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*['"`].*/],
+  ['call', /\b(url|baseURL|baseUrl)\s*:\s*['"`](\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*['"`](?!\s*;).*/],
   ['call', /\bfetch\s*\(.*|\bwindow\.open\s*\(.*|\bSentry\.init\s*\(.*|\b(Get|Post|Put|Patch|Delete|Send)(AsJson|FromJson|String|ByteArray|Stream)?Async\s*\(\s*\$?@?".*|\bHttpMethod\.\w+\s*,\s*\$?".*|\bnew\s+Uri\s*\(\s*\$?"(https?|wss?):\/\/.*|\b(axios(\.\w+)?|\w*[Ff]etch\w*|request|get|post|put|patch|delete|GetAsync|PostAsync|PutAsync|DeleteAsync|SendAsync|uri|exchange|getForObject|postForObject)\s*\(\s*(['"`])(\$\{[^}]+\})?(https?:\/\/|\/)[^'"`]*\3.*/],
 ]
-const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json)$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
+const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json|Makefile|alembic\.ini|[\w.-]+\.service)$|(^|\/)\.github\/workflows\/[^/]+\.ya?ml$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
 
 /** Route, call, schedule, store, queue, socket, message, process and file lines of a file, with their line numbers. */
 function hintsOf(src) {
   const out = []
-  src.split('\n').forEach((line, i) => {
+  const lines = src.split('\n')
+  lines.forEach((line, i) => {
     if (/^\s*(\/\/|\*|#)/.test(line)) return
     for (const [kind, re] of HINTS) {
       const m = line.match(re)
-      if (m) { out.push({ line: i + 1, kind, text: m[0].trim().slice(0, 140) }); break }
+      // A call split over lines (`@router.get(` then the path): the next line says where it goes.
+      const text = m && (/\($/.test(m[0].trim()) && lines[i + 1] ? `${m[0].trim()} ${lines[i + 1].trim()}` : m[0].trim())
+      if (m) { out.push({ line: i + 1, kind, text: text.slice(0, 140) }); break }
     }
   })
   return out
@@ -329,7 +333,19 @@ export function buildGraph(repo) {
     const pr = owner.get(p)
     if (!pr || pr.lang === 'js' || pr.lang === 'py' || pr.kind === 'test') continue
     if (testProjects.some(t => under(p, t.dir))) continue
+    // Go files for build tags the normal build never sets (tools, ignore) are tooling.
+    if (pr.lang === 'go' && /^\/\/(go:build|\s*\+build)\s+!?(tools|ignore)\b/m.test(readFileSync(join(repo, p), 'utf8'))) continue
     rec(p)
+  }
+  // Go //go:embed: the embedded scripts are served by the binary, so they are application code.
+  const embeds = []
+  for (const f of [...recs.values()].filter(r => r.lang === 'go')) {
+    for (const m of f.src.matchAll(/^\/\/go:embed\s+(.+)$/gm)) {
+      for (const pat of m[1].trim().split(/\s+/).map(x => x.replace(/^"|"$/g, ''))) {
+        const re = new RegExp(`^${posix.join(dirOf(f.path) || '.', pat).replace(/^\.\//, '').replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}(\/.*)?$`)
+        for (const t of all) if (re.test(t)) embeds.push([f.path, t])
+      }
+    }
   }
 
   // Python: whole packages, since frameworks find modules by convention (Django apps, Celery
@@ -339,7 +355,10 @@ export function buildGraph(repo) {
   const pyRead = p => pySrc.get(p) ?? pySrc.set(p, readFileSync(join(repo, p), 'utf8')).get(p)
   const pyr = pythonResolver(pyFiles, new Set(all), pyRead)
   const pyScripts = new Set(projects.filter(p => p.lang === 'py').flatMap(p => p.scripts))
-  const pyEntries = [...pyFiles].filter(p => /(^|\/)(__main__|manage|wsgi|asgi)\.py$/.test(p) || /^if\s+__name__\s*==\s*['"]__main__['"]\s*:/m.test(pyRead(p)) || pyScripts.has(pyr.nameOf.get(p)))
+  // Scripts only CI runs (release helpers) are tooling, not entry points.
+  const ciRuns = all.filter(p => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)).flatMap(p => [...readFileSync(join(repo, p), 'utf8').matchAll(/(?:python3?|uv run|poetry run|pipenv run)\s+(?:-m\s+([\w.]+)|([\w./-]+\.py))/g)].map(m => m[2] ?? m[1]))
+  const ciOnly = p => ciRuns.some(r => r === p || r === pyr.nameOf.get(p))
+  const pyEntries = [...pyFiles].filter(p => !ciOnly(p) && (/(^|\/)(__main__|manage|wsgi|asgi)\.py$/.test(p) || /(^|\/)(alembic|migrations)\/env\.py$/.test(p) || /^if\s+__name__\s*==\s*['"]__main__['"]\s*:/m.test(pyRead(p)) || /^\w+\s*=\s*(FastAPI|Flask|Starlette|Quart|Sanic|Litestar)\s*\(/m.test(pyRead(p)) || /\bget_(asgi|wsgi)_application\s*\(/.test(pyRead(p)) || pyScripts.has(pyr.nameOf.get(p))))
   const pyQueue = [...new Set([...[...pyFiles].filter(p => pyr.isPkg(dirOf(p)) || /(^|\/)src\//.test(p)), ...pyEntries])]
   const pySeen = new Set(pyQueue)
   while (pyQueue.length) {
@@ -356,7 +375,7 @@ export function buildGraph(repo) {
   const fileSet = new Set(candidates.filter(p => LANG[extOf(p)] === 'js'))
   const js = jsResolver(repo, projects, fileSet, new Set(all))
   const pages = js.pages()
-  const entries = [...pages.scripts, ...projects.filter(p => p.lang === 'js').flatMap(p => js.entries(p, pages.scripts))]
+  const entries = [...pages.scripts, ...projects.filter(p => p.lang === 'js').flatMap(p => js.entries(p, pages.scripts)), ...embeds.map(([, t]) => t).filter(t => fileSet.has(t))]
   // Static and dynamic imports, require, workers or assets loaded with new URL(…, import.meta.url),
   // and workers started from a path (new Worker('w.js'), serviceWorker.register('sw.js')).
   const importSpec = /(?:import|export)\s[^'"`;]*?from\s*['"]([^'"]+)['"]|import\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)|require\(\s*['"]([^'"]+)['"]\s*\)|new\s+URL\(\s*['"](\.[^'"]+)['"]\s*,\s*import\.meta\.url|(?:serviceWorker\.register|new\s+(?:Shared)?Worker)\(\s*['"]([^'"]+)['"]/g
@@ -430,6 +449,7 @@ export function buildGraph(repo) {
     }
   }
 
+  for (const [from, t] of embeds) if (recs.has(t)) relate(recs.get(from), recs.get(t), 'go:embed')
   const files = [...recs.values()]
   relateCs(files, projects, relate)
   relateRs(files, projects, relate)
@@ -457,7 +477,7 @@ export function buildGraph(repo) {
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
     edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
-    dropped: { tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
+    dropped: { generated: all.filter(p => LANG[extOf(p)] && GENERATED.test(p) && !/(^|\/)vendor\//.test(p)).length, tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
 }
 
@@ -680,8 +700,11 @@ function relateGo(files, projects, relate) {
       if (!pkgFiles) continue
       const name = alias ?? (pkgFiles[0].pkg || path.split('/').at(-1))
       for (const used of new Set([...f.code.matchAll(new RegExp(`\\b${name}\\.([A-Z]\\w*)`, 'g'))].map(x => x[1]))) {
-        const t = pkgFiles.find(g => g.declares.has(used))
-        if (t) relate(f, t, used)
+        // Build-tag variants declare the same name in several files: each is a dependency.
+        const ts = pkgFiles.filter(g => g.declares.has(used))
+        for (const t of ts) relate(f, t, used)
+        // A name no file declares comes from generated code (go generate, templates): the package still counts.
+        if (!ts.length) relate(f, pkgFiles.find(g => posix.basename(g.path, '.go') === name) ?? [...pkgFiles].sort((a, b) => b.declares.size - a.declares.size)[0], used)
       }
     }
     // Within a package, files use each other's top-level names without imports.
