@@ -29,6 +29,20 @@ const centre = id => page.evaluate(id => {
 }, id)
 const landed = async () => { await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 8000 }); await sleep(350) }
 const key = async (k, mods = []) => { for (const m of mods) await page.keyboard.down(m); await page.keyboard.press(k); for (const m of mods.reverse()) await page.keyboard.up(m) }
+/** Right-clicks a card and picks a command wheel item by its label. */
+const wheel = async (id, label) => {
+  const [x, y] = await centre(id)
+  await page.mouse.click(x, y, { button: 'right' })
+  await sleep(300)
+  const at = await page.evaluate(label => {
+    const e = [...document.querySelectorAll('.radial .item')].find(e => e.firstChild.textContent === label)
+    if (!e) return null
+    const r = e.getBoundingClientRect()
+    return [r.x + r.width / 2, r.y + r.height / 2]
+  }, label)
+  if (at) return page.mouse.click(at[0], at[1])
+  throw new Error(`no wheel item ${label}`)
+}
 
 // 1. Command palette: type a few letters, fuzzy results.
 await key('k', ['Control'])
@@ -51,17 +65,7 @@ await shot('04-walked-to-target')
 await key('Backspace'); await landed()
 await shot('05-back')
 
-// 4. Control group: save this view to slot 1, fly elsewhere, recall.
-await key('1', ['Control'])
-await sleep(300)
-await page.evaluate(() => { const s = window.__spike; s.select(s.id('galaxyWars.clients.browserClient')); s.fly(s.id('galaxyWars.clients.browserClient')) })
-await landed()
-await key('2', ['Control'])
-await sleep(200)
-await key('1'); await landed()
-await shot('06-control-group-recalled')
-
-// 5. Radial command wheel on a card.
+// 4. Radial command wheel on a card.
 const [rx, ry] = await centre('galaxyWars.server.gameServer.simulation.sector.sectorRegistry')
 await page.mouse.move(rx, ry)
 await page.mouse.click(rx, ry, { button: 'right' })
@@ -71,21 +75,18 @@ await sleep(150)
 await shot('07-radial-wheel')
 await key('Escape')
 
-// 6. Route: select a start, R, click the destination.
+// 5. Route: select a start, then "Route here" on the destination's wheel; click a stop to go there.
 await page.evaluate(() => { const s = window.__spike; s.select(s.id('galaxyWars.clients.browserClient.session')); s.fly(0) })
 await landed()
-await key('r')
-await sleep(200)
-const [dx, dy] = await centre('galaxyWars.postgreSQL')
-await page.mouse.click(dx, dy)
+await wheel('galaxyWars.postgreSQL', 'Route here')
 await landed()
 await sleep(500)
 await shot('08-route')
-await key('n'); await landed(); await key('n'); await landed()
+await page.click('.rp-stop:nth-of-type(3)'); await landed()
 await shot('09-route-waypoint')
 await key('Escape'); await key('Escape')
 
-// 7. Nested tooltips: hover, hold to lock, hover a name inside.
+// 6. Nested tooltips: hover, hold to lock, hover a name inside.
 await page.evaluate(() => { const s = window.__spike; s.select(-1); s.fly(s.id('galaxyWars.server.gameServer.transport')) })
 await landed()
 const [tx, ty] = await centre('galaxyWars.server.gameServer.transport.tcpGameServer')
@@ -97,9 +98,8 @@ await shot('10-nested-tooltips')
 await page.mouse.move(5, 500)
 await sleep(300)
 
-// 8. Pins point the way when off screen.
-await page.mouse.move(tx, ty)
-await key('p')
+// 7. Pins, from the wheel, point the way when off screen.
+await wheel('galaxyWars.server.gameServer.transport.tcpGameServer', 'Pin')
 await sleep(200)
 await page.evaluate(() => { const s = window.__spike; s.fly(s.id('galaxyWars.tooling.devTool')) })
 await landed()
@@ -107,7 +107,7 @@ await page.mouse.move(5, 500)
 await sleep(300)
 await shot('11-pin-offscreen')
 
-// 9. Controls screen.
+// 8. Controls screen.
 await key('?')
 await sleep(300)
 await shot('12-controls-screen')

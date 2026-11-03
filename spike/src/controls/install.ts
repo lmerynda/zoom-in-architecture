@@ -7,7 +7,7 @@ import type { Tree } from '../model'
 import type { Renderer } from '../render'
 import type { Sound } from '../sound'
 import { findRoute, History, type View } from './logic'
-import { askNote, BookmarkBar, Help, Palette, Radial, RoutePanel, Toast, Tooltips, type Command } from './ui'
+import { Help, Palette, Radial, RoutePanel, Toast, Tooltips, type Command } from './ui'
 
 export interface Ctx {
   app: Application
@@ -27,8 +27,8 @@ export interface Ctx {
 }
 
 /**
- * Game-style controls. Every way of moving or acting is here: mouse, keyboard, command wheel,
- * palette, control groups, history, target cycling, routes, pins and tooltips.
+ * Game-style controls, kept to a few: the mouse and the command wheel, the palette, back, target
+ * cycling and Esc. Routes and pins live behind the wheel and the palette rather than on keys.
  */
 export function installControls(c: Ctx) {
   const { cam, sound } = c
@@ -39,11 +39,10 @@ export function installControls(c: Ctx) {
   const help = new Help()
   const radial = new Radial()
   const routePanel = new RoutePanel(tree)
-  const bookmarks = new BookmarkBar(`zoom:bookmarks:${c.model}`)
   const pinKey = `zoom:pins:${c.model}`
-  const loadPins = () => { try { renderer.pins = (JSON.parse(localStorage.getItem(pinKey) ?? '[]') as { id: string; note: string }[]).map(p => ({ node: tree.byId.get(p.id) ?? -1, note: p.note })).filter(p => p.node > 0) } catch { /* none */ } }
+  const loadPins = () => { try { renderer.pins = (JSON.parse(localStorage.getItem(pinKey) ?? '[]') as string[]).map(id => tree.byId.get(id) ?? -1).filter(n => n > 0) } catch { /* none */ } }
   loadPins()
-  const savePins = () => { try { localStorage.setItem(pinKey, JSON.stringify(renderer.pins.map(p => ({ id: tree.els[p.node].id, note: p.note })))) } catch { /* private mode */ } }
+  const savePins = () => { try { localStorage.setItem(pinKey, JSON.stringify(renderer.pins.map(n => tree.els[n].id))) } catch { /* private mode */ } }
 
   const view = (): View => ({ x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected > 0 ? tree.els[renderer.selected].id : null })
   /** Every jump records where you were, so Backspace brings you back. */
@@ -99,7 +98,6 @@ export function installControls(c: Ctx) {
   const clearTarget = () => { renderer.target = -1; cycle = null }
 
   // --- Routes: pick a destination, then step along waypoints.
-  let picking = false
   const showRoute = () => routePanel.show(renderer.route, renderer.routeStep)
   const routeTo = (from: number, to: number) => {
     const hops = findRoute(tree, from, to)
@@ -109,7 +107,7 @@ export function installControls(c: Ctx) {
     clearTarget()
     showRoute()
     frame([hops[0].from, ...hops.map(h => h.to)])
-    toast.show(`Route: ${hops.length} hop${hops.length === 1 ? '' : 's'}${hops.some(h => h.reversed) ? ' (some against the arrows)' : ''}`, 'N next waypoint')
+    toast.show(`Route: ${hops.length} hop${hops.length === 1 ? '' : 's'}${hops.some(h => h.reversed) ? ' (some against the arrows)' : ''}`, 'click a stop to go there')
   }
   const stepRoute = (k: number) => {
     const r = renderer.route
@@ -121,61 +119,26 @@ export function installControls(c: Ctx) {
   }
   routePanel.onStep = stepRoute
   const clearRoute = () => { renderer.route = null; renderer.routeStep = -1; showRoute() }
-  const startPicking = () => {
-    if (subject() <= 0) return toast.show('Select a start first')
-    if (renderer.selected <= 0) c.select(subject())
-    picking = true
-    document.body.classList.add('picking')
-    toast.show(`Route from ${tree.els[renderer.selected].title}: click the destination`, 'Esc cancels')
-  }
-  const stopPicking = () => { picking = false; document.body.classList.remove('picking') }
-
   // --- Pins.
-  const togglePin = (n: number, withNote = false, at?: [number, number]) => {
+  const togglePin = (n: number) => {
     if (n <= 0) return
-    const existing = renderer.pins.findIndex(p => p.node === n)
-    if (existing >= 0 && !withNote) { renderer.pins.splice(existing, 1); savePins(); return toast.show(`Unpinned ${tree.els[n].title}`) }
-    const add = (note: string) => {
-      if (existing >= 0) renderer.pins[existing].note = note
-      else renderer.pins.push({ node: n, note })
-      savePins()
-      sound.blip(980, 0.06)
-      toast.show(`Pinned ${tree.els[n].title}`, 'P again to unpin')
-    }
-    if (withNote) {
-      const [x, y] = at ?? [cam.w / 2, cam.h / 2]
-      askNote(x, y, existing >= 0 ? renderer.pins[existing].note : '', note => note !== null && add(note))
-    } else add('')
+    const existing = renderer.pins.indexOf(n)
+    if (existing >= 0) renderer.pins.splice(existing, 1)
+    else { renderer.pins.push(n); sound.blip(980, 0.06) }
+    savePins()
+    if (existing >= 0) toast.show(`Unpinned ${tree.els[n].title}`)
+    else toast.show(`Pinned ${tree.els[n].title}`, 'Ctrl+K finds it again')
   }
-
-  // --- Control groups.
-  let lastRecall = { slot: -1, at: 0 }
-  const saveSlot = (k: number) => {
-    const n = subject()
-    bookmarks.save(k, { ...view(), title: n > 0 ? tree.els[n].title : 'Landscape' })
-    toast.show(`Saved view ${k + 1}: ${n > 0 ? tree.els[n].title : 'Landscape'}`, `${k + 1} to return`)
-  }
-  const recallSlot = (k: number) => {
-    const b = bookmarks.slots[k]
-    if (!b) return toast.show(`Slot ${k + 1} is empty`, `Ctrl+${k + 1} saves`)
-    history.push(view(), cam.w)
-    goView(b)
-    bookmarks.flash(k)
-    lastRecall = { slot: k, at: performance.now() }
-  }
-  bookmarks.onRecall = recallSlot
 
   // --- Palette.
   const commands = (): Command[] => [
-    ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Lens: ${name[0].toUpperCase()}${name.slice(1)}`, hint: 'L cycles', run: () => c.setLens(name as LensName) })),
-    { name: 'Whole map', hint: '0', run: () => go(0) },
+    ...renderer.pins.map(n => ({ name: `Pin: ${tree.els[n].title}`, hint: 'jump', run: () => go(n) })),
+    ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Lens: ${name[0].toUpperCase()}${name.slice(1)}`, run: () => c.setLens(name as LensName) })),
+    { name: 'Whole map', run: () => go(0) },
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Clear route', hint: 'Esc', run: clearRoute },
-    { name: 'Route from selection…', hint: 'R', run: startPicking },
-    { name: 'Toggle sound', hint: 'M', run: () => c.sound.toggle() },
+    { name: 'Toggle sound', run: () => document.getElementById('sound')?.click() },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
-    ...renderer.pins.map(p => ({ name: `Pin: ${p.note || tree.els[p.node].title}`, hint: 'jump', run: () => go(p.node) })),
-    ...bookmarks.slots.flatMap((b, k) => (b ? [{ name: `Slot ${k + 1}: ${b.title}`, hint: String(k + 1), run: () => recallSlot(k) }] : [])),
   ]
   const palette = new Palette(tree, commands, (i, shift) => {
     if (shift && renderer.selected > 0) return routeTo(renderer.selected, i)
@@ -220,8 +183,8 @@ export function installControls(c: Ctx) {
     if (e.button !== 0 || !drag) return
     if (drag.moved < 5) {
       const hit = renderer.pick(e.offsetX, e.offsetY)
-      if (picking) { stopPicking(); if (hit > 0 && renderer.selected > 0) routeTo(renderer.selected, hit) }
-      else { clearTarget(); c.select(hit === renderer.selected ? -1 : hit) }
+      clearTarget()
+      c.select(hit === renderer.selected ? -1 : hit)
     } else if (performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
   })
@@ -232,22 +195,20 @@ export function installControls(c: Ctx) {
     tooltips.closeAll()
     const n = renderer.pick(e.offsetX, e.offsetY)
     if (n <= 0) return radial.open(e.clientX, e.clientY, 'Map', [
-      { label: 'Whole map', key: '0', run: () => go(0) },
+      { label: 'Whole map', run: () => go(0) },
       { label: 'Back', key: '⌫', run: back },
       { label: 'Travel to…', key: 'Ctrl K', run: () => palette.open() },
       { label: 'Controls', key: '?', run: () => help.toggle(true) },
     ])
     const sel = renderer.selected
-    const pinned = renderer.pins.some(p => p.node === n)
+    const pinned = renderer.pins.includes(n)
     radial.open(e.clientX, e.clientY, tree.els[n].title, [
-      { label: 'Fly in', key: 'F', run: () => go(n) },
+      { label: 'Fly in', key: '2× click', run: () => go(n) },
       { label: sel === n ? 'Deselect' : 'Select', key: 'Click', run: () => c.select(sel === n ? -1 : n) },
       { label: 'Calls…', key: ']', run: () => { c.select(n); cycleTarget('out', 1) } },
-      { label: 'Route here', key: 'R', disabled: sel <= 0 || sel === n, run: () => routeTo(sel, n) },
+      { label: 'Route here', disabled: sel <= 0 || sel === n, run: () => routeTo(sel, n) },
       { label: 'Called by…', key: '[', run: () => { c.select(n); cycleTarget('in', 1) } },
-      { label: pinned ? 'Unpin' : 'Pin', key: 'P', run: () => togglePin(n) },
-      { label: 'Pin with note', key: '⇧P', run: () => togglePin(n, true, [e.clientX, e.clientY]) },
-      { label: 'Save view', key: 'Ctrl 1–9', run: () => saveSlot(Math.max(0, bookmarks.slots.indexOf(null))) },
+      { label: pinned ? 'Unpin' : 'Pin', run: () => togglePin(n) },
     ])
   })
   c.minimap.onPick = (wx, wy) => { history.push(view(), cam.w); cam.flyTo(wx - cam.w / cam.z / 2, wy - cam.h / cam.z / 2, cam.w / cam.z, cam.h / cam.z, c.now(), 1) }
@@ -262,53 +223,20 @@ export function installControls(c: Ctx) {
     held.add(k)
     if ((e.ctrlKey || e.metaKey) && k === 'k') { e.preventDefault(); return palette.open() }
     if (k === '/') { e.preventDefault(); return palette.open() }
-    if (/^[1-9]$/.test(e.key) || (e.ctrlKey && /^Digit[1-9]$/.test(e.code))) {
-      const slot = Number(e.code.replace('Digit', '') || e.key) - 1
-      e.preventDefault()
-      if (e.ctrlKey || e.metaKey) return saveSlot(slot)
-      // Double tap, like an RTS control group: also selects what the view was about.
-      const again = bookmarks.slots[slot]
-      if (lastRecall.slot === slot && performance.now() - lastRecall.at < 400 && again?.selected) c.select(tree.byId.get(again.selected) ?? -1)
-      return recallSlot(slot)
-    }
     if (k === '?') return help.toggle()
     if (k === 'backspace' || (e.altKey && k === 'arrowleft')) { e.preventDefault(); return back() }
     if (e.altKey && k === 'arrowright') { e.preventDefault(); return forward() }
-    if (k === 'home' || k === '0') return go(0)
-    if (k === 'm') { const on = sound.toggle(); toast.show(on ? 'Sound on' : 'Sound off', 'M'); return document.getElementById('sound')?.classList.toggle('on', on) }
-    if (k === 'l') {
-      const order: LensName[] = ['structure', ...c.lenses.map(l => l.name)]
-      const next = order[(order.indexOf(renderer.lens?.name ?? 'structure') + 1) % order.length]
-      c.setLens(next)
-      return toast.show(`Lens: ${next}`, 'L next')
-    }
     if (k === ']') return cycleTarget('out', e.shiftKey ? -1 : 1)
     if (k === '[') return cycleTarget('in', e.shiftKey ? -1 : 1)
-    if (k === 'r' && !e.ctrlKey) return startPicking()
-    if (k === 'n' && renderer.route) return stepRoute(renderer.routeStep + 1)
-    if (k === 'p' && renderer.route && !e.shiftKey) return stepRoute(renderer.routeStep - 1)
-    if (k === 'p') return togglePin(renderer.hover > 0 ? renderer.hover : subject(), e.shiftKey, renderer.pointer ?? undefined)
-    if (k === 'tab') {
-      e.preventDefault()
-      const cur = subject()
-      const sibs = tree.children[Math.max(0, tree.parent[cur])]
-      if (cur > 0 && sibs.length) {
-        const next = sibs[(sibs.indexOf(cur) + (e.shiftKey ? sibs.length - 1 : 1)) % sibs.length]
-        clearTarget(); goSelect(next)
-      }
-      return
-    }
     if (k === 'enter') {
       if (renderer.target > 0) { const t = renderer.target; clearTarget(); goSelect(t); return toast.show(`Walked to ${tree.els[t].title}`, '] [ to look around') }
       const cur = subject(); if (cur > 0) go(cur)
       return
     }
-    if (k === 'f') { const cur = subject(); if (cur > 0) go(cur); return }
     if (k === 'escape') {
       // One layer at a time, outermost first.
       if (radial.isOpen) return radial.close()
       if (help.isOpen) return help.toggle(false)
-      if (picking) return stopPicking()
       if (renderer.target > 0) return clearTarget()
       if (renderer.route) return clearRoute()
       if (renderer.selected > 0) return c.select(-1)
@@ -319,16 +247,15 @@ export function installControls(c: Ctx) {
   window.addEventListener('keyup', e => held.delete(e.key.toLowerCase()))
   window.addEventListener('blur', () => held.clear())
 
-  /** Held keys move the camera with a little acceleration, like a ship. */
+  /** Held arrow keys move the camera with a little acceleration, like a ship; + and - zoom. */
   let thrust = 0
   const steer = (dt: number) => {
-    const ax = (held.has('d') || held.has('arrowright') ? 1 : 0) - (held.has('a') || held.has('arrowleft') ? 1 : 0)
-    const ay = (held.has('s') || held.has('arrowdown') ? 1 : 0) - (held.has('w') || held.has('arrowup') ? 1 : 0)
-    const az = (held.has('e') || held.has('+') || held.has('=') ? 1 : 0) - (held.has('q') || held.has('-') ? 1 : 0)
+    const ax = (held.has('arrowright') ? 1 : 0) - (held.has('arrowleft') ? 1 : 0)
+    const ay = (held.has('arrowdown') ? 1 : 0) - (held.has('arrowup') ? 1 : 0)
+    const az = (held.has('+') || held.has('=') ? 1 : 0) - (held.has('-') ? 1 : 0)
     thrust = ax || ay || az ? Math.min(1, thrust + dt / 350) : 0
-    const boost = held.has('shift') ? 2.5 : 1
-    if (ax || ay) cam.panBy(-ax * 900 * boost * thrust * dt / 1000, -ay * 900 * boost * thrust * dt / 1000)
-    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * boost * thrust * dt / 1000))
+    if (ax || ay) cam.panBy(-ax * 900 * thrust * dt / 1000, -ay * 900 * thrust * dt / 1000)
+    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000))
   }
 
   return {
@@ -336,9 +263,9 @@ export function installControls(c: Ctx) {
     tick(dt: number, now: number) {
       steer(dt)
       const p = renderer.pointer
-      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || picking)
+      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying)
     },
-    go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, saveSlot, recallSlot, palette, radial, help, toast,
+    go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, palette, radial, help, toast,
     /** Points every control at a new model version; the caller carries selection, route and target over. */
     swap(next: { tree: typeof tree; world: typeof world; renderer: typeof renderer }) {
       tree = next.tree; world = next.world; renderer = next.renderer

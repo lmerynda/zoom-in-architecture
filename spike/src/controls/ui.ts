@@ -1,5 +1,5 @@
 import type { Tree } from '../model'
-import { fuzzy, type Hop, type View } from './logic'
+import { fuzzy, type Hop } from './logic'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
   const e = document.createElement(tag)
@@ -25,47 +25,6 @@ export class Toast {
     this.root.classList.add('show')
     clearTimeout(this.timer)
     this.timer = window.setTimeout(() => this.root.classList.remove('show'), 2200)
-  }
-}
-
-export interface Bookmark extends View { title: string }
-
-/** RTS control groups: Ctrl+digit saves the view, digit recalls it. Kept per model. */
-export class BookmarkBar {
-  slots: (Bookmark | null)[] = Array(9).fill(null)
-  private root = el('div', 'bookmarks')
-  onRecall: (slot: number) => void = () => {}
-
-  constructor(private key: string) {
-    try {
-      const saved = JSON.parse(localStorage.getItem(key) ?? 'null')
-      // Older saves held a selection index; ids are the only thing stable across model versions.
-      if (Array.isArray(saved)) this.slots = saved.map(b => (b ? { ...b, selected: typeof b.selected === 'string' ? b.selected : null } : null))
-    } catch { /* fresh start */ }
-    document.body.append(this.root)
-    this.render()
-  }
-
-  save(slot: number, b: Bookmark) {
-    this.slots[slot] = b
-    try { localStorage.setItem(this.key, JSON.stringify(this.slots)) } catch { /* private mode */ }
-    this.render()
-    this.flash(slot)
-  }
-
-  flash(slot: number) {
-    const s = this.root.children[slot] as HTMLElement
-    s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash')
-  }
-
-  private render() {
-    this.root.replaceChildren(...this.slots.map((b, k) => {
-      const s = el('button', b ? 'slot full' : 'slot')
-      s.append(el('b', '', String(k + 1)), el('span', '', b ? b.title : ''))
-      s.title = b ? `${k + 1}: ${b.title} (Ctrl+${k + 1} to overwrite)` : `Ctrl+${k + 1} saves the current view here`
-      s.onclick = () => b && this.onRecall(k)
-      return s
-    }))
   }
 }
 
@@ -285,7 +244,7 @@ export class RoutePanel {
     if (!route) return
     const stops = [route[0].from, ...route.map(h => h.to)]
     const head = el('div', 'rp-head')
-    head.append(el('b', '', `Route · ${route.length} hop${route.length === 1 ? '' : 's'}`), el('span', '', 'N next · P previous · Esc clear'))
+    head.append(el('b', '', `Route · ${route.length} hop${route.length === 1 ? '' : 's'}`), el('span', '', 'click a stop · Esc clears'))
     this.root.replaceChildren(head, ...stops.map((n, k) => {
       const row = el('button', k === step ? 'rp-stop on' : 'rp-stop')
       row.append(el('i', '', String(k + 1)), el('b', '', this.tree.els[n].title))
@@ -296,34 +255,13 @@ export class RoutePanel {
   }
 }
 
-/** Inline note editor for pins, placed where the pin was dropped. */
-export function askNote(x: number, y: number, initial: string, done: (note: string | null) => void) {
-  const box = el('input', 'note-input') as HTMLInputElement
-  box.value = initial
-  box.placeholder = 'Pin note…'
-  box.style.left = `${Math.min(x, innerWidth - 280)}px`
-  box.style.top = `${Math.min(y, innerHeight - 60)}px`
-  document.body.append(box)
-  box.focus(); box.select()
-  let finished = false
-  const finish = (v: string | null) => { if (finished) return; finished = true; box.remove(); done(v) }
-  box.addEventListener('keydown', e => {
-    if (e.key === 'Enter') finish(box.value.trim())
-    if (e.key === 'Escape') finish(null)
-    e.stopPropagation()
-  })
-  box.addEventListener('blur', () => finish(box.value.trim()))
-}
-
 /** Keybinding screen, like a game's controls page. */
 export class Help {
   private root = el('div', 'help-overlay')
   constructor() {
     const groups: [string, [string, string][]][] = [
-      ['Camera', [['Wheel', 'Zoom at the cursor'], ['Drag', 'Pan'], ['W A S D / arrows', 'Fly'], ['Q / E', 'Zoom out / in'], ['Shift', 'Boost'], ['Double-click', 'Fly into a card'], ['0', 'Whole map'], ['Minimap', 'Click or drag to move']]],
-      ['Navigation', [['Ctrl+K or /', 'Travel to… (palette)'], ['Backspace, Alt+←', 'Back to the last place'], ['Alt+→', 'Forward'], ['Ctrl+1–9', 'Save view to a slot'], ['1–9', 'Recall a slot'], ['Esc', 'Clear, then up a level'], ['Tab / Shift+Tab', 'Next / previous sibling']]],
-      ['Selection', [['Click', 'Select (amber out, cyan in)'], ['Right-click', 'Command wheel'], [']  /  [', 'Cycle what it calls / what calls it'], ['Enter', 'Walk to the target'], ['F', 'Frame the selection'], ['Hover, hold still', 'Tooltip; locks, names nest']]],
-      ['Tools', [['R, then click', 'Route from the selection'], ['N / P', 'Next / previous waypoint'], ['Shift+P', 'Pin with a note'], ['P', 'Pin or unpin'], ['L', 'Cycle lenses'], ['M', 'Sound'], ['?', 'This screen']]],
+      ['Mouse', [['Wheel', 'Zoom at the cursor'], ['Drag', 'Pan'], ['Click', 'Select (amber out, cyan in)'], ['Double-click', 'Fly into a card'], ['Right-click', 'Wheel: route, pin, look around'], ['Hover, hold still', 'Tooltip; names inside open more']]],
+      ['Keys', [['Ctrl+K or /', 'Travel to anything, or run a command'], ['Backspace', 'Back to the last place'], [']  /  [', 'Look at what it calls / what calls it'], ['Enter', 'Go there'], ['Esc', 'Clear, then up a level'], ['?', 'This screen']]],
     ]
     const grid = el('div', 'help-grid')
     for (const [title, rows] of groups) {

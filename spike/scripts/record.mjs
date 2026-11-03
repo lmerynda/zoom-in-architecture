@@ -89,6 +89,13 @@ async function record(name, model, script) {
       const s = window.__spike, i = s.id(id), r = s.world.rect
       return s.cam.toScreen(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2)
     }, id),
+    /** Screen centre of the first element matching a selector, and with this text if given. */
+    centreOf: (sel, text) => page.evaluate(([sel, text]) => {
+      const e = [...document.querySelectorAll(sel)].find(e => text == null || e.textContent.startsWith(text))
+      if (!e) throw new Error(`no ${sel} ${text ?? ''}`)
+      const r = e.getBoundingClientRect()
+      return [r.x + r.width / 2, r.y + r.height / 2]
+    }, [sel, text]),
     /** Glides the pointer to a point over a few frames, so the cursor path reads on video. */
     move: async (x, y, ms = 400) => {
       const n = Math.max(1, Math.round((ms / 1000) * FPS))
@@ -143,8 +150,8 @@ const scenes = {
     await s.land(1000)
     for (const l of ['size', 'coupling', 'churn', 'structure']) { await s.lens(l); await s.hold(1800) }
   }),
-  // The game-style controls in use: palette travel, target cycling, walk, back, control
-  // groups, command wheel, a route with waypoints, and the controls screen.
+  // The game-style controls in use: palette travel, target cycling, walk, back, the command
+  // wheel, a route from the wheel with its waypoints, and the controls screen.
   'gw-controls': () => record('gw-controls', 'galaxy-wars', async s => {
     await s.hold(700)
     await s.key('k', ['Control'])
@@ -156,7 +163,6 @@ const scenes = {
     await s.key(']'); await s.land(1300)
     await s.key('Enter'); await s.land(1100)
     await s.key('Backspace'); await s.land(1100)
-    await s.key('1', ['Control']); await s.hold(900)
     const [rx, ry] = await s.at('galaxyWars.server.gameServer.simulation.sector.sectorRegistry')
     await s.move(rx, ry, 500)
     await s.click('right')
@@ -166,16 +172,21 @@ const scenes = {
     await s.key('Escape')
     await s.select('galaxyWars.clients.browserBridge')
     await s.fly(null); await s.land(500)
-    await s.key('r'); await s.hold(500)
     const [dx, dy] = await s.at('galaxyWars.postgreSQL')
     await s.move(dx, dy, 600)
+    await s.click('right')
+    await s.hold(500)
+    const [ix, iy] = await s.centreOf('.radial .item', 'Route here')
+    await s.move(ix, iy, 350)
     await s.click()
     await s.land(1600)
-    await s.key('n'); await s.land(900)
-    await s.key('n'); await s.land(900)
-    await s.key('n'); await s.land(1200)
+    for (const k of [2, 3, 4]) {
+      const [px, py] = await s.centreOf(`.rp-stop:nth-of-type(${k + 1})`)
+      await s.move(px, py, 300)
+      await s.click()
+      await s.land(1000)
+    }
     await s.key('Escape'); await s.key('Escape')
-    await s.key('1'); await s.land(1200)
     await s.key('?'); await s.hold(1800)
     await s.key('Escape'); await s.hold(400)
   }),

@@ -79,13 +79,12 @@ The goal is the control vocabulary of games, not their graphics. Each borrowed p
 |---|---|---|
 | "Take me to X" | Fast travel / console | `Ctrl+K` palette: fuzzy search plus commands |
 | "I was just somewhere useful" | Return to last location | `Backspace`, `Alt+←/→`; every jump is recorded with its selection |
-| "I keep switching between these three places" | RTS control groups | `Ctrl+1–9` / `1–9`, slot bar at the bottom |
 | "What does this talk to?" | Tab-targeting, target of target | `]` / `[` cycle callees / callers with both framed; `Enter` walks |
-| "What can I do with this?" | Command wheel | Right-click: eight actions, flick-to-select |
-| "How does A reach B?" | GPS route with waypoints | `R` + click; cheapest path that prefers following the arrows; `N` / `P` |
-| "Remember this, and where is it?" | Quest markers | `P` / `Shift+P` pins; off-screen pins point the way from the screen edge |
+| "What can I do with this?" | Command wheel | Right-click: six actions, flick-to-select |
+| "How does A reach B?" | GPS route with waypoints | Wheel "Route here" from the selection; cheapest path that prefers following the arrows; click a stop to go there |
+| "Remember this, and where is it?" | Quest markers | Wheel "Pin"; off-screen pins point the way from the screen edge; pins are in the palette |
 | "What is this, and what is that thing it mentions?" | Nested tooltips (Crusader Kings) | Hover and hold: lock, then hover names inside |
-| "Let me just move around" | Ship flight, RTS minimap | `WASD`/`QE`, minimap drag |
+| "Let me just move around" | RTS minimap | Minimap click and drag; arrow keys |
 | "Get me out of this" | Layered Esc | Closes the innermost layer first |
 
 All of these were driven with real mouse and keyboard input by `scripts/ux-tour.mjs`, and recorded by `scripts/record.mjs gw-controls`. Driving them found three real bugs:
@@ -94,6 +93,21 @@ All of these were driven with real mouse and keyboard input by `scripts/ux-tour.
 - Back restored the place but not the selection, because the jump was recorded after the selection changed.
 
 Pure logic has unit tests: route search, history and fuzzy matching.
+
+### Trimmed to six keys
+
+The first pass bound a key to nearly every pattern: about 25 bindings across four columns of a help screen, which felt like too much to learn. The trim keeps only what answers a question you ask constantly, and moves the rest where it can be found rather than memorised:
+- **Kept on keys:** `Ctrl+K`, `Backspace`, `]` / `[` with `Enter`, `Esc`, `?`, plus the arrows.
+- **Moved to the wheel:** route here and pin. The route picking mode (`R`, then click) went: the wheel's "Route here" does the same from where the pointer already is. Waypoints step by clicking the route panel, not `N` / `P`.
+- **Moved to the palette and top bar:** lenses (`L`), sound (`M`), whole map (`0`).
+- **Removed:**
+  - control groups (`Ctrl+1–9`) and their slot bar: pins plus the palette cover "remember this place";
+  - pin notes;
+  - `Tab` sibling cycling;
+  - `F`, which duplicated double-click and `Enter`;
+  - `WASD` / `QE` / `Shift` boost.
+
+The help screen is now two short columns, mouse and keys.
 
 The motion work from the same pass stays, but secondary:
 - van Wijk–Nuij flights;
@@ -136,8 +150,7 @@ Two environment lessons:
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Live mode: watch the LikeC4 workspace and re-lay out only the containers that changed, which also tests stability across edits.
-3. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
-4. Zoom past leaves into code (blockviz-style levels).
+2. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
+3. Zoom past leaves into code (blockviz-style levels).
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

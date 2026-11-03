@@ -29,20 +29,19 @@ With `npm run dev` running, saving any `model/<name>/*.c4` file re-extracts that
 
 Controls borrow from games. Press `?` in the app for the full sheet.
 
-| Pattern | Control |
-|---|---|
-| Fast travel / console | `Ctrl+K` or `/`: fuzzy search over every element plus commands; `Shift+Enter` routes from the selection |
-| RTS control groups | `Ctrl+1–9` saves the view, `1–9` recalls it, double tap also selects; slots show at the bottom |
-| Return to last location | `Backspace` or `Alt+←` / mouse back, `Alt+→` forward; every jump is recorded |
-| Tab-targeting, target of target | `]` / `[` cycle what the selection calls / what calls it, framing both; `Enter` walks there |
-| Command wheel | Right-click a card: fly in, select, calls, called by, route here, pin, pin with note, save view; or hold right, flick, release |
-| GPS route with waypoints | `R` then click a destination; `N` / `P` step along the stops; directions panel bottom left |
-| Quest markers | `P` pins the hovered card, `Shift+P` with a note; off-screen pins point the way from the screen edge |
-| Nested tooltips | Hover and hold still: the tooltip locks, names inside it open their own tooltips |
-| Ship flight | `WASD` / arrows fly, `Q` / `E` zoom, `Shift` boosts; `Tab` next sibling; drag the minimap |
-| Layered Esc | `Esc` closes the innermost thing first: wheel, help, picking, target, route, selection, then goes up a level |
+Six keys plus the mouse; everything else is in the command wheel or the palette.
 
-Also: wheel zooms at the cursor, click selects (out in amber, in in cyan), double-click flies in, `L` cycles lenses, `M` toggles sound.
+| Control | Does |
+|---|---|
+| Wheel, drag, click, double-click | Zoom at the cursor, pan, select (out in amber, in in cyan), fly in |
+| Right-click a card | Command wheel: fly in, select, calls, called by, route here (from the selection), pin; or hold right, flick, release |
+| `Ctrl+K` or `/` | Travel to any element, pin or command (lenses, sound, clear route); `Shift+Enter` routes there from the selection |
+| `Backspace` | Back to the last place; `Alt+→` and the mouse buttons go back and forward |
+| `]` / `[` | Look at what the selection calls / what calls it, with both framed; `Enter` goes there |
+| `Esc` | Closes the innermost thing first: wheel, help, target, route, selection, then goes up a level |
+| `?` | The controls screen |
+
+Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
 
 ## Measuring
 
@@ -71,7 +70,7 @@ node scripts/record.mjs gw-controls gw-dive                # frame-exact MP4s in
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
 - `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
-- `src/controls/` — game-style controls: palette, history, control groups, wheel, routes, pins, tooltips.
+- `src/controls/` — game-style controls: palette, history, target cycling, wheel, routes, pins, tooltips.
 - `model/acme/` — the realistic sample model.
 - `scripts/scan-galaxy-wars.mjs` — code scanner that generates the Galaxy Wars model.
 - `src/synthetic.ts` — deterministic five-level landscapes for scale tests.

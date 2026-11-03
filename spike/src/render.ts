@@ -120,8 +120,8 @@ export class Renderer {
   /** Route being shown, hop by hop, and the waypoint the camera is on. */
   route: Hop[] | null = null
   routeStep = -1
-  /** Pinned elements with notes, like quest markers. */
-  pins: { node: number; note: string }[] = []
+  /** Pinned elements, like quest markers. */
+  pins: number[] = []
   private routeG = new Graphics()
   private markers: Chip[] = []
   /** Cards changed by a live model update glow for a while: green added, amber changed. */
@@ -724,9 +724,9 @@ export class Renderer {
     const g = this.fxG
     const W = this.cam.w, H = this.cam.h
     this.pins.forEach((p, i) => {
-      const r = this.rep(p.node)
+      const r = this.rep(p)
       const [x, y, w, h] = this.screenRect(r)
-      const label = p.note || this.tree.els[p.node].title
+      const label = this.tree.els[p].title
       if (this.onScreen(r) && w > 6) {
         const mx = x + w - 4, my = y + 4, s = 9
         g.poly([mx, my - s, mx + s * 0.8, my, mx, my + s, mx - s * 0.8, my]).fill({ color: PIN }).stroke({ width: 1.5, color: 0x1f0614 })
