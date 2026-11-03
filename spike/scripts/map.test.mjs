@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { buildModel, toName } from './map.mjs'
+import { buildModel, compareMaps, toName } from './map.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -60,6 +60,16 @@ describe('buildModel', () => {
     ])
   })
 
+  it('warns about evidence in a file at neither end of the link', () => {
+    // A real route line, but in the Api, which this link does not touch.
+    const r2 = build(edit(m => { m.links[1].evidence = ['web/src/api.ts:1', 'src/Api/Controllers/OrdersController.cs:2'] }))
+    expect(r2.errors).toEqual([])
+    expect(r2.warnings).toEqual(['link web/src/api.ts → server/src/main/java/com/shop/orders/OrderController.java: evidence "src/Api/Controllers/OrdersController.cs:2" is in src/Api/Controllers/OrdersController.cs, which is at neither end of the link'])
+    // Under a node end, and in config, evidence is fine.
+    const r3 = build(edit(m => { m.links.push({ from: 'server.orders', to: 'db', evidence: ['server/src/main/java/com/shop/orders/OrderRepository.java:5', 'server/src/main/resources/application.properties:1'] }) }))
+    expect(r3.warnings).toEqual([])
+  })
+
   it('refuses bad nodes and files that are not application code', () => {
     const bad = build(edit(m => {
       m.nodes.push({ id: 'web.x.y', kind: 'component', title: 'Orphan' })
@@ -107,5 +117,29 @@ describe('buildModel', () => {
   it('names models after the repo folder', () => {
     expect(toName('C:/code/KnightsOfDarkness')).toBe('knights-of-darkness')
     expect(toName('/src/my_shop')).toBe('my-shop')
+  })
+})
+
+describe('compareMaps', () => {
+  it('scores a map against itself as identical', () => {
+    const c = compareMaps(graph, map, map)
+    expect([c.topLevel, c.leaf]).toEqual([1, 1])
+    expect(c.processLinks).toMatchObject({ shared: 3, onlyA: [], onlyB: [] })
+  })
+
+  it('sees regrouping inside a process, renamed ids, and a missing link', () => {
+    // Same processes under other ids; the storefront split differently; one link dropped.
+    const b = edit(m => {
+      for (const n of m.nodes) n.id = n.id.replace(/^web/, 'shop')
+      m.nodes.find(n => n.id === 'shop.shopping').files = ['shared/index.js', 'web/src/main.ts']
+      m.nodes.find(n => n.id === 'shop.orders').files = ['web/src/api.ts', 'web/src/ui/**']
+      m.links = m.links.filter(l => l.to !== 'db').map(l => ({ ...l, to: l.to.replace(/^web$/, 'shop') }))
+    })
+    const c = compareMaps(graph, map, b)
+    expect(c.topLevel).toBe(1)
+    expect(c.leaf).toBeLessThan(1)
+    expect(c.pairs.find(p => p.a === 'Shopping')).toMatchObject({ b: 'Shopping', files: 3 })
+    expect(c.processLinks.onlyA).toEqual(['Orders server → [database]'])
+    expect(c.fileLinks).toEqual({ a: 1, b: 1, shared: 1 })
   })
 })

@@ -5,11 +5,12 @@
 //   node scripts/zoom.mjs check <repo> <map.json>         what is wrong or missing in a map
 //   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
 //   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
+//   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
 import { readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
-import { buildModel, publish, toName } from './map.mjs'
+import { buildModel, compareMaps, publish, toName } from './map.mjs'
 
 /** The graph as compact text an agent can read: files by folder, with what each uses and who uses it. */
 export function graphText(g, under = '') {
@@ -87,13 +88,23 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       report(r)
       console.log(r.published ? `published "${r.name}" in ${r.ms} ms; open ?model=${r.name}` : 'not published: fix the errors above')
       if (!r.published) process.exitCode = 1
+    } else if (cmd === 'compare' && a && b && args[3]) {
+      const c = compareMaps(buildGraph(a), readMap(b), readMap(args[3]))
+      const pct = x => `${Math.round(x * 100)}%`
+      console.log(`Grouping agreement (adjusted Rand index; 1 = identical, 0 = chance): processes ${c.topLevel.toFixed(2)}, leaf nodes ${c.leaf.toFixed(2)} (${c.groups.a} vs ${c.groups.b} groups)`)
+      console.log('Each group of A, its closest group in B, and the share of files they have in common:')
+      for (const p of c.pairs) console.log(`  ${p.a} (${p.files}) → ${p.b}  ${pct(p.overlap)}`)
+      console.log(`Process-level links: ${c.processLinks.shared} shared, ${c.processLinks.onlyA.length} only in A, ${c.processLinks.onlyB.length} only in B`)
+      for (const l of c.processLinks.onlyA) console.log(`  only A: ${l}`)
+      for (const l of c.processLinks.onlyB) console.log(`  only B: ${l}`)
+      console.log(`File-to-file links: ${c.fileLinks.shared} shared of ${c.fileLinks.a} in A and ${c.fileLinks.b} in B`)
     } else if (cmd === 'republish' && a) {
       const { repo } = JSON.parse(readFileSync(join('imports', a, 'source.json'), 'utf8'))
       const r = publish(repo, readMap(join('imports', a, 'map.json')), { name: a, loose: true })
       report(r)
       if (!r.published) process.exitCode = 1
     } else {
-      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 7).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 8).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
     }
   } catch (e) {

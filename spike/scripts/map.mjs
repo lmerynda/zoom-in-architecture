@@ -119,6 +119,8 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const relations = graph.edges.map(e => ({ source: fileId.get(e.from), target: fileId.get(e.to), title: e.names.length > 3 ? `${e.names.slice(0, 3).join(', ')} +${e.names.length - 3}` : e.names.join(', ') }))
   const endOf = s => (nodes.has(s) ? s : fileId.get(s))
   const kindOf = s => nodes.get(s)?.kind ?? 'code'
+  // Whether a file is a link end, or under the node that is one.
+  const atEnd = (end, path) => end === path || (nodes.has(end) && (placed.get(path) === end || placed.get(path)?.startsWith(`${end}.`)))
   for (const l of map.links ?? []) {
     const a = endOf(l.from), b = endOf(l.to)
     if (!a || !b) { drift(`link ${l.from} → ${l.to}: ${!a ? l.from : l.to} is neither a node id nor an application file`); continue }
@@ -131,9 +133,11 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       const text = readFileSync(file, 'utf8').split('\n')
       const [from, to] = [Number(m[2]), Number(m[3] ?? m[2])]
       if (to > text.length) { drift(`link ${l.from} → ${l.to}: evidence "${ev}" is past the end of the file (${text.length} lines)`); continue }
-      // In application code, evidence should land on a route, call, store, schedule or socket.
+      // In application code, evidence should land on a route, call, store, schedule or socket,
+      // in a file at one end of the link (config and other non-code files can back any link).
       const hints = app.get(m[1])?.hints
-      if (hints && !hints.some(h => h.line >= from && h.line <= to)) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}`)
+      if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
+      else if (hints && !hints.some(h => h.line >= from && h.line <= to)) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}`)
     }
     relations.push({ source: a, target: b, title: l.title ?? '', evidence })
   }
@@ -182,4 +186,59 @@ export function publish(repo, map, { name = toName(repo), loose = false } = {}) 
   writeAtomic(join('public/models', `${name}.json`), JSON.stringify({ ...built.model, buildMs: Date.now() - t0 }))
   writeIndex()
   return { name, ...built, published: true, ms: Date.now() - t0 }
+}
+
+/**
+ * How alike two maps of one repo are. Node ids differ between runs, so files are compared by
+ * how they are grouped: the adjusted Rand index of the two partitions (1 identical, 0 chance),
+ * at the top level (which process holds a file) and at the leaf node holding it. Nodes are
+ * paired by file overlap, and links are compared between paired processes and file to file.
+ */
+export function compareMaps(graph, a, b) {
+  const files = graph.files.map(f => f.path)
+  const top = id => (id.includes('.') ? id.slice(0, id.indexOf('.')) : id)
+  const side = map => {
+    const { model } = buildModel(graph, map, { name: 'compare', loose: true })
+    const els = new Map(model.elements.map(e => [e.id, e]))
+    const leaf = new Map(), process = new Map()
+    for (const e of model.elements) if (e.metadata?.path) { leaf.set(e.metadata.path, e.parent); process.set(e.metadata.path, top(e.parent)) }
+    // A link end as its process (or, for actors and stores, its kind), and as a file when it is one.
+    const kindEnd = id => (['database', 'queue', 'external', 'actor'].includes(els.get(id)?.kind) ? `[${els.get(id).kind}]` : null)
+    const ends = (map.links ?? []).map(l => [l.from, l.to].map(x => ({ file: process.has(x) ? x : null, proc: process.get(x) ?? kindEnd(x) ?? top(x) })))
+    return { els, leaf, process, ends }
+  }
+  const A = side(a), B = side(b)
+  const c2 = n => (n * (n - 1)) / 2
+  const ari = (pa, pb) => {
+    const cells = new Map(), ra = new Map(), rb = new Map()
+    const bump = (m, k) => m.set(k, (m.get(k) ?? 0) + 1)
+    for (const f of files) { bump(cells, `${pa.get(f)} ${pb.get(f)}`); bump(ra, pa.get(f)); bump(rb, pb.get(f)) }
+    const sum = m => [...m.values()].reduce((t, n) => t + c2(n), 0)
+    const index = sum(cells), sa = sum(ra), sb = sum(rb), expected = (sa * sb) / c2(files.length), max = (sa + sb) / 2
+    return max === expected ? 1 : (index - expected) / (max - expected)
+  }
+  const groups = part => { const g = new Map(); for (const [file, n] of part) g.set(n, [...(g.get(n) ?? []), file]); return g }
+  // Each group of A against the group of B sharing most of its files (Jaccard overlap).
+  const pair = (pa, pb) => {
+    const gb = groups(pb)
+    return [...groups(pa)].map(([n, fs]) => {
+      const set = new Set(fs)
+      const [m, overlap] = [...gb].map(([m, gs]) => [m, gs.filter(x => set.has(x)).length / new Set([...fs, ...gs]).size]).sort((x, y) => y[1] - x[1])[0]
+      return { a: n, b: m, files: fs.length, overlap }
+    }).sort((x, y) => y.files - x.files)
+  }
+  const procPairs = new Map(pair(A.process, B.process).map(p => [p.a, p.b]))
+  const title = (side, id) => side.els.get(id)?.title ?? id
+  const linkSet = (side, translate) => new Set(side.ends.map(([x, y]) => `${translate(x.proc)} → ${translate(y.proc)}`))
+  const la = linkSet(A, p => (p.startsWith('[') ? p : title(B, procPairs.get(p) ?? p))), lb = linkSet(B, p => (p.startsWith('[') ? p : title(B, p)))
+  const fileLinks = side => new Set(side.ends.filter(([x, y]) => x.file && y.file).map(([x, y]) => `${x.file} → ${y.file}`))
+  const fa = fileLinks(A), fb = fileLinks(B)
+  return {
+    topLevel: ari(A.process, B.process),
+    leaf: ari(A.leaf, B.leaf),
+    groups: { a: groups(A.leaf).size, b: groups(B.leaf).size },
+    pairs: pair(A.leaf, B.leaf).map(p => ({ ...p, a: title(A, p.a), b: title(B, p.b) })),
+    processLinks: { a: la.size, b: lb.size, shared: [...la].filter(l => lb.has(l)).length, onlyA: [...la].filter(l => !lb.has(l)), onlyB: [...lb].filter(l => !la.has(l)) },
+    fileLinks: { a: fa.size, b: fb.size, shared: [...fa].filter(l => fb.has(l)).length },
+  }
 }
