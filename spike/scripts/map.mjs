@@ -26,6 +26,15 @@ const ID = /^[a-z][a-zA-Z0-9-]*(\.[a-z][a-zA-Z0-9-]*)*$/
 
 export const toName = repo => basename(resolve(repo)).replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'project'
 const humanize = s => s.replace(/[-_.]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\b\w/g, c => c.toUpperCase())
+// Cited lines as the panel shows them: shared indentation removed, long ranges and lines cut short.
+const SNIPPET_LINES = 8, SNIPPET_WIDTH = 160
+const snippet = lines => {
+  const ls = lines.map(s => s.replace(/\r$/, '').replace(/\t/g, '  ').trimEnd())
+  const pad = Math.min(...ls.filter(Boolean).map(s => s.match(/^ */)[0].length))
+  const cut = ls.slice(0, SNIPPET_LINES).map(s => s.slice(Number.isFinite(pad) ? pad : 0)).map(s => (s.length > SNIPPET_WIDTH ? `${s.slice(0, SNIPPET_WIDTH - 1)}…` : s))
+  if (ls.length > SNIPPET_LINES) cut.push(`… ${ls.length - SNIPPET_LINES} more lines`)
+  return cut.join('\n')
+}
 const globRe = g => new RegExp(`^${g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*\/?|\*|\?/g, m => (m === '?' ? '[^/]' : m === '*' ? '[^/]*' : '.*'))}$`)
 
 /**
@@ -133,13 +142,17 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
     if (!a || !b) { drift(`link ${l.from} → ${l.to}: ${!a ? l.from : l.to} is neither a node id nor an application file`); continue }
     const evidence = l.evidence ?? []
     if (!evidence.length && !NO_EVIDENCE.has(kindOf(l.from)) && !NO_EVIDENCE.has(kindOf(l.to))) errors.push(`link ${l.from} → ${l.to} needs evidence: file:line where the code makes the call`)
+    // The viewer cannot read the repository, so each cited line travels with the model.
+    // Evidence that no longer resolves (loose re-publish) is kept without code, so the viewer can say so.
+    const proof = []
     for (const ev of evidence) {
       const m = String(ev).match(/^(.+?):(\d+)(?:-(\d+))?$/)
       const file = m && join(graph.repo, m[1])
-      if (!m || !existsSync(file)) { drift(`link ${l.from} → ${l.to}: evidence "${ev}" is not an existing file:line`); continue }
+      if (!m || !existsSync(file)) { drift(`link ${l.from} → ${l.to}: evidence "${ev}" is not an existing file:line`); proof.push({ at: String(ev), line: 0, code: null }); continue }
       const text = readFileSync(file, 'utf8').split('\n')
       const [from, to] = [Number(m[2]), Number(m[3] ?? m[2])]
-      if (to > text.length) { drift(`link ${l.from} → ${l.to}: evidence "${ev}" is past the end of the file (${text.length} lines)`); continue }
+      if (to > text.length) { drift(`link ${l.from} → ${l.to}: evidence "${ev}" is past the end of the file (${text.length} lines)`); proof.push({ at: String(ev), line: from, code: null }); continue }
+      proof.push({ at: String(ev), line: from, code: snippet(text.slice(from - 1, to)) })
       // In application code, evidence should land on a route, call, store, schedule or socket,
       // in a file at one end of the link (config and other non-code files can back any link).
       const hints = app.get(m[1])?.hints
@@ -151,7 +164,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
         warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}`)
       }
     }
-    relations.push({ source: a, target: b, title: l.title ?? '', evidence })
+    relations.push({ source: a, target: b, title: l.title ?? '', evidence: proof })
   }
   for (const n of nodes.values()) if (byNode.has(n.id) && [...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" has child nodes and also holds ${byNode.get(n.id).length} files; move them into a child`)
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)
@@ -190,6 +203,8 @@ const writeAtomic = (file, text) => { writeFileSync(`${file}.tmp`, text); rename
  * from (for live re-imports), public/models/<name>.json is what the viewer opens.
  */
 export function publish(repo, map, { name = toName(repo), loose = false } = {}) {
+  // The viewer serves models/<name>.json only for plain names.
+  if (!/^[\w.-]+$/.test(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)
   if (existsSync(join('model', name))) throw new Error(`"${name}" is a sample model's name; pass --name`)
   const t0 = Date.now()
   const graph = buildGraph(repo)

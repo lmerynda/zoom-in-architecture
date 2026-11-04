@@ -12,10 +12,19 @@ export interface ElementJson {
   metadata?: Record<string, string>
 }
 
+/** A line of code that proves a link: `path:line` (or a range), and the cited text; null when it no longer resolves. */
+export interface EvidenceJson {
+  at: string
+  line: number
+  code: string | null
+}
+
 export interface RelationJson {
   source: string
   target: string
   title: string
+  /** Only on links a map adds; relations from code references are their own proof. */
+  evidence?: EvidenceJson[]
 }
 
 export interface ModelJson {
@@ -44,6 +53,7 @@ export class Tree {
   /** Relations as node index pairs (source, target), parent-child relations dropped. */
   readonly rels: Int32Array
   readonly relTitles: string[]
+  readonly relEvidence: (EvidenceJson[] | undefined)[]
   readonly maxDepth: number
 
   constructor(model: ModelJson) {
@@ -71,12 +81,14 @@ export class Tree {
 
     const pairs: number[] = []
     this.relTitles = []
+    this.relEvidence = []
     for (const r of model.relations) {
       const s = this.byId.get(r.source), t = this.byId.get(r.target)
       if (s == null || t == null || s === t) continue
       if (this.isAncestor(s, t) || this.isAncestor(t, s)) continue
       pairs.push(s, t)
       this.relTitles.push(r.title)
+      this.relEvidence.push(r.evidence)
     }
     this.rels = Int32Array.from(pairs)
   }

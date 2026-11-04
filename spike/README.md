@@ -22,7 +22,7 @@ A map shows a codebase's architecture: the processes that run, the components in
   - It marks each file's routes, outbound calls, stores, schedules, sockets, messages (`postMessage`), process launches and file handoffs, with line numbers, and lists the config and deploy files. Manifests with no application code (a docs site, a monorepo root) are listed with the reason.
 - **The map, from an agent:** `/map-repo <repo>` in Claude Code runs the [map-repo skill](../.claude/skills/map-repo/SKILL.md).
   - The agent groups files into nodes by responsibility, and names and describes them.
-  - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence.
+  - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
 
 `check` refuses:
@@ -73,7 +73,7 @@ Six keys plus the mouse; everything else is in the command wheel or the palette.
 | `Esc` | Closes the innermost thing first: wheel, help, target, route, selection, then goes up a level |
 | `?` | The controls screen |
 
-Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
+Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; a relation that a map link backs lists its cited code lines (two, then "+N more"), and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
 
 ## Measuring
 

@@ -14,7 +14,7 @@ const model: ModelJson = {
   name: 'm',
   elements: [el('a', null), el('a.a1', 'a'), el('a.a2', 'a'), el('a.a2.x', 'a.a2'), el('b', null), el('b.b1', 'b')],
   relations: [
-    { source: 'a.a1', target: 'b.b1', title: 'r1' },
+    { source: 'a.a1', target: 'b.b1', title: 'r1', evidence: [{ at: 'a1.ts:3', line: 3, code: "fetch('/b1')" }] },
     { source: 'a.a2.x', target: 'b.b1', title: 'r2' },
     { source: 'a.a1', target: 'a.a2.x', title: 'r3' },
     { source: 'a', target: 'a.a1', title: 'parent-child' },
@@ -24,6 +24,11 @@ const model: ModelJson = {
 describe('Tree', () => {
   const tree = new Tree(model)
   const id = (s: string) => tree.byId.get(s)!
+
+  it('keeps each relation evidence beside its title', () => {
+    expect(tree.relTitles).toEqual(['r1', 'r2', 'r3'])
+    expect(tree.relEvidence).toEqual([[{ at: 'a1.ts:3', line: 3, code: "fetch('/b1')" }], undefined, undefined])
+  })
 
   it('puts top-level elements under a virtual root and drops parent-child relations', () => {
     expect(tree.children[0]).toEqual([id('a'), id('b')])

@@ -64,6 +64,9 @@ try {
   await page.waitForFunction(() => !window.__spike.cam.flying)
   await sleep(600)
   await shot('02-opened')
+  // The selected file's link to the server shows the code lines that prove it.
+  const proof = await page.$eval('#details', e => e.innerText)
+  check('a link shows its evidence in the panel', proof.includes('src/api.ts:1') && proof.includes("fetch('/api/orders')") && proof.includes('@GetMapping("/api/orders")'), proof.split('\n').filter(l => /:\d|fetch|@Get/.test(l)).join(' | '))
 
   // A new file in the repo is published live, beside the files it talks to.
   writeFileSync(join(repo, 'web/src/ui/checkout.ts'), "import { cart } from './cart'\nexport const checkout = () => cart()\n")

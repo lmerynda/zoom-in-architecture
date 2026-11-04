@@ -69,6 +69,7 @@ The importer is now split along what each side is good at:
   - It groups files into processes and components by responsibility, and names and describes them.
   - It links what code references cannot see, such as browser API client → controller, or repository → database.
   - `check` holds it to the facts. Every application file must be placed. Every link needs `file:line` evidence that exists, and evidence that misses a marked line is quoted back. Relations between files come only from the graph.
+  - The details panel shows each link's cited lines, copied into the model at publish time, so a reader can judge a link without opening the repository.
 
 **Pilot: Knights of Darkness** (React + Vite browser client, Java Spring Boot backend; 256 source files). A fresh agent that knew only the skill mapped it:
 - **The graph:** 211 application files and 649 references, in 0.9 s. Left out were 42 test files, plus the two eslint configs and `vite.config.ts`, which no entry point reaches.
@@ -219,8 +220,7 @@ Two environment lessons:
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Show a link's evidence in the details panel, with the cited lines.
-3. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
-4. Zoom past leaves into code (blockviz-style levels).
+2. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
+3. Zoom past leaves into code (blockviz-style levels).
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

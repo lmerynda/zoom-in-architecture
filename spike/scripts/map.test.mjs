@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, compareMaps, toName } from './map.mjs'
+import { auditPlacement, buildModel, compareMaps, publish, toName } from './map.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -46,6 +46,19 @@ describe('buildModel', () => {
     expect(rel(at(r, 'web/src/main.ts').id, at(r, 'web/src/ui/cart.ts').id).title).toBe('cart')
     expect(rel('customer', 'web').title).toBe('shops in a browser')
     expect(rel(at(r, 'web/src/api.ts').id, at(r, 'server/src/main/java/com/shop/orders/OrderController.java').id).evidence).toHaveLength(2)
+  })
+
+  it('carries each cited line into the model, so the viewer can show it', () => {
+    const rel = r.model.relations.find(x => x.title === 'GET /api/orders')
+    expect(rel.evidence).toEqual([
+      { at: 'web/src/api.ts:1', line: 1, code: "export const load = async () => (await fetch('/api/orders')).json()" },
+      { at: 'server/src/main/java/com/shop/orders/OrderController.java:11', line: 11, code: '@GetMapping("/api/orders")' },
+    ])
+    // A range drops its shared indentation and keeps its own.
+    const ranged = build(edit(m => { m.links[1].evidence[1] = 'server/src/main/java/com/shop/orders/OrderController.java:11-12' }))
+    expect(ranged.model.relations.find(x => x.title === 'GET /api/orders').evidence[1].code).toBe('@GetMapping("/api/orders")\npublic List<Order> all() { return repository.findAll(); }')
+    // Graph relations are their own proof and carry none.
+    expect(r.model.relations.find(x => x.title === 'cart').evidence).toBeUndefined()
   })
 
   it('refuses links without evidence, with broken evidence, or to unknown ends', () => {
@@ -128,8 +141,9 @@ describe('buildModel', () => {
     const loose = build(drifted, { loose: true })
     expect(loose.errors).toEqual([])
     expect(loose.warnings).toHaveLength(3)
-    // The link to a deleted file is skipped; the one with a stale line still draws.
+    // The link to a deleted file is skipped; the one with a stale line still draws, its line marked as gone.
     expect(loose.stats.relations).toBe(34)
+    expect(loose.model.relations.find(x => x.title === 'GET /api/orders').evidence[0]).toEqual({ at: 'web/src/api.ts:40', line: 40, code: null })
   })
 
   it('collects files with no placed neighbour under Unplaced', () => {
@@ -141,6 +155,10 @@ describe('buildModel', () => {
   it('names models after the repo folder', () => {
     expect(toName('C:/code/KnightsOfDarkness')).toBe('knights-of-darkness')
     expect(toName('/src/my_shop')).toBe('my-shop')
+  })
+
+  it('refuses a model name the viewer could not serve, before writing anything', () => {
+    expect(() => publish(graph.repo, map, { name: 'shop/' })).toThrow('is not a model name')
   })
 })
 

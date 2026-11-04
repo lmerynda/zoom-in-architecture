@@ -2,5 +2,5 @@ node_modules/
 dist/
 public/models/
 shots/
-# Local imports of other codebases (scripts/import-code.mjs) and their configs.
+# Local maps of other codebases (scripts/zoom.mjs publish) and their configs.
 imports/

@@ -92,7 +92,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 - **kinds:** `actor`, `system`, `app`, `webapp`, `library`, `component`, `database`, `queue`, `external`. Files become `code` nodes on their own.
 - **files:** repo paths or globs (`*` within a folder, `**` across folders). An exact path beats a glob, and a longer glob beats a shorter one.
 - **link ends:** a node id, or the repo path of an application file.
-- **evidence:** `path:line` or `path:start-end` in the repo, any file including config. Required unless one end is an actor. In application code it should be a line the graph marked.
+- **evidence:** `path:line` or `path:start-end` in the repo, any file including config. Required unless one end is an actor. In application code it should be a line the graph marked. The viewer shows readers the cited lines (up to 8 per range) under the link, so cite the call itself, not the function around it.
 - **titles and descriptions:** the user's language, not the folder's. A title names the responsibility ("Market", not "market/model"), and a description is one sentence on what it does. Put the stack in `technology`.
 
 ## Done means

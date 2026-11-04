@@ -7,7 +7,7 @@ import { WarpStreaks } from './fx/warp'
 import type { Hop } from './controls/logic'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
-import { aggregateEdges, type ShownEdge, type Tree } from './model'
+import { aggregateEdges, type EvidenceJson, type ShownEdge, type Tree } from './model'
 
 const FONT = 'ui'
 const FONT_PX = 32
@@ -545,14 +545,15 @@ export class Renderer {
 
   /** Relations crossing element i's boundary: from it or anything inside it, to the outside and back. */
   relationsOf(i: number) {
-    const out: { other: number; title: string }[] = [], inn: { other: number; title: string }[] = []
+    type Rel = { other: number; title: string; evidence?: EvidenceJson[] }
+    const out: Rel[] = [], inn: Rel[] = []
     const r = this.tree.rels
     const inside = (n: number) => n === i || this.tree.isAncestor(i, n)
     for (let k = 0; k < r.length; k += 2) {
-      const title = this.tree.relTitles[k >> 1] || 'uses'
+      const title = this.tree.relTitles[k >> 1] || 'uses', evidence = this.tree.relEvidence[k >> 1]
       const si = inside(r[k]), ti = inside(r[k + 1])
-      if (si && !ti) out.push({ other: r[k + 1], title })
-      if (ti && !si) inn.push({ other: r[k], title })
+      if (si && !ti) out.push({ other: r[k + 1], title, evidence })
+      if (ti && !si) inn.push({ other: r[k], title, evidence })
     }
     return { out, inn }
   }
