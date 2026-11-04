@@ -56,6 +56,39 @@ export function codeLayout(lines: number, cols: number, w: number, h: number): {
   return best
 }
 
+/** A file card this wide on screen shows its source: small enough that a file you travel to already shows it. */
+export const CODE_W = 280
+/** The code fills the card below this fraction of its height; title, kind and description sit above. */
+const CODE_TOP = 0.4
+/** The text padding of a card, as a fraction of its width (as the renderer lays it out). */
+const CARD_PAD = 0.07
+
+/** Where a file card of rect x, y, w, h shows its code: the same in screen px or world units. */
+export function codeBox(x: number, y: number, w: number, h: number) {
+  const pad = CARD_PAD * w, top = y + h * CODE_TOP
+  return { x: x + pad, y: top, w: w - 2 * pad, h: y + h - pad * 0.6 - top }
+}
+
+/** Left edge of the laid-out code inside a box: a long file is narrower than the card, and centred. */
+const codeLeft = (box: { x: number; w: number }, cols: number, columns: number, scale: number) =>
+  box.x + Math.max(0, (box.w - (columns * pitch(cols) - GAP * CHAR_PX) * scale) / 2)
+
+/**
+ * Where line `line` of a file sits on its card of world rect x, y, w, h: the world point at the
+ * start of its text, and its font size in world units (on-screen px = font × zoom).
+ */
+export function linePoint(x: number, y: number, w: number, h: number, lines: number, cols: number, line: number) {
+  const box = codeBox(x, y, w, h)
+  const { columns, px } = codeLayout(lines, cols, box.w, box.h)
+  const scale = px / BASE_PX, per = Math.ceil(lines / columns), k = Math.max(0, Math.min(lines, line) - 1)
+  const left = codeLeft(box, cols, columns, scale)
+  return {
+    x: left + (Math.floor(k / per) * pitch(cols) + colChars(cols) * CHAR_PX * 0.4) * scale,
+    y: box.y + ((k % per) + 0.5) * LINE_PX * scale,
+    font: px,
+  }
+}
+
 /** Rows (within each column) and columns that a view of layout rect [x0, x1] × [y0, y1] needs. */
 export interface Window { c0: number; c1: number; r0: number; r1: number }
 
@@ -142,6 +175,7 @@ export class CodeView {
   private shown: Shown[] = []
   private sources = new Map<string, Source | 'loading' | null>()
   private cited = new Map<string, Set<number>>()
+  private fonts = new Map<number, number>()
 
   constructor(private root: HTMLElement, private model: string, private tree: Tree) {
     this.cited = citedLines(tree)
@@ -217,7 +251,25 @@ export class CodeView {
     })
   }
 
+  /** On-screen font size of a file card's code last frame, if it showed any. */
+  fontOf(i: number): number | undefined { return this.fonts.get(i) }
+
+  /** A file's line count and width once it is fetched and prepared, or null if it has no source. */
+  async measure(i: number): Promise<{ lines: number; cols: number } | null> {
+    const path = this.tree.els[i]?.metadata?.path
+    if (!path) return null
+    if (!this.sources.has(path)) this.load(path, i)
+    for (let t = 0; t < 200; t++) {
+      const src = this.sources.get(path)
+      if (src === null || src === undefined) return null
+      if (src !== 'loading' && src.ready) return { lines: src.lines.length, cols: src.cols }
+      await new Promise(r => setTimeout(r, 25))
+    }
+    return null
+  }
+
   update(slots: CodeSlot[], W: number, H: number) {
+    this.fonts.clear()
     let k = 0
     for (const slot of slots) {
       const path = this.tree.els[slot.i]?.metadata?.path
@@ -226,6 +278,7 @@ export class CodeView {
       const src = this.sources.get(path)
       if (!src || src === 'loading' || !src.ready) continue
       const { columns, px } = codeLayout(src.lines.length, src.cols, slot.w, slot.h)
+      this.fonts.set(slot.i, px)
       if (px < MIN_PX) continue
       // Only the visible part of the card gets a box, however far it is zoomed; the code moves inside it.
       const x0 = Math.max(slot.x, 0), y0 = Math.max(slot.y, 0)
@@ -243,7 +296,7 @@ export class CodeView {
       // A long file fills the card's height and is narrower than it: centred, so zooming in on the
       // card's middle (where a fly-in aims) lands on code.
       const scale = px / BASE_PX
-      const ox = slot.x + Math.max(0, (slot.w - (columns * pitch(src.cols) - GAP * CHAR_PX) * scale) / 2)
+      const ox = codeLeft(slot, src.cols, columns, scale)
       const transform = `translate(${ox - x0}px,${slot.y - y0}px) scale(${scale})`
       if (!text) {
         if (s.map !== map) { s.pre.replaceChildren(); s.map?.remove(); s.map = map as HTMLCanvasElement; s.wrap.append(s.map); s.key = ''; s.win = null }

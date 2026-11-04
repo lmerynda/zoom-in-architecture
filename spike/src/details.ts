@@ -11,19 +11,25 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 /** How many cited lines a relation row shows before "+N more". */
 const SHOWN = 2
 
+/** Opens a file of the map at a line, in the code view. */
+export type OpenCode = (path: string, line: number) => void
+
 /**
  * The code lines that prove a link the map added: where each is, and what it says, so a reader
- * can judge the link without opening the repository.
+ * can judge the link without opening the repository. One in a file of the map opens it there.
  */
-function proof(evidence: EvidenceJson[]) {
+function proof(evidence: EvidenceJson[], files: Set<string>, open?: OpenCode) {
   const box = el('div', 'd-ev')
   const item = (ev: EvidenceJson) => {
-    const div = el('div', ev.code == null ? 'stale' : '')
+    const file = ev.at.replace(/:\d+(-\d+)?$/, '')
+    const canOpen = !!open && ev.code != null && files.has(file)
+    const div = el('div', [ev.code == null && 'stale', canOpen && 'open'].filter(Boolean).join(' '))
     // The file name and its folder are enough to recognise it; the full path is in the tooltip.
     const short = ev.at.split('/').slice(-2).join('/')
-    div.append(el('span', 'at', short))
-    div.title = ev.at
+    div.append(el('span', 'at', canOpen ? `${short} ↗` : short))
+    div.title = canOpen ? `${ev.at} · open in the code` : ev.at
     div.append(ev.code == null ? el('em', '', 'no longer at this line') : el('pre', '', ev.code))
+    if (canOpen) div.onclick = () => open!(file, ev.line)
     return div
   }
   box.append(...evidence.slice(0, SHOWN).map(item))
@@ -36,8 +42,9 @@ function proof(evidence: EvidenceJson[]) {
 }
 
 /** Unit panel for the selected element: identity, path, description and clickable relations. */
-export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer, i: number, go: (i: number) => void) {
+export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer, i: number, go: (i: number) => void, open?: OpenCode) {
   if (i <= 0) { panel.hidden = true; return }
+  const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const e = tree.els[i]
   const path: number[] = []
   for (let a = tree.parent[i]; a > 0; a = tree.parent[a]) path.unshift(a)
@@ -79,7 +86,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
       const b = el('button')
       b.append(el('i', '', arrow), el('b', '', tree.els[r.other].title), el('span', '', r.title))
       b.onclick = () => go(r.other)
-      box.append(b, ...(r.evidence.length ? [proof(r.evidence)] : []))
+      box.append(b, ...(r.evidence.length ? [proof(r.evidence, files, open)] : []))
     }
     return [box]
   }

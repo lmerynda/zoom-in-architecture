@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
-import { citedLines, codeLayout, lineHtml, parseMarks, splitLines, viewWindow } from './code'
+import { citedLines, codeBox, codeLayout, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
 import { clipToScreen, fitText, junctions, shortText } from './render'
@@ -352,5 +352,48 @@ describe('tokenize', () => {
     const r = codeLayout(300, 40, 1600, 600)
     expect(r.columns).toBeGreaterThan(1)
     expect(r.px).toBeGreaterThan(one * 2)
+  })
+})
+
+describe('zoom ceiling', () => {
+  const settle = (cam: Camera) => { for (let t = 0; t < 3000; t += 16) cam.step(t, 16) }
+
+  it('stops wheeling in at the ceiling, never out', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    for (let k = 0; k < 20; k++) cam.zoomAt(500, 300, 2, 8)
+    settle(cam)
+    expect(cam.z).toBeCloseTo(8, 6)
+    cam.zoomAt(500, 300, 0.5, 8)
+    settle(cam)
+    expect(cam.z).toBeCloseTo(4, 6)
+  })
+
+  it('does not pull back when the ceiling is below where the camera already is', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 50)
+    cam.zoomAt(500, 300, 2, 8)
+    settle(cam)
+    expect(cam.z).toBeCloseTo(50, 6)
+  })
+})
+
+describe('linePoint', () => {
+  it('puts a line where the code view draws it, at the layout font size', () => {
+    // A 2400 × 1500 card holding 300 lines of 40 characters.
+    const box = codeBox(0, 0, 2400, 1500)
+    const { columns, px } = codeLayout(300, 40, box.w, box.h)
+    const first = linePoint(0, 0, 2400, 1500, 300, 40, 1)
+    expect(first.font).toBeCloseTo(px)
+    expect(first.y).toBeCloseTo(box.y + 0.5 * 23.2 * (px / 16))
+    const per = Math.ceil(300 / columns)
+    // The first line of the second column is level with line 1, one column pitch to the right.
+    const next = linePoint(0, 0, 2400, 1500, 300, 40, per + 1)
+    expect(next.y).toBeCloseTo(first.y)
+    expect(next.x - first.x).toBeCloseTo((40 + 4) * 9.6 * (px / 16))
+    // Lines past the end clamp to the last.
+    expect(linePoint(0, 0, 2400, 1500, 300, 40, 9999)).toEqual(linePoint(0, 0, 2400, 1500, 300, 40, 300))
   })
 })

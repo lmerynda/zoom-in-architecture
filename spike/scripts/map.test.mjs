@@ -219,3 +219,14 @@ describe('writeAtomic', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
+
+describe('this repo\'s own map', () => {
+  // Edits here move the lines the self-map cites; a drifted map must fail the tests, not wait to be noticed.
+  it('still checks clean against the code', () => {
+    const self = JSON.parse(readFileSync(join(import.meta.dirname, '../maps/zoom-in-architecture.json'), 'utf8'))
+    const r = buildModel(buildGraph(join(import.meta.dirname, '../..')), self, { name: 'self' })
+    expect(r.errors).toEqual([])
+    expect(r.warnings).toEqual([])
+    expect(r.unplaced).toEqual([])
+  })
+})

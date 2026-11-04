@@ -23,6 +23,8 @@ export interface Ctx {
   select: (i: number) => void
   /** Flight to an element, framing it (no history; use `go`). */
   fit: (i: number) => void
+  /** How far the wheel may zoom in at a screen point: past it, what is under the cursor has nothing more to show. */
+  zoomLimit: (sx: number, sy: number) => number
   now: () => number
 }
 
@@ -153,8 +155,10 @@ export function installControls(c: Ctx) {
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
     radial.close()
+    // A tooltip is about the card under a still cursor; zooming moves on from it.
+    tooltips.closeAll()
     const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
-    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022))
+    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022), c.zoomLimit(e.offsetX, e.offsetY))
   }, { passive: false })
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
   let rightHold: { x: number; y: number; t: number } | null = null
@@ -184,7 +188,8 @@ export function installControls(c: Ctx) {
     if (drag.moved < 5) {
       const hit = renderer.pick(e.offsetX, e.offsetY)
       clearTarget()
-      c.select(hit === renderer.selected ? -1 : hit)
+      // Clicking the selection keeps it (it is usually what travel just brought you to); Esc or empty space clears.
+      c.select(hit)
     } else if (performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
   })
@@ -255,7 +260,7 @@ export function installControls(c: Ctx) {
     const az = (held.has('+') || held.has('=') ? 1 : 0) - (held.has('-') ? 1 : 0)
     thrust = ax || ay || az ? Math.min(1, thrust + dt / 350) : 0
     if (ax || ay) cam.panBy(-ax * 900 * thrust * dt / 1000, -ay * 900 * thrust * dt / 1000)
-    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000))
+    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000), c.zoomLimit(cam.w / 2, cam.h / 2))
   }
 
   return {
@@ -263,9 +268,13 @@ export function installControls(c: Ctx) {
     tick(dt: number, now: number) {
       steer(dt)
       const p = renderer.pointer
-      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying)
+      // A tooltip sums a card up from outside; once you are inside one (it fills most of the screen) it only covers it.
+      const inside = renderer.hover > 0 && world.rect[renderer.hover * 4 + 2] * cam.z > cam.w * 0.8
+      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside)
     },
     go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, palette, radial, help, toast,
+    /** Flies to a view (a camera and a selection), recording where you were so Backspace returns. */
+    visit(v: View) { history.push(view(), cam.w); goView(v) },
     /** Points every control at a new model version; the caller carries selection, route and target over. */
     swap(next: { tree: typeof tree; world: typeof world; renderer: typeof renderer }) {
       tree = next.tree; world = next.world; renderer = next.renderer

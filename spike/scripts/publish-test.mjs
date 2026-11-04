@@ -74,6 +74,19 @@ try {
   await shot('02b-code')
   await page.evaluate(() => { const s = window.__spike; s.fit(0) })
   check('a link shows its evidence in the panel', proof.includes('src/api.ts:1') && proof.includes("fetch('/api/orders')") && proof.includes('@GetMapping("/api/orders")'), proof.split('\n').filter(l => /:\d|fetch|@Get/.test(l)).join(' | '))
+  // Clicking a cited line opens its file there: the line in view, readable, beside the panel.
+  await page.waitForFunction(() => !window.__spike.cam.flying)
+  await page.evaluate(() => [...document.querySelectorAll('.d-ev .open')].find(e => e.title.includes('OrderController.java:11')).click())
+  await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 5000 }).catch(() => {})
+  await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
+  await sleep(600)
+  const opened = await page.evaluate(() => {
+    const line = [...document.querySelectorAll('.code .cited')].find(e => e.textContent.includes('@GetMapping'))
+    const r = line?.getBoundingClientRect(), panel = document.getElementById('details').getBoundingClientRect()
+    return r ? { y: r.y, h: r.height, left: r.x, panelLeft: panel.x, mid: innerHeight / 2 } : null
+  })
+  check('a cited line opens its code there', !!opened && Math.abs(opened.y + opened.h / 2 - opened.mid) < 60 && opened.h > 12 && opened.left < opened.panelLeft, JSON.stringify(opened))
+  await shot('02c-evidence-opened')
 
   // A new file in the repo is published live, beside the files it talks to.
   writeFileSync(join(repo, 'web/src/ui/checkout.ts'), "import { cart } from './cart'\nexport const checkout = () => cart()\n")

@@ -216,6 +216,15 @@ Past a file card's last level comes the file itself. Once the card is 640 px wid
 - **Far out it is a drawn minimap, closer in it is text.** Below a 6 px font the file is a canvas of coloured token bars, drawn once per file. From 6 px it is a scaled `<pre>` holding only the lines in view plus half a view of margin, re-rendered only when the view leaves them; zooming in never re-renders. Tokenizing, markup and the minimap are prepared in 600-line slices between frames as soon as the card asks for the file, while it is still too small to show. A long file's columns are centred in the card, so zooming in on the card's middle lands on code.
 - **Measured on Excalidraw's 11,499-line `App.tsx`**, zooming 300× from the overview into reading, warm and cold: 16.7 ms p50 and 17 ms p95 frames, worst 24 to 35 ms, at most 272 lines in the page at the deepest zoom. The first view used to cost one 220 ms frame.
 
+## A newcomer pass
+
+A scripted newcomer answered two questions on real maps with real input only (wheel, clicks, keys): where Excalidraw saves scenes to Firebase, and how the FastAPI template's frontend logs in. Travel and the panel worked at once: typing "firestore" finds the store, and its panel names `firebase.ts:207`. What got in the way, all fixed:
+- **Clicking the card you just travelled to deselected it**, hiding the panel you were reading. Clicking the selection now keeps it; Esc or empty space clears.
+- **A file you travel to was a blank box.** Code only showed from 640 px wide, and travel frames a file at about 470 px. It now shows from 280 px, so you arrive at a minimap of the code.
+- **The wheel had no floor to stop on.** Six notches past arrival, line numbers were 40 px; thirty notches reached ×2.5·10⁸ and an empty screen. Over a file the wheel now stops when its code is 28 px, or when a file without code is a screen and a half wide; containers still zoom freely.
+- **Evidence was a dead end.** A cited line now opens its file there: clicking `firebase.ts:66 ↗` flies to that line, readable and centred beside the panel, and Backspace comes back.
+- **Tooltips covered the code**, staying locked under a still cursor while you wheeled, and coming back once you stopped. Wheeling closes them, and none show for a card that fills the screen.
+
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.

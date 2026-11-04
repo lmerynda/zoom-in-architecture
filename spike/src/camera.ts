@@ -42,8 +42,12 @@ export class Camera {
     this.anchor = null; this.fly = null; this.vx = this.vy = 0
   }
 
-  /** Wheel zoom: keeps the world point under the cursor fixed while the zoom eases in. */
-  zoomAt(sx: number, sy: number, factor: number) {
+  /**
+   * Wheel zoom: keeps the world point under the cursor fixed while the zoom eases in. Zooming in
+   * stops at `maxZ` (what is under the cursor has nothing further to show); a lower ceiling than
+   * the current target never pulls the camera back.
+   */
+  zoomAt(sx: number, sy: number, factor: number, maxZ = Infinity) {
     this.fly = null
     this.vx = this.vy = 0
     if (!this.anchor || this.anchor.sx !== sx || this.anchor.sy !== sy) {
@@ -51,7 +55,8 @@ export class Camera {
       this.anchor = { sx, sy, wx, wy }
     }
     this.focusX = sx; this.focusY = sy
-    this.targetLogZ += Math.log(factor)
+    const next = this.targetLogZ + Math.log(factor)
+    this.targetLogZ = factor > 1 ? Math.min(next, Math.max(Math.log(maxZ), this.targetLogZ)) : next
   }
 
   /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */

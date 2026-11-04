@@ -73,7 +73,7 @@ Six keys plus the mouse; everything else is in the command wheel or the palette.
 | `Esc` | Closes the innermost thing first: wheel, help, target, route, selection, then goes up a level |
 | `?` | The controls screen |
 
-Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; zooming past a file card shows its source, coloured, with cited lines in amber and the graph's marked lines tagged with their kind; a relation that a map link backs lists its cited code lines (two, then "+N more"), and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
+Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; zooming past a file card shows its source (the wheel stops once it reads comfortably), coloured, with cited lines in amber and the graph's marked lines tagged with their kind; a relation that a map link backs lists its cited code lines (two, then "+N more"), and clicking one opens its file at that line, and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
 
 ## Measuring
 

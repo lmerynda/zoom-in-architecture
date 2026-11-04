@@ -1,6 +1,6 @@
 import { Application } from 'pixi.js'
 import { Camera } from './camera'
-import { CodeView } from './code'
+import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
 import { Altimeter, Banner, LensBar } from './hud'
@@ -18,6 +18,9 @@ import { synthetic } from './synthetic'
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
 const modelName = new URLSearchParams(location.search).get('model') ?? 'acme'
+/** On-screen font size a jump into code aims for, and the largest the wheel zooms code to. */
+const READ_PX = 15
+const MAX_READ_PX = 28
 
 async function loadModel(): Promise<ModelJson> {
   if (modelName === 'synthetic') return synthetic(Number(new URLSearchParams(location.search).get('n') ?? 1000))
@@ -87,10 +90,35 @@ async function main() {
   // Selection: click a card to focus its relations; the panel lists them, each a jump.
   const details = $('details')
   let controls: ReturnType<typeof installControls>
+  /**
+   * How far the wheel may zoom in at a screen point. A container always has more inside it; a
+   * file stops once its code reads comfortably, or (with no code to show) at a screen and a half.
+   */
+  const zoomLimit = (sx: number, sy: number) => {
+    const i = renderer.pick(sx, sy)
+    if (i <= 0 || tree.children[i].length) return Infinity
+    const font = code.fontOf(i)
+    return font ? (cam.z * MAX_READ_PX) / font : (cam.w * 1.5) / world.rect[i * 4 + 2]
+  }
+  /** Opens a file at a line: flies there with the line readable, beside the panel, and selects the file. */
+  const openCode = async (path: string, line: number) => {
+    const i = tree.els.findIndex(e => e.metadata?.path === path)
+    if (i <= 0) return
+    // Fetching and preparing a big file takes a moment; say so at once.
+    controls.toast.show(`Opening ${path.split('/').pop()}:${line}`)
+    const m = await code.measure(i)
+    if (!m) return controls.go(i)
+    const r = world.rect
+    const p = linePoint(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3], m.lines, m.cols, line)
+    const z = READ_PX / p.font
+    // The line goes in the middle of the space the details panel leaves free.
+    const cover = details.hidden ? 0 : details.getBoundingClientRect().width + 24
+    controls.visit({ x: p.x + cover / 2 / z, y: p.y, z, selected: tree.els[i].id })
+  }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
     if (i > 0) sound.select()
-    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) })
+    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.
@@ -103,7 +131,7 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit })
   resize()
   const soundBtn = $<HTMLButtonElement>('sound')
   soundBtn.onclick = () => { const on = sound.toggle(); soundBtn.textContent = on ? 'Sound on' : 'Sound off'; soundBtn.classList.toggle('on', on) }
@@ -166,7 +194,7 @@ async function main() {
     banner.tree = next
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
-    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) })
+    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
     const parts = [diff.added.length && `+${diff.added.length} added`, diff.changed.length && `${diff.changed.length} changed`, diff.removed.length && `−${diff.removed.length} removed (${diff.removed.slice(0, 3).map(id => id.split('.').pop()).join(', ')}${diff.removed.length > 3 ? '…' : ''})`].filter(Boolean)

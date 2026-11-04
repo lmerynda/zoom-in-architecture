@@ -5,7 +5,7 @@ import { FlowParticles, type Flow } from './fx/particles'
 import { Starfield } from './fx/starfield'
 import { WarpStreaks } from './fx/warp'
 import type { Hop } from './controls/logic'
-import type { CodeSlot } from './code'
+import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
@@ -33,9 +33,6 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
-/** A file card this wide on screen shows its source below this fraction of its height. */
-const CODE_W = 640
-const CODE_TOP = 0.36
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -551,9 +548,9 @@ export class Renderer {
     }
 
     // Past its last level a file shows its own source, anchored to the card so zooming reads it.
-    const code = el.metadata?.path && w >= CODE_W ? y + h * CODE_TOP : 0
-    if (code) this.codeSlots.push({ i, x: x + pad, y: code, w: inner, h: y + h - pad * 0.6 - code, alpha: la })
-    const bottom = code ? code - pad * 0.4 : y + h - pad * 0.6
+    const code = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h) : null
+    if (code) this.codeSlots.push({ i, ...code, alpha: la })
+    const bottom = code ? code.y - pad * 0.4 : y + h - pad * 0.6
 
     if (el.description) {
       const dpx = Math.min((FONT_PX * inner) / DESC_WRAP, 14)
