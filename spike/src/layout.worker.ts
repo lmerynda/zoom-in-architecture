@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
-import { CARD_H, CARD_W, CONTENT_ASPECT, GUTTER, type LayoutJob, type LocalLayout } from './layout'
+import { cardH, cardW, CONTENT_ASPECT, GUTTER, type LayoutJob, type LocalLayout } from './layout'
 import { ChannelGrid } from './route'
 
 const elk = new ELK()
@@ -25,7 +25,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
     children: jobs.map(job => ({
       id: `c${job.id}`,
       layoutOptions: OPTIONS,
-      children: job.children.map(c => ({ id: String(c), width: CARD_W, height: CARD_H })),
+      children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: cardH(job.spans[k]) })),
     })),
   }
   const g = await elk.layout(root)
@@ -38,7 +38,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       pos.push(k.x!, k.y!)
     }
     const index = new Map(job.children.map((ch, k) => [ch, k]))
-    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: CARD_W, h: CARD_H } }
+    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: cardH(job.spans[k]) } }
     const grid = new ChannelGrid(job.children.map(rect), GUTTER / 2)
     // Heavy edges first, so lighter ones join their trunks.
     const used = new Set<number>()
@@ -46,7 +46,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       const r = grid.route(rect(e.s), rect(e.t), used)
       return r ? [{ s: e.s, t: e.t, ...r }] : []
     })
-    return { id: job.id, w: c.width!, h: c.height!, children: job.children, pos, routes }
+    return { id: job.id, w: c.width!, h: c.height!, children: job.children, pos, spans: job.spans, routes }
   })
 }
 

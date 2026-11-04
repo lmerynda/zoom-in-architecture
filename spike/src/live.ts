@@ -35,6 +35,7 @@ export function diffModels(prev: Tree, next: Tree): ModelDiff {
 
 const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([
   job.children.map(c => t.els[c].id),
+  job.spans,
   job.edges.map(e => [t.els[e.s].id, t.els[e.t].id, e.count]).sort(),
 ])
 
@@ -55,7 +56,7 @@ export function stableOrder(prevTree: Tree, prevJobs: LayoutJob[], next: Tree, n
 
 /**
  * Splits the new model's layout jobs into ones whose previous layout can be reused (same
- * children in the same order, same sibling edges) and ones that must run again. Reused
+ * children in the same order and sizes, same sibling edges) and ones that must run again. Reused
  * layouts are re-keyed to the new tree's indices, so unchanged containers keep their
  * exact positions.
  */

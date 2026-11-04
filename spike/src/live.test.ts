@@ -19,7 +19,7 @@ const v2: ModelJson = {
 /** Fake layouts: children in a row, so a container's layout depends only on its children. */
 function fakeLocal(t: Tree) {
   const m = new Map<number, LocalLayout>()
-  for (const j of layoutJobs(t)) m.set(j.id, { id: j.id, w: 300 * j.children.length + 50, h: 200, children: j.children, pos: j.children.flatMap((_, k) => [25 + 300 * k, 25]), routes: [] })
+  for (const j of layoutJobs(t)) m.set(j.id, { id: j.id, w: 300 * j.children.length + 50, h: 200, children: j.children, pos: j.children.flatMap((_, k) => [25 + 300 * k, 25]), spans: j.spans, routes: [] })
   return m
 }
 

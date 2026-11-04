@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, contentBox, placeWorld, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
+import { glyphOf } from './icons'
 import { clipToScreen, shortText } from './render'
 import { synthetic } from './synthetic'
 
@@ -86,6 +87,39 @@ describe('Tree', () => {
   })
 })
 
+describe('spans', () => {
+  // A system of an app holding 12 files, a small app with 2, an actor and a database.
+  const files = (parent: string, n: number) => Array.from({ length: n }, (_, k) => el(`${parent}.f${k}`, parent))
+  const big: ModelJson = {
+    name: 'm',
+    elements: [el('user', null), el('db', null), el('app', null), el('app.core', 'app'), ...files('app.core', 12), el('tool', null), ...files('tool', 2)],
+    relations: [],
+  }
+  const tree = new Tree(big)
+  const span = spans(tree)
+  const id = (s: string) => tree.byId.get(s)!
+
+  it('gives a child holding far more files than its siblings two cells per side', () => {
+    expect(span[id('app')]).toBe(2)
+    expect([span[id('user')], span[id('db')], span[id('tool')]]).toEqual([1, 1, 1])
+  })
+
+  it('never grows files, or an only child', () => {
+    expect(span[id('app.core')]).toBe(1)
+    expect(span[id('app.core.f0')]).toBe(1)
+  })
+
+  it('places a two-cell card as two cells and the gutter between them', () => {
+    const local = new Map<number, LocalLayout>()
+    const top = tree.children[0]
+    local.set(0, { id: 0, w: 2000, h: 600, children: top, pos: top.flatMap((_, k) => [400 * k, 0]), spans: top.map(c => span[c]), routes: [] })
+    const w = placeWorld(tree, local)
+    expect([w.rect[id('app') * 4 + 2], w.rect[id('app') * 4 + 3]]).toEqual([cardW(2), cardH(2)])
+    expect([w.rect[id('user') * 4 + 2], w.rect[id('user') * 4 + 3]]).toEqual([CARD_W, CARD_H])
+    expect(cardW(2)).toBe(2 * CARD_W + 56)
+  })
+})
+
 describe('placeWorld', () => {
   it('fits each container layout inside its card content area, below the header', () => {
     const tree = new Tree(model)
@@ -93,7 +127,7 @@ describe('placeWorld', () => {
     for (let i = 0; i < tree.size; i++) {
       const c = tree.children[i]
       if (!c.length) continue
-      local.set(i, { id: i, w: 300 * c.length, h: 200, children: c, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), routes: [] })
+      local.set(i, { id: i, w: 300 * c.length, h: 200, children: c, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), spans: c.map(() => 1), routes: [] })
     }
     const w = placeWorld(tree, local)
     for (let i = 1; i < tree.size; i++) {
@@ -202,5 +236,20 @@ describe('shortText', () => {
   it('collapses whitespace and keeps every letter', () => {
     expect(shortText('A customer of\n  the bank, with personal accounts.', 200)).toBe('A customer of the bank, with personal accounts.')
     expect(shortText('Sends emails using templates', 12)).toBe('Sends email…')
+  })
+})
+
+describe('glyphOf', () => {
+  const g = (kind: string, shape = 'rectangle') => glyphOf({ kind, shape })
+
+  it('reads people and stores from the shape first', () => {
+    expect([g('actor', 'person'), g('staff', 'person'), g('db-table', 'storage'), g('queue', 'queue'), g('spa', 'browser'), g('mobileApp', 'mobile')])
+      .toEqual(['person', 'person', 'database', 'queue', 'browser', 'mobile'])
+  })
+
+  it('matches map kinds and sample vocabularies by name', () => {
+    expect([g('app'), g('service'), g('container'), g('system'), g('softwaresystem'), g('existingsystem'), g('external-system'), g('library'), g('component'), g('code')])
+      .toEqual(['app', 'app', 'app', 'system', 'system', 'external', 'external', 'library', 'component', 'code'])
+    expect(g('unknown-kind')).toBeNull()
   })
 })

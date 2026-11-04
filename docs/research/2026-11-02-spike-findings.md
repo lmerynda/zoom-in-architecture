@@ -203,11 +203,16 @@ Two environment lessons:
 - Vite's watcher does not report files outside its module graph, such as the .c4 sources. The plugin uses Node's recursive `fs.watch` instead.
 - The plugin must not start under Vitest, or the test run cannot exit.
 
+## Visual identity
+
+- **Every card says what it is.** An icon before the title is picked from the shape (person, database, queue, browser, phone), then from the kind's name. Sample vocabularies such as `service`, `softwaresystem` and `existingsystem` find theirs without a mapping table.
+- **People and the outside world look different.** Actors get rounder cards. External systems are outlines with no shadow, since they sit outside what was mapped.
+- **Big parts read as big.** A container holding at least 10 files, and 3 times its siblings' median, spans 2 × 2 cells, at every level. Actors, stores and external systems stay one cell, so a web app no longer looks the same size as an analytics service. The span is part of the layout job's key, so a live update re-lays a container only when a child crosses the threshold.
+
 ## Known rough edges
 
 - **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.
 - **Trunk arrowheads:** lines entering children along a shared trunk can look like edges between siblings.
-- **Equal-size cards at the top level:** the landscape's most important element (the enterprise) is the same size as an actor card.
 - **Empty full-screen leaves:** a leaf zoomed to fill the screen is mostly empty below its dossier.
 
 ## Not verified
@@ -220,7 +225,6 @@ Two environment lessons:
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Visual identity pass: kind icons and shapes (person, database, queue), and a weighted top level.
-3. Zoom past leaves into code (blockviz-style levels).
+2. Zoom past leaves into code (blockviz-style levels).
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

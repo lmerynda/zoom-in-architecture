@@ -1,4 +1,4 @@
-import { CARD_H, CARD_W, GUTTER, type SiblingRoute, type World } from './layout'
+import { cardH, cardW, GUTTER, type SiblingRoute, type World } from './layout'
 import type { Tree } from './model'
 import { ChannelGrid, simplify, type Side } from './route'
 
@@ -27,7 +27,7 @@ export class EdgeRouter {
     let g = this.grids.get(container)
     if (!g) {
       const L = this.world.local.get(container)!
-      const cards = L.children.map((_, k) => ({ x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: CARD_W, h: CARD_H }))
+      const cards = L.children.map((_, k) => ({ x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: cardW(L.spans[k]), h: cardH(L.spans[k]) }))
       g = new ChannelGrid(cards, GUTTER / 2)
       this.grids.set(container, g)
     }
@@ -38,7 +38,7 @@ export class EdgeRouter {
     const p = this.tree.parent[child]
     const L = this.world.local.get(p)!
     const k = L.children.indexOf(child)
-    return { x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: CARD_W, h: CARD_H }
+    return { x: L.pos[k * 2], y: L.pos[k * 2 + 1], w: cardW(L.spans[k]), h: cardH(L.spans[k]) }
   }
 
   private toWorld(container: number, pts: number[]) {

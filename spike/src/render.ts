@@ -5,6 +5,7 @@ import { FlowParticles, type Flow } from './fx/particles'
 import { Starfield } from './fx/starfield'
 import { WarpStreaks } from './fx/warp'
 import type { Hop } from './controls/logic'
+import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
 import { aggregateEdges, type EvidenceJson, type ShownEdge, type Tree } from './model'
@@ -26,6 +27,9 @@ const IN = 0x22d3ee
 const ROUTE = 0x4ade80
 const PIN = 0xf472b6
 const FLASH_MS = 3200
+/** Icon size and the gap after it, in multiples of the title's font size. */
+const ICON = 1.05
+const ICON_GAP = 0.4
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -57,6 +61,7 @@ interface NodeView {
   desc?: BitmapText
   dossier?: BitmapText
   metric?: BitmapText
+  icon?: Sprite
 }
 
 interface Chip { bg: NineSliceSprite; text: BitmapText }
@@ -99,6 +104,11 @@ export class Renderer {
   /** For endpoints: 1 receives from the focus, 2 sends to it, 3 both. */
   private endKind: Uint8Array
   private colors: Int32Array
+  /** What each element is, as an icon; people get rounder cards, and external systems outlined ones. */
+  private glyphs: (Glyph | null)[]
+  private icons = new Map<Glyph, Texture>()
+  private pill!: Texture
+  private pillRing!: Texture
   private chips: Chip[] = []
   private labels: Chip[] = []
   private round!: Texture
@@ -153,6 +163,7 @@ export class Renderer {
       const own = tree.els[i].color
       this.colors[i] = own in PALETTE ? PALETTE[own] : PALETTE.primary
     }
+    this.glyphs = tree.els.map((e, i) => (i ? glyphOf(e) : null))
     this.makeTextures()
     this.stage.addChild(this.stars.back)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.cardLayers.push(c); this.stage.addChild(c) }
@@ -175,6 +186,9 @@ export class Renderer {
     const frame = new Rectangle(0, 0, 64, 64)
     this.round = r.generateTexture({ target: new Graphics().roundRect(0, 0, 64, 64, 12).fill(0xffffff), frame, resolution: 2, antialias: true })
     this.ring = r.generateTexture({ target: new Graphics().roundRect(1, 1, 62, 62, 11).stroke({ width: 2, color: 0xffffff }), frame, resolution: 2, antialias: true })
+    this.pill = r.generateTexture({ target: new Graphics().roundRect(0, 0, 64, 64, 28).fill(0xffffff), frame, resolution: 2, antialias: true })
+    this.pillRing = r.generateTexture({ target: new Graphics().roundRect(1, 1, 62, 62, 27).stroke({ width: 2, color: 0xffffff }), frame, resolution: 2, antialias: true })
+    for (const name of GLYPHS) this.icons.set(name, r.generateTexture({ target: drawGlyph(name), frame, resolution: 2, antialias: true }))
     // Soft blob for shadows and glows: a rounded rect blurred inside a padded frame.
     const blob = new Container()
     const g = new Graphics().roundRect(16, 16, 64, 64, 14).fill(0xffffff)
@@ -321,7 +335,7 @@ export class Renderer {
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.dossier, v.metric]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.dossier, v.metric, v.icon]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -386,16 +400,18 @@ export class Renderer {
       return
     }
 
+    const glyph = this.glyphs[i]
+    const person = glyph === 'person', outside = glyph === 'external'
     if (!v.fill) {
       // Created together so shadow and glow sit under the fill.
       v.shadow = this.nine(this.soft, cards, 30)
       v.glow = this.nine(this.soft, cards, 30)
-      v.fill = this.nine(this.round, cards)
-      v.border = this.nine(this.ring, cards)
+      v.fill = person ? this.nine(this.pill, cards, 28) : this.nine(this.round, cards)
+      v.border = person ? this.nine(this.pillRing, cards, 28) : this.nine(this.ring, cards)
     }
     const t = isContainer ? this.open(i) : 0
     const shadow = v.shadow!, fill = v.fill, border = v.border!
-    if (w > 60) {
+    if (w > 60 && !outside) {
       const sp = Math.min(18, w * 0.06)
       shadow.visible = true
       shadow.position.set(x - sp, y - sp * 0.5)
@@ -411,13 +427,14 @@ export class Renderer {
     fill.tint = heat >= 0
       ? mix(heat, BG, isContainer ? 0.32 + 0.6 * t : hot || sel ? 0.12 : 0.28)
       : isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
-    fill.alpha = alpha * dim
+    // An external system is outside what was mapped: an outline over the background.
+    fill.alpha = alpha * dim * (outside && heat < 0 && !hot && !sel ? 0.3 : 1)
 
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
     border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
-    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : isContainer ? 0.55 : 0.45) * dim
+    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : outside ? 0.8 : isContainer ? 0.55 : 0.45) * dim
 
     if (sel || ends || flashA > 0.02) {
       const glow = v.glow!
@@ -463,13 +480,16 @@ export class Renderer {
 
       const pad = PAD * w
       const title = (v.title ??= this.text(this.tree.els[i].title, texts))
-      const px = Math.min(hh * 0.6, 26, (w * 0.62) / em(title))
+      const lead = glyph ? ICON + ICON_GAP : 0
+      const px = Math.min(hh * 0.6, 26, (w * 0.62) / (em(title) + lead))
       if (px >= 6) {
         title.visible = true
         title.scale.set(px / FONT_PX)
-        const tw = title.width
-        title.position.set(Math.max(x + pad, Math.min(SAFE.left, x + w - pad - tw)), y + (hh - px * 1.25) / 2)
+        const tw = title.width + lead * px
+        const tx = Math.max(x + pad, Math.min(SAFE.left, x + w - pad - tw))
+        title.position.set(tx + lead * px, y + (hh - px * 1.25) / 2)
         title.alpha = la
+        if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
         st.texts++
       }
       const meta = (v.sub ??= this.text(`${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
@@ -488,14 +508,16 @@ export class Renderer {
     const inner = w - 2 * pad
     const el = this.tree.els[i]
     const title = (v.title ??= this.text(el.title.length > 60 ? el.title.slice(0, 59) + '…' : el.title, texts))
-    const px = Math.min(h * 0.15, 24, inner / em(title))
+    const lead = glyph ? ICON + ICON_GAP : 0
+    const px = Math.min(h * 0.15, 24, inner / (em(title) + lead))
     if (px < 6) return
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - px * 6))
     title.visible = true
     title.scale.set(px / FONT_PX)
-    title.position.set(bx, by)
+    title.position.set(bx + lead * px, by)
+    if (glyph) this.icon(v, glyph, texts, bx, by + (px * 1.25 - px * ICON) / 2, px * ICON, color, la)
     title.alpha = la
     st.texts++
     let cy = by + px * 1.3
@@ -541,6 +563,15 @@ export class Renderer {
         st.texts++
       }
     }
+  }
+
+  private icon(v: NodeView, glyph: Glyph, layer: Container, x: number, y: number, size: number, color: number, alpha: number) {
+    const s = (v.icon ??= (() => { const sp = new Sprite(this.icons.get(glyph)!); layer.addChild(sp); return sp })())
+    s.visible = true
+    s.position.set(x, y)
+    s.width = s.height = size
+    s.tint = mix(color, 0xffffff, 0.45)
+    s.alpha = alpha * 0.9
   }
 
   /** Relations crossing element i's boundary: from it or anything inside it, to the outside and back. */

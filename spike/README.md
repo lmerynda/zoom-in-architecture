@@ -96,12 +96,13 @@ node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s in
 
 - `scripts/extract-likec4.mjs` — the LikeC4 samples under `model/` → `{ elements, relations }` JSON.
 - `src/model.ts` — hierarchy as flat arrays under a virtual root; relation roll-up.
-- `src/layout.ts`, `layout.worker.ts`, `layoutPool.ts` — one ELK rectpacking layout per container, batched per worker, sibling edges routed there; cards scaled into their parent's content area.
+- `src/layout.ts`, `layout.worker.ts`, `layoutPool.ts` — one ELK rectpacking layout per container, batched per worker, sibling edges routed there; cards scaled into their parent's content area. A child that holds far more files than its siblings spans 2 × 2 cells.
 - `src/route.ts` — orthogonal channel router through the gutters, with trunk sharing.
 - `src/edges.ts` — composes routes across nesting levels so no edge crosses a card.
 - `src/camera.ts` — float64 camera, cursor-anchored eased zoom, inertia, fly-to about a fixed point.
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
+- `src/icons.ts` — which icon each element gets, and the icons themselves.
 - `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
 - `src/controls/` — game-style controls: palette, history, target cycling, wheel, routes, pins, tooltips.
 - `model/acme/` — the realistic sample model.
