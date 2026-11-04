@@ -1,5 +1,6 @@
 import { Application } from 'pixi.js'
 import { Camera } from './camera'
+import { CodeView } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
 import { Altimeter, Banner, LensBar } from './hud'
@@ -53,6 +54,7 @@ async function main() {
   const minimap = new Minimap($<HTMLCanvasElement>('minimap'), tree, world)
   const altimeter = new Altimeter(tree)
   const banner = new Banner(tree)
+  const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
   renderer.onOpen = () => sound.chime()
 
@@ -162,6 +164,7 @@ async function main() {
     minimap.tree = next; minimap.world = live
     altimeter.setTree(next)
     banner.tree = next
+    code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
     renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) })
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
@@ -209,6 +212,7 @@ async function main() {
     cam.step(t, dt)
     stepMorph(t)
     last = renderer.frame(t)
+    code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
     altimeter.update(path, renderer.altitude(path), cam.z / ((cam.w * 0.92) / world.rect[2]))
     banner.update(path[path.length - 1] ?? 0, t)

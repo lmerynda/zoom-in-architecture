@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
+import { citedLines, codeHtml, codeLayout } from './code'
 import { glyphOf } from './icons'
 import { clipToScreen, fitText, junctions, shortText } from './render'
 import { synthetic } from './synthetic'
@@ -274,5 +275,39 @@ describe('glyphOf', () => {
     expect([g('app'), g('service'), g('container'), g('system'), g('softwaresystem'), g('existingsystem'), g('external-system'), g('library'), g('component'), g('code')])
       .toEqual(['app', 'app', 'app', 'system', 'system', 'external', 'external', 'library', 'component', 'code'])
     expect(g('unknown-kind')).toBeNull()
+  })
+})
+
+describe('code view', () => {
+  it('collects cited lines per file, ranges included', () => {
+    const t = new Tree({
+      name: 'm', elements: [el('a', null), el('b', null)],
+      relations: [{ source: 'a', target: 'b', title: '', evidence: [{ at: 'src/a.ts:3', line: 3, code: '' }, { at: 'src/a.ts:7-8', line: 7, code: '' }, { at: 'gone.ts:1', line: 1, code: null }] }],
+    })
+    const c = citedLines(t)
+    expect([...c.get('src/a.ts')!]).toEqual([3, 7, 8])
+    expect(c.has('gone.ts')).toBe(true)
+  })
+
+  it('numbers lines, marks cited ones and escapes markup', () => {
+    const r = codeHtml('a < b\n\nc\n', new Set([3]))
+    expect(r.lines).toBe(3)
+    expect(r.html).toBe('<div style="width:384px"><span><i>1</i>a &lt; b</span><span><i>2</i> </span><span class="cited"><i>3</i>c</span></div>')
+    expect(codeHtml(['1', '2', '3', '4', '5'].join(String.fromCharCode(10)), undefined, 2).html.match(/<div/g)).toHaveLength(2)
+  })
+
+  it('fits the whole file into the box, clipping only very long lines', () => {
+    // A tall narrow box: one column, height decides. 100 lines in 1450 px is 10 px.
+    expect(codeLayout(100, 40, 240, 1450)).toEqual({ columns: 1, px: 10 })
+    // One very long line counts as 120 characters: width decides.
+    expect(codeLayout(1, 5000, 720, 1e6).px).toBeCloseTo(10)
+  })
+
+  it('flows a long file into columns when the box is wide', () => {
+    // 300 lines of 40 characters in a 1600 × 600 box: columns beat one tall strip.
+    const one = Math.min(600 / (300 * 1.45), 1600 / (40 * 0.6))
+    const r = codeLayout(300, 40, 1600, 600)
+    expect(r.columns).toBeGreaterThan(1)
+    expect(r.px).toBeGreaterThan(one * 2)
   })
 })

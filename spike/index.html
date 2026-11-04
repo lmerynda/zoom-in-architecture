@@ -45,6 +45,14 @@
     .d-rels i { font-style: normal; grid-row: span 2; }
     .d-rels b { color: #e2e8f0; font-weight: 600; }
     .d-rels button span { color: var(--dim); font-size: 11px; }
+    #code { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
+    .code[hidden] { display: none; }
+    .code pre { display: flex; gap: calc(16px * 0.6 * 4); margin: 0; padding: 0; width: max-content; transform-origin: 0 0; font: 16px/1.45 ui-monospace, Consolas, monospace; color: #cbd5e1; }
+    .code pre div { overflow: hidden; }
+    .code pre span { display: block; white-space: pre; }
+    .code pre i { font-style: normal; color: #475569; margin-right: 1ch; }
+    .code pre .cited { background: rgba(251, 191, 36, 0.16); color: #fde68a; box-shadow: inset 3px 0 #fbbf24; }
     .d-ev { margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
     .d-ev > div { border-left: 2px solid var(--line); padding: 1px 0 1px 8px; }
     .d-ev .at { font-size: 10px; color: #64748b; font-family: ui-monospace, Consolas, monospace; }
@@ -143,6 +151,7 @@
 </head>
 <body>
   <div id="stage"></div>
+  <div id="code"></div>
   <div id="top" class="panel">
     <div id="brand" class="panel" style="position: static">Zoom spike</div>
     <nav id="models" class="panel" style="position: static"></nav>

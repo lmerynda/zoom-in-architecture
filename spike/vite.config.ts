@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, watch, type FSWatcher } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs'
+import { join, resolve, sep } from 'node:path'
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 
 /** Runs a script with node; resolves with its exit code. */
@@ -9,6 +9,8 @@ const run = (args: string[]) => new Promise<number>(resolve => {
 })
 
 const SOURCE = /\.(cs|rs|java|tsx?|mts|cts|jsx?|mjs|cjs|csproj|html)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?)$/
+/** Larger files are generated or data, not code worth reading on a card. */
+const MAX_SOURCE = 1_000_000
 const IGNORED = /(^|[/\\])(node_modules|bin|obj|target|dist|build|\.git)[/\\]/
 
 /**
@@ -86,6 +88,24 @@ function liveModels(): Plugin {
         res.setHeader('content-type', 'application/json')
         res.setHeader('cache-control', 'no-store')
         res.end(readFileSync(file))
+      })
+      // A file's source for the code view: only a file the published model contains, read from its repository.
+      server.middlewares.use('/source', (req, res, next) => {
+        const url = new URL(req.url ?? '', 'http://local')
+        const name = decodeURIComponent(url.pathname.slice(1)), path = url.searchParams.get('path') ?? ''
+        if (!/^[\w.-]+$/.test(name)) return next()
+        const refuse = (code: number) => { res.statusCode = code; res.end() }
+        try {
+          const model = JSON.parse(readFileSync(join('public/models', `${name}.json`), 'utf8')) as { elements: { metadata?: { path?: string } }[] }
+          if (!model.elements.some(e => e.metadata?.path === path)) return refuse(404)
+          const { repo } = JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')) as { repo: string }
+          const file = resolve(repo, path)
+          if (!file.startsWith(resolve(repo) + sep)) return refuse(404)
+          if (statSync(file).size > MAX_SOURCE) return refuse(413)
+          res.setHeader('content-type', 'text/plain; charset=utf-8')
+          res.setHeader('cache-control', 'no-store')
+          res.end(readFileSync(file))
+        } catch { refuse(404) }
       })
       server.httpServer?.on('close', () => { watchers.forEach(w => w.close()); sources.forEach(w => w.close()) })
     },

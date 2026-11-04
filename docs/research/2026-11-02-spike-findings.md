@@ -209,15 +209,22 @@ Two environment lessons:
 - **People and the outside world look different.** Actors get rounder cards. External systems are outlines with no shadow, since they sit outside what was mapped.
 - **Big parts read as big.** A container holding at least 10 files, and 3 times its siblings' median, spans 2 × 2 cells, at every level. Actors, stores and external systems stay one cell, so a web app no longer looks the same size as an analytics service. The span is part of the layout job's key, so a live update re-lays a container only when a child crosses the threshold.
 
+## Zooming into code
+
+Past a file card's last level comes the file itself. Once the card is 640 px wide, its whole source fills the card's lower part, flowed into as many columns as make the text largest. At first it reads as a minimap of the code, and it becomes readable as you keep zooming, with no mode switch. Lines that links cite are highlighted. This also fixed empty full-screen leaves: a file zoomed to fill the screen used to be blank below its dossier.
+- **The dev server serves the source** at `/source/<model>?path=…`, read from the mapped repository. It serves only paths the published model lists as files, resolved inside that repository, up to 1 MB. A static build has no source, and cards stay as they were.
+- **It is a DOM overlay** of one scaled `<pre>` per visible card, clipped to the visible part, so text stays sharp at any zoom. Zooming into Excalidraw's 11,499-line `App.tsx` holds 16.7 ms p50 and 18 ms p95 frames. The first time a file that size appears costs one frame of about 220 ms, while the browser builds it.
+
 ## Fixed rough edges
 
+- **Empty full-screen leaves:** a file zoomed to fill the screen now shows its source (see Zooming into code).
 - **Exits through the header:** routes used to enter and leave containers through their top, crossing the header band. A card with a header now has no top port, so lines come in from the sides or below.
 - **Trunk arrowheads:** a line leaving a shared trunk could look like an edge from the card beside it. Branch points now get a dot, and plain crossings do not.
 - **Shrinking technology lines:** a long kind and technology line used to shrink to fit its card. It now stops at a readable size and is cut with an ellipsis; the details panel has the whole line.
 
 ## Known rough edges
 
-- **Empty full-screen leaves:** a leaf zoomed to fill the screen is mostly empty below its dossier.
+- **First view of a very large file:** the code view builds a file's markup the first time it appears, which for a 10,000-line file costs one frame of about 220 ms.
 
 ## Not verified
 
@@ -229,6 +236,6 @@ Two environment lessons:
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Zoom past leaves into code (blockviz-style levels).
+2. Syntax colouring in the code view, and the graph's marked lines (routes, calls, stores) shown there beside the cited ones.
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

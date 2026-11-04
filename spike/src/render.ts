@@ -5,6 +5,7 @@ import { FlowParticles, type Flow } from './fx/particles'
 import { Starfield } from './fx/starfield'
 import { WarpStreaks } from './fx/warp'
 import type { Hop } from './controls/logic'
+import type { CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
@@ -32,6 +33,9 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
+/** A file card this wide on screen shows its source below this fraction of its height. */
+const CODE_W = 640
+const CODE_TOP = 0.36
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -148,6 +152,8 @@ export class Renderer {
   /** HUD panels anchored to the bottom edge, as screen rects x, y, w, h. */
   hud: number[][] = []
   pointer: [number, number] | null = null
+  /** File cards big enough to show their source this frame; the page draws the code over them. */
+  codeSlots: CodeSlot[] = []
 
   constructor(private app: Application, private tree: Tree, private world: World, private cam: Camera) {
     const n = tree.size
@@ -322,6 +328,7 @@ export class Renderer {
     }
     this.stars.update(this.cam, now)
     this.fxG.clear()
+    this.codeSlots = []
     const prev = this.shown
     this.shown = []
     this.visit(0, 1, 1, st)
@@ -543,12 +550,17 @@ export class Renderer {
       cy += s * 1.6
     }
 
+    // Past its last level a file shows its own source, anchored to the card so zooming reads it.
+    const code = el.metadata?.path && w >= CODE_W ? y + h * CODE_TOP : 0
+    if (code) this.codeSlots.push({ i, x: x + pad, y: code, w: inner, h: y + h - pad * 0.6 - code, alpha: la })
+    const bottom = code ? code - pad * 0.4 : y + h - pad * 0.6
+
     if (el.description) {
       const dpx = Math.min((FONT_PX * inner) / DESC_WRAP, 14)
       if (dpx >= 6.5) {
         const desc = (v.desc ??= this.text(shortText(el.description, 150), texts, DESC_WRAP))
         const dh = desc.height * (dpx / FONT_PX)
-        if (dh <= y + h - pad * 0.6 - cy) {
+        if (dh <= bottom - cy) {
           desc.visible = true
           desc.scale.set(dpx / FONT_PX)
           desc.position.set(bx, cy)
@@ -559,8 +571,8 @@ export class Renderer {
       }
     }
 
-    // Dossier: once a leaf is most of the screen, it lists what it talks to.
-    if (w > 640 && cy < y + h - 80) {
+    // Dossier: once a leaf is most of the screen, it lists what it talks to (a file shows its code instead).
+    if (!code && w > 640 && cy < y + h - 80) {
       const dossier = (v.dossier ??= this.text(this.dossierText(i), texts, DESC_WRAP * 1.2))
       const s = 13 / FONT_PX
       if (dossier.text && cy + dossier.height * s < y + h - pad) {

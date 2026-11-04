@@ -73,7 +73,7 @@ Six keys plus the mouse; everything else is in the command wheel or the palette.
 | `Esc` | Closes the innermost thing first: wheel, help, target, route, selection, then goes up a level |
 | `?` | The controls screen |
 
-Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; a relation that a map link backs lists its cited code lines (two, then "+N more"), and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
+Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; zooming past a file card shows its source, cited lines highlighted; a relation that a map link backs lists its cited code lines (two, then "+N more"), and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
 
 ## Measuring
 
@@ -103,6 +103,7 @@ node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s in
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
 - `src/icons.ts` — which icon each element gets, and the icons themselves.
+- `src/code.ts` — the code view: a file card's source, flowed into columns and scaled with the card, served by the dev server's `/source` endpoint.
 - `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
 - `src/controls/` — game-style controls: palette, history, target cycling, wheel, routes, pins, tooltips.
 - `model/acme/` — the realistic sample model.

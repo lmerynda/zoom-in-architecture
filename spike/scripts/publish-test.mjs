@@ -66,6 +66,13 @@ try {
   await shot('02-opened')
   // The selected file's link to the server shows the code lines that prove it.
   const proof = await page.$eval('#details', e => e.innerText)
+  // Zoomed past the file's card, its own source shows, the cited line marked.
+  await page.evaluate(() => { const s = window.__spike, i = s.id('web.orders.api'), r = s.world.rect; s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2, (s.cam.w * 1.2) / r[i * 4 + 2]) })
+  await page.waitForFunction(() => [...document.querySelectorAll('.code')].some(e => !e.hidden && e.textContent.includes('/api/orders')), { timeout: 10000 }).catch(() => {})
+  const code = await page.evaluate(() => { const e = [...document.querySelectorAll('.code')].find(e => !e.hidden); return e ? { text: e.textContent, cited: e.querySelector('.cited')?.textContent ?? '' } : null })
+  check('zooming past a file shows its source', !!code && code.cited.includes("fetch('/api/orders')"), code ? code.cited.trim() : 'no code shown')
+  await shot('02b-code')
+  await page.evaluate(() => { const s = window.__spike; s.fit(0) })
   check('a link shows its evidence in the panel', proof.includes('src/api.ts:1') && proof.includes("fetch('/api/orders')") && proof.includes('@GetMapping("/api/orders")'), proof.split('\n').filter(l => /:\d|fetch|@Get/.test(l)).join(' | '))
 
   // A new file in the repo is published live, beside the files it talks to.
