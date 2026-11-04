@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
-import { citedLines, codeHtml, codeLayout, parseMarks } from './code'
+import { citedLines, codeLayout, lineHtml, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
 import { clipToScreen, fitText, junctions, shortText } from './render'
@@ -291,20 +291,29 @@ describe('code view', () => {
   })
 
   it('numbers lines, marks cited ones and escapes markup', () => {
-    const r = codeHtml('a < b\n\nc\n', { cited: new Set([3]) })
-    expect(r.lines).toBe(3)
-    expect(r.html).toBe('<div style="width:384px"><span><i>1</i>a &lt; b</span><span><i>2</i> </span><span class="cited"><i>3</i>c</span></div>')
-    expect(codeHtml(['1', '2', '3', '4', '5'].join(String.fromCharCode(10)), {}, 2).html.match(/<div/g)).toHaveLength(2)
+    expect(splitLines('a < b\r\n\tx\n\nc\n')).toEqual(['a < b', '  x', '', 'c'])
+    expect(lineHtml(3, 2, [['', 'a < b']], true)).toBe('<span class="cited"><i> 3</i>a &lt; b</span>')
+    expect(lineHtml(4, 1, [], false)).toBe('<span><i>4</i> </span>')
   })
 
   it('colours code and tags the lines the graph marked', () => {
-    const r = codeHtml("const x = fetch('/a') // go", { marks: parseMarks('1:call'), lang: 'c' })
-    expect(r.html).toContain('<span class="mark">')
-    expect(r.html).toContain('<em class="kw">const</em>')
-    expect(r.html).toContain(`<em class="str">'/a'</em>`)
-    expect(r.html).toContain('<em class="com">// go</em>')
-    expect(r.html).toContain('<b>call</b>')
+    const html = lineHtml(1, 1, tokenize("const x = fetch('/a') // go", 'c', { open: '', close: '' }), false, parseMarks('1:call').get(1))
+    expect(html).toContain('<span class="mark">')
+    expect(html).toContain('<em class="kw">const</em>')
+    expect(html).toContain(`<em class="str">'/a'</em>`)
+    expect(html).toContain('<em class="com">// go</em>')
+    expect(html).toContain('<b>call</b>')
     expect([...parseMarks('3:route 3:store 9:call')]).toEqual([[3, ['route', 'store']], [9, ['call']]])
+  })
+
+  it('puts only the lines in view, and a margin, in the page', () => {
+    // 40-character lines: a column pitch of (40 + 4) × 9.6 = 422.4 px; lines 23.2 px apart.
+    // A view of the second column, rows 10 to 20, of a 4-column file with 100 rows each.
+    const w = viewWindow(430, 840, 232, 464, 40, 4, 100)
+    expect(w).toEqual({ c0: 1, c1: 1, r0: 10, r1: 20 })
+    // The margin widens it by half the view each way, clamped to the file.
+    expect(viewWindow(430, 840, 232, 464, 40, 4, 100, 0.5)).toEqual({ c0: 0, c1: 2, r0: 5, r1: 25 })
+    expect(viewWindow(0, 1e6, 0, 1e6, 40, 4, 100, 0.5)).toEqual({ c0: 0, c1: 3, r0: 0, r1: 100 })
   })
 })
 

@@ -213,11 +213,13 @@ Two environment lessons:
 
 Past a file card's last level comes the file itself. Once the card is 640 px wide, its whole source fills the card's lower part, flowed into as many columns as make the text largest. At first it reads as a minimap of the code, and it becomes readable as you keep zooming, with no mode switch. The code is coloured (comments, strings, numbers, keywords, type names) by a small line scanner for the languages the graph reads, with no dependency. Lines that links cite are highlighted in amber, and lines the graph marked (routes, calls, stores, sockets…) get a cyan edge and their kind, so the seams an agent should cite are visible where they sit. This also fixed empty full-screen leaves: a file zoomed to fill the screen used to be blank below its dossier.
 - **The dev server serves the source** at `/source/<model>?path=…`, read from the mapped repository. It serves only paths the published model lists as files, resolved inside that repository, up to 1 MB. A static build has no source, and cards stay as they were.
-- **It is a DOM overlay** of one scaled `<pre>` per visible card, clipped to the visible part, so text stays sharp at any zoom. Zooming into Excalidraw's 11,499-line `App.tsx` holds 16.7 ms p50 and 18 ms p95 frames. The first time a file that size appears costs one frame of about 220 ms, while the browser builds it.
+- **Far out it is a drawn minimap, closer in it is text.** Below a 6 px font the file is a canvas of coloured token bars, drawn once per file. From 6 px it is a scaled `<pre>` holding only the lines in view plus half a view of margin, re-rendered only when the view leaves them; zooming in never re-renders. Tokenizing, markup and the minimap are prepared in 600-line slices between frames as soon as the card asks for the file, while it is still too small to show. A long file's columns are centred in the card, so zooming in on the card's middle lands on code.
+- **Measured on Excalidraw's 11,499-line `App.tsx`**, zooming 300× from the overview into reading, warm and cold: 16.7 ms p50 and 17 ms p95 frames, worst 24 to 35 ms, at most 272 lines in the page at the deepest zoom. The first view used to cost one 220 ms frame.
 
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.
+- **First view of a very large file:** building a 10,000-line file's markup when it first appeared cost one frame of about 220 ms. It is now prepared in slices before it shows, and only the lines in view are in the page.
 - **Empty full-screen leaves:** a file zoomed to fill the screen now shows its source (see Zooming into code).
 - **Exits through the header:** routes used to enter and leave containers through their top, crossing the header band. A card with a header now has no top port, so lines come in from the sides or below.
 - **Trunk arrowheads:** a line leaving a shared trunk could look like an edge from the card beside it. Branch points now get a dot, and plain crossings do not.
@@ -225,7 +227,7 @@ Past a file card's last level comes the file itself. Once the card is 640 px wid
 
 ## Known rough edges
 
-- **First view of a very large file:** the code view builds a file's markup the first time it appears, which for a 10,000-line file costs one frame of about 220 ms.
+None open from the passes above.
 
 ## Not verified
 
