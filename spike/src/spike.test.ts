@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
-import { citedLines, codeHtml, codeLayout } from './code'
+import { citedLines, codeHtml, codeLayout, parseMarks } from './code'
+import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
 import { clipToScreen, fitText, junctions, shortText } from './render'
 import { synthetic } from './synthetic'
@@ -290,10 +291,43 @@ describe('code view', () => {
   })
 
   it('numbers lines, marks cited ones and escapes markup', () => {
-    const r = codeHtml('a < b\n\nc\n', new Set([3]))
+    const r = codeHtml('a < b\n\nc\n', { cited: new Set([3]) })
     expect(r.lines).toBe(3)
     expect(r.html).toBe('<div style="width:384px"><span><i>1</i>a &lt; b</span><span><i>2</i> </span><span class="cited"><i>3</i>c</span></div>')
-    expect(codeHtml(['1', '2', '3', '4', '5'].join(String.fromCharCode(10)), undefined, 2).html.match(/<div/g)).toHaveLength(2)
+    expect(codeHtml(['1', '2', '3', '4', '5'].join(String.fromCharCode(10)), {}, 2).html.match(/<div/g)).toHaveLength(2)
+  })
+
+  it('colours code and tags the lines the graph marked', () => {
+    const r = codeHtml("const x = fetch('/a') // go", { marks: parseMarks('1:call'), lang: 'c' })
+    expect(r.html).toContain('<span class="mark">')
+    expect(r.html).toContain('<em class="kw">const</em>')
+    expect(r.html).toContain(`<em class="str">'/a'</em>`)
+    expect(r.html).toContain('<em class="com">// go</em>')
+    expect(r.html).toContain('<b>call</b>')
+    expect([...parseMarks('3:route 3:store 9:call')]).toEqual([[3, ['route', 'store']], [9, ['call']]])
+  })
+})
+
+describe('tokenize', () => {
+  const run = (lines: string[], lang: 'c' | 'py') => { const st: LineState = { open: '', close: '' }; return lines.map(l => tokenize(l, lang, st)) }
+
+  it('reads comments, strings, numbers, keywords and type names', () => {
+    expect(run(['func (db *DB) Open() error { return 42 } // ok'], 'c')[0]).toEqual([
+      ['kw', 'func'], ['', ' (db *DB) '], ['ty', 'Open'], ['', '() error { '], ['kw', 'return'], ['', ' '], ['num', '42'], ['', ' } '], ['com', '// ok'],
+    ])
+  })
+
+  it('carries block comments and multi-line strings to the next line', () => {
+    const [a, b] = run(['x = 1 /* start', 'end */ y'], 'c')
+    expect(a[a.length - 1]).toEqual(['com', '/* start'])
+    expect(b[0]).toEqual(['com', 'end */'])
+    const [p, q] = run(['s = """doc', 'more""" # note'], 'py')
+    expect(p[p.length - 1]).toEqual(['str', '"""doc'])
+    expect(q).toEqual([['str', 'more"""'], ['', ' '], ['com', '# note']])
+  })
+
+  it('picks the language from the file name', () => {
+    expect([langOf('a/b.tsx'), langOf('main.go'), langOf('app/api.py'), langOf('index.html')]).toEqual(['c', 'c', 'py', 'plain'])
   })
 
   it('fits the whole file into the box, clipping only very long lines', () => {

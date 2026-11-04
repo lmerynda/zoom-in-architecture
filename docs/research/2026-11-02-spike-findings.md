@@ -211,12 +211,13 @@ Two environment lessons:
 
 ## Zooming into code
 
-Past a file card's last level comes the file itself. Once the card is 640 px wide, its whole source fills the card's lower part, flowed into as many columns as make the text largest. At first it reads as a minimap of the code, and it becomes readable as you keep zooming, with no mode switch. Lines that links cite are highlighted. This also fixed empty full-screen leaves: a file zoomed to fill the screen used to be blank below its dossier.
+Past a file card's last level comes the file itself. Once the card is 640 px wide, its whole source fills the card's lower part, flowed into as many columns as make the text largest. At first it reads as a minimap of the code, and it becomes readable as you keep zooming, with no mode switch. The code is coloured (comments, strings, numbers, keywords, type names) by a small line scanner for the languages the graph reads, with no dependency. Lines that links cite are highlighted in amber, and lines the graph marked (routes, calls, stores, sockets…) get a cyan edge and their kind, so the seams an agent should cite are visible where they sit. This also fixed empty full-screen leaves: a file zoomed to fill the screen used to be blank below its dossier.
 - **The dev server serves the source** at `/source/<model>?path=…`, read from the mapped repository. It serves only paths the published model lists as files, resolved inside that repository, up to 1 MB. A static build has no source, and cards stay as they were.
 - **It is a DOM overlay** of one scaled `<pre>` per visible card, clipped to the visible part, so text stays sharp at any zoom. Zooming into Excalidraw's 11,499-line `App.tsx` holds 16.7 ms p50 and 18 ms p95 frames. The first time a file that size appears costs one frame of about 220 ms, while the browser builds it.
 
 ## Fixed rough edges
 
+- **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.
 - **Empty full-screen leaves:** a file zoomed to fill the screen now shows its source (see Zooming into code).
 - **Exits through the header:** routes used to enter and leave containers through their top, crossing the header band. A card with a header now has no top port, so lines come in from the sides or below.
 - **Trunk arrowheads:** a line leaving a shared trunk could look like an edge from the card beside it. Branch points now get a dot, and plain crossings do not.
@@ -236,6 +237,5 @@ Past a file card's last level comes the file itself. Once the card is 640 px wid
 ## Recommended next steps
 
 1. Get a person to drive it with real models and note where it confuses. The design now needs human feedback more than more code.
-2. Syntax colouring in the code view, and the graph's marked lines (routes, calls, stores) shown there beside the cited ones.
 
 Screenshots: `node scripts/tour.mjs` writes the walkthrough into `spike/shots/tour/` (not committed).

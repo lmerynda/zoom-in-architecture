@@ -1,4 +1,5 @@
 import type { Tree } from './model'
+import { langOf, tokenize, type Lang, type LineState } from './syntax'
 
 /** Where a file card shows its source this frame, in screen px. */
 export interface CodeSlot { i: number; x: number; y: number; w: number; h: number; alpha: number }
@@ -45,12 +46,34 @@ export function codeLayout(lines: number, cols: number, w: number, h: number): {
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-/** A file as numbered lines, cited ones marked, flowed into `columns` columns. */
-export function codeHtml(text: string, cited: Set<number> = new Set(), columns = 1) {
+/** The graph's marked lines of a file (routes, calls, stores…), from its `marks` metadata: "12:route 40:call". */
+export function parseMarks(marks = ''): Map<number, string[]> {
+  const out = new Map<number, string[]>()
+  for (const m of marks.split(' ')) {
+    const [line, kind] = m.split(':')
+    if (kind) out.set(Number(line), [...(out.get(Number(line)) ?? []), kind])
+  }
+  return out
+}
+
+export interface CodeMarks { cited?: Set<number>; marks?: Map<number, string[]>; lang?: Lang }
+
+/**
+ * A file as numbered, coloured lines flowed into `columns` columns. Lines a link cites are
+ * highlighted, and lines the graph marked carry their kind (route, call, store…) at the end.
+ */
+export function codeHtml(text: string, { cited = new Set(), marks = new Map(), lang = 'plain' }: CodeMarks = {}, columns = 1) {
   const lines = text.replace(/\r/g, '').replace(/\t/g, '  ').split('\n')
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   const pad = String(lines.length).length
-  const spans = lines.map((l, k) => `<span${cited.has(k + 1) ? ' class="cited"' : ''}><i>${String(k + 1).padStart(pad)}</i>${escape(l) || ' '}</span>`)
+  const state: LineState = { open: '', close: '' }
+  const spans = lines.map((l, k) => {
+    const n = k + 1, kinds = marks.get(n)
+    const cls = [cited.has(n) && 'cited', kinds && 'mark'].filter(Boolean).join(' ')
+    const body = tokenize(l, lang, state).map(([kind, t]) => (kind ? `<em class="${kind}">${escape(t)}</em>` : escape(t))).join('')
+    const tags = kinds ? kinds.map(kind => `<b>${kind}</b>`).join('') : ''
+    return `<span${cls ? ` class="${cls}"` : ''}><i>${String(n).padStart(pad)}</i>${body || ' '}${tags}</span>`
+  })
   const cols = Math.max(...lines.map(l => l.length)) + pad + 1
   const per = Math.ceil(lines.length / columns), width = colChars(cols) * CHAR * BASE_PX
   let html = ''
@@ -110,7 +133,8 @@ export class CodeView {
       // A card keeps its shape while zooming, so its column count, and this markup, rarely change.
       const key = `${path}|${columns}`
       if (s.path !== key) {
-        if (!src.html.has(columns)) src.html.set(columns, codeHtml(src.text, this.cited.get(path), columns).html)
+        const marks = parseMarks(this.tree.els[slot.i].metadata?.marks)
+        if (!src.html.has(columns)) src.html.set(columns, codeHtml(src.text, { cited: this.cited.get(path), marks, lang: langOf(path) }, columns).html)
         s.pre.innerHTML = src.html.get(columns)!
         s.path = key
       }

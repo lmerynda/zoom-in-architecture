@@ -14,7 +14,7 @@
     { "id": "viewer.shell", "kind": "component", "title": "App shell", "description": "Loads a model, runs the frame loop, swaps live updates in, and shows the HUD, details panel and model tabs.", "files": ["spike/src/main.ts", "spike/src/models.ts", "spike/src/details.ts", "spike/src/hud.ts"] },
     { "id": "viewer.model", "kind": "component", "title": "Model", "description": "The element tree with relations rolled up per level, synthetic landscapes, and the diff that lets a new version morph in place.", "files": ["spike/src/model.ts", "spike/src/synthetic.ts", "spike/src/live.ts"] },
     { "id": "viewer.layout", "kind": "component", "title": "Layout and routing", "description": "Packs each container's children in worker threads and routes edges through the gutters between cards.", "files": ["spike/src/layout.ts", "spike/src/layoutPool.ts", "spike/src/layout.worker.ts", "spike/src/route.ts", "spike/src/edges.ts"] },
-    { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn) and flight effects.", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/fx/**"] },
+    { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn) and flight effects.", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/fx/**", "spike/src/code.ts", "spike/src/syntax.ts", "spike/src/icons.ts"] },
     { "id": "viewer.recorder", "kind": "component", "title": "Video recorder", "description": "A second page that encodes frames sent by the recording script into a video with WebCodecs.", "files": ["spike/src/recorder.ts"] },
     { "id": "viewer.controls", "kind": "component", "title": "Controls", "description": "Game-style controls: palette, radial menu, target cycling, routes, pins, minimap and sound.", "files": ["spike/src/controls/**", "spike/src/minimap.ts", "spike/src/sound.ts"] }
   ],
@@ -24,10 +24,10 @@
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
       "evidence": ["spike/scripts/graph.mjs:42"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/main.ts", "title": "publishes models/<name>.json",
-      "evidence": ["spike/scripts/map.mjs:199", "spike/src/main.ts:23"] },
+      "evidence": ["spike/scripts/map.mjs:199", "spike/src/main.ts:24"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
       "evidence": ["spike/scripts/map.mjs:199", "spike/src/models.ts:7"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/extract-likec4.mjs:42", "spike/src/main.ts:23"] }
+      "evidence": ["spike/scripts/map.mjs:199", "spike/src/main.ts:24"] }
   ]
 }

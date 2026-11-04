@@ -2,9 +2,9 @@
 // and lists every model in public/models/index.json. Imported codebases are published by
 // scripts/zoom.mjs instead.
 import { LikeC4 } from 'likec4'
-import { mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { writeIndex } from './map.mjs'
+import { writeAtomic, writeIndex } from './map.mjs'
 
 const out = 'public/models'
 mkdirSync(out, { recursive: true })
@@ -37,10 +37,7 @@ for (const { name, dir } of workspaces) {
     target: r.target.id,
     title: text(r.title),
   }))
-  // The dev server watches public/models; a half-written file must never be read.
-  const file = join(out, `${name}.json`)
-  writeFileSync(`${file}.tmp`, JSON.stringify({ name, elements, relations, buildMs: Date.now() - t0 }))
-  renameSync(`${file}.tmp`, file)
+  writeAtomic(join(out, `${name}.json`), JSON.stringify({ name, elements, relations, buildMs: Date.now() - t0 }))
   console.log(`${name}: ${elements.length} elements, ${relations.length} relations`)
   await likec4.dispose?.()
 }

@@ -3,7 +3,7 @@
 // which is nodes (apps, components, actors, stores) and the files each one holds, plus the links
 // code references cannot show (HTTP calls, the database), each with file:line evidence.
 // Relations between files come only from the graph, never from the map.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
 
@@ -120,7 +120,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       used.add(seg)
       fileId.set(p, `${id}.${seg}`)
       const f = app.get(p)
-      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn) } })
+      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn), marks: f.hints.map(h => `${h.line}:${h.kind}`).join(' ') } })
     }
   }
 
@@ -195,8 +195,8 @@ export function writeIndex() {
   writeAtomic(join('public/models', 'index.json'), JSON.stringify(entries))
 }
 
-// The dev server watches public/models; a half-written file must never be read.
-const writeAtomic = (file, text) => { writeFileSync(`${file}.tmp`, text); renameSync(`${file}.tmp`, file) }
+// The dev server watches public/models; a half-written file must never be read, and one cut off by a crash must never replace a good one.
+export const writeAtomic = (file, text) => { const fd = openSync(`${file}.tmp`, 'w'); try { writeSync(fd, text); fsyncSync(fd) } finally { closeSync(fd) } renameSync(`${file}.tmp`, file) }
 
 /**
  * Publishes a map of `repo` as model `name`: imports/<name>/ keeps the map and where it came

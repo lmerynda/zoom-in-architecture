@@ -52,7 +52,17 @@
     .code pre div { overflow: hidden; }
     .code pre span { display: block; white-space: pre; }
     .code pre i { font-style: normal; color: #475569; margin-right: 1ch; }
-    .code pre .cited { background: rgba(251, 191, 36, 0.16); color: #fde68a; box-shadow: inset 3px 0 #fbbf24; }
+    .code pre em { font-style: normal; }
+    .code pre .kw { color: #c4b5fd; }
+    .code pre .str { color: #86efac; }
+    .code pre .com { color: #64748b; font-style: italic; }
+    .code pre .num { color: #fdba74; }
+    .code pre .ty { color: #7dd3fc; }
+    /* Lines the graph marked: a cyan edge and their kind; lines a link cites: amber. */
+    .code pre .mark { box-shadow: inset 3px 0 #22d3ee; background: rgba(34, 211, 238, 0.07); }
+    .code pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.8em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
+    .code pre .cited { background: rgba(251, 191, 36, 0.16); box-shadow: inset 3px 0 #fbbf24; }
+    .code pre .cited b { color: #fde68a; border-color: rgba(251, 191, 36, 0.6); }
     .d-ev { margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
     .d-ev > div { border-left: 2px solid var(--line); padding: 1px 0 1px 8px; }
     .d-ev .at { font-size: 10px; color: #64748b; font-family: ui-monospace, Consolas, monospace; }

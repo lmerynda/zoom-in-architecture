@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, compareMaps, publish, toName } from './map.mjs'
+import { auditPlacement, buildModel, compareMaps, publish, toName, writeAtomic } from './map.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -203,5 +204,18 @@ describe('re-map helpers', () => {
 
   it('audits files used mostly from a sibling node that use nothing of their own', () => {
     expect(auditPlacement(graph, map)).toEqual([{ path: 'web/src/api.ts', own: 'web.orders', ownUsers: 0, top: 'web.shopping', topUsers: 2 }])
+  })
+})
+
+describe('writeAtomic', () => {
+  it('replaces a file whole, leaving no temporary file behind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zoom-'))
+    try {
+      const file = join(dir, 'm.json')
+      writeAtomic(file, '{"a":1}')
+      writeAtomic(file, '{"a":2}')
+      expect(readFileSync(file, 'utf8')).toBe('{"a":2}')
+      expect(existsSync(`${file}.tmp`)).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
