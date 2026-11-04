@@ -55,6 +55,18 @@ describe('ChannelGrid', () => {
     expect(used.size).toBeGreaterThan(0)
   })
 
+  it('never enters or leaves a container through its header', () => {
+    // A container straight below a card: the short way in is its top, which crosses the header.
+    const top = card(140, 0), box = { ...card(140, 100), header: true }
+    const grid = new ChannelGrid([top, box], 20)
+    const r = grid.route(top, box)!
+    expect(r.to).not.toBe(0)
+    expect(crosses(r.pts, [top, box])).toBe(false)
+    expect(grid.route(box, top)!.from).not.toBe(0)
+    // Without a header the top is the way in.
+    expect(new ChannelGrid([top, card(140, 100)], 20).route(top, card(140, 100))!.to).toBe(0)
+  })
+
   it('exits to the ring beyond all cards on the requested side', () => {
     const r = g.exit(cards[4], 0, 190)!
     expect(orthogonal(r.pts)).toBe(true)

@@ -50,6 +50,8 @@ export interface LayoutJob {
   children: number[]
   /** Cells per side of each child, in `children` order. */
   spans: number[]
+  /** Whether each child is a container, whose header routes must not cross. */
+  headed: boolean[]
   /** Sibling edges, one per unordered pair, with how many relations they carry. */
   edges: { s: number; t: number; count: number }[]
 }
@@ -99,7 +101,7 @@ export function layoutJobs(tree: Tree): LayoutJob[] {
       if (p) p.count += e.count
       else pairs.set(key, { ...e })
     }
-    jobs.push({ id: i, children: c, spans: c.map(k => span[k]), edges: [...pairs.values()] })
+    jobs.push({ id: i, children: c, spans: c.map(k => span[k]), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()] })
   }
   return jobs
 }

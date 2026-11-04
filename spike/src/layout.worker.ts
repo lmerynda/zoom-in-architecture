@@ -38,7 +38,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       pos.push(k.x!, k.y!)
     }
     const index = new Map(job.children.map((ch, k) => [ch, k]))
-    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: cardH(job.spans[k]) } }
+    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: cardH(job.spans[k]), header: job.headed[k] } }
     const grid = new ChannelGrid(job.children.map(rect), GUTTER / 2)
     // Heavy edges first, so lighter ones join their trunks.
     const used = new Set<number>()

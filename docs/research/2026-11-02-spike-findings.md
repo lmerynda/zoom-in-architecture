@@ -209,10 +209,14 @@ Two environment lessons:
 - **People and the outside world look different.** Actors get rounder cards. External systems are outlines with no shadow, since they sit outside what was mapped.
 - **Big parts read as big.** A container holding at least 10 files, and 3 times its siblings' median, spans 2 × 2 cells, at every level. Actors, stores and external systems stay one cell, so a web app no longer looks the same size as an analytics service. The span is part of the layout job's key, so a live update re-lays a container only when a child crosses the threshold.
 
+## Fixed rough edges
+
+- **Exits through the header:** routes used to enter and leave containers through their top, crossing the header band. A card with a header now has no top port, so lines come in from the sides or below.
+- **Trunk arrowheads:** a line leaving a shared trunk could look like an edge from the card beside it. Branch points now get a dot, and plain crossings do not.
+- **Shrinking technology lines:** a long kind and technology line used to shrink to fit its card. It now stops at a readable size and is cut with an ellipsis; the details panel has the whole line.
+
 ## Known rough edges
 
-- **Exits through the header:** routes that leave a container through its top port cross the header band, so a line passes under the title area.
-- **Trunk arrowheads:** lines entering children along a shared trunk can look like edges between siblings.
 - **Empty full-screen leaves:** a leaf zoomed to fill the screen is mostly empty below its dossier.
 
 ## Not verified

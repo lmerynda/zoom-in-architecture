@@ -30,6 +30,8 @@ const FLASH_MS = 3200
 /** Icon size and the gap after it, in multiples of the title's font size. */
 const ICON = 1.05
 const ICON_GAP = 0.4
+/** The smallest the kind and technology line may get before it is cut short instead. */
+const SUB_MIN = 10
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -62,6 +64,8 @@ interface NodeView {
   dossier?: BitmapText
   metric?: BitmapText
   icon?: Sprite
+  /** Width per px of the full sub line, measured once, so cutting it never re-measures. */
+  subEm?: number
 }
 
 interface Chip { bg: NineSliceSprite; text: BitmapText }
@@ -526,7 +530,11 @@ export class Renderer {
     const spx = Math.min(px * 0.62, 14)
     if (spx >= 6 && subText) {
       const sub = (v.sub ??= this.text(subText, texts))
-      const s = Math.min(spx, inner / em(sub))
+      v.subEm ??= em(sub)
+      // A long technology list is cut short rather than shrunk past reading; the panel has it all.
+      const s = Math.max(Math.min(spx, inner / v.subEm), Math.min(spx, SUB_MIN))
+      const shown = fitText(subText, v.subEm, inner, s)
+      if (sub.text !== shown) sub.text = shown
       sub.visible = true
       sub.scale.set(s / FONT_PX)
       sub.position.set(bx, cy)
@@ -664,6 +672,17 @@ export class Renderer {
       if (paths[kind].length) gg.stroke({ width, color, alpha: Math.min(1, alpha), join: 'round', cap: 'round' })
       arrowHeads(gg, heads[kind], color, Math.min(1, alpha + 0.15), 6 + width * 1.4)
     })
+    // A dot where a line leaves a shared trunk, so a branch reads as a join, not as an edge from
+    // the card beside it. Quiet lines are dotted together, highlighted ones in their own colour.
+    const dots: [Graphics, number[][], number, number, number][] = [
+      [g, [...paths[Kind.Thin], ...paths[Kind.Mid], ...paths[Kind.Thick]], EDGE, Math.min(1, base * 1.6), 3],
+      [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6],
+    ]
+    for (const [gg, ps, color, alpha, r] of dots) {
+      const j = junctions(ps)
+      for (let k = 0; k < j.length; k += 2) gg.circle(j[k], j[k + 1], r)
+      if (j.length) gg.fill({ color, alpha })
+    }
 
     this.particles.update(flows, this.time, sel)
     st.chips = this.drawChips(chipTargets, W, H)
@@ -895,6 +914,50 @@ function em(t: BitmapText) {
 }
 
 /** One line of text, whitespace runs collapsed, cut to `max` characters with an ellipsis. */
+/**
+ * Where lines branch: bends of one polyline that sit on another line, so that three or more
+ * directions meet. Plain crossings have no bend there and are left out. Returns x, y pairs.
+ */
+export function junctions(paths: number[][], eps = 0.75): number[] {
+  // Axis-aligned segments indexed by their fixed coordinate, so each bend checks only its row and column.
+  const vert = new Map<number, number[]>(), horiz = new Map<number, number[]>()
+  const add = (m: Map<number, number[]>, key: number, a: number, b: number) => { const k = Math.round(key); (m.get(k) ?? m.set(k, []).get(k)!).push(key, Math.min(a, b), Math.max(a, b)) }
+  for (const p of paths) for (let k = 2; k < p.length; k += 2) {
+    const x0 = p[k - 2], y0 = p[k - 1], x1 = p[k], y1 = p[k + 1]
+    if (Math.abs(x0 - x1) < eps) add(vert, x0, y0, y1)
+    else if (Math.abs(y0 - y1) < eps) add(horiz, y0, x0, x1)
+  }
+  const near = (m: Map<number, number[]>, key: number) => [...(m.get(Math.round(key) - 1) ?? []), ...(m.get(Math.round(key)) ?? []), ...(m.get(Math.round(key) + 1) ?? [])]
+  const out: number[] = [], seen = new Set<string>()
+  for (const p of paths) for (let k = 2; k < p.length - 2; k += 2) {
+    const x = p[k], y = p[k + 1]
+    const id = `${Math.round(x)},${Math.round(y)}`
+    if (seen.has(id)) continue
+    // Directions leaving the point: 1 up, 2 right, 4 down, 8 left.
+    let mask = 0
+    const v = near(vert, x)
+    for (let s = 0; s < v.length; s += 3) {
+      if (Math.abs(v[s] - x) >= eps || y < v[s + 1] - eps || y > v[s + 2] + eps) continue
+      if (y > v[s + 1] + eps) mask |= 1
+      if (y < v[s + 2] - eps) mask |= 4
+    }
+    const h = near(horiz, y)
+    for (let s = 0; s < h.length; s += 3) {
+      if (Math.abs(h[s] - y) >= eps || x < h[s + 1] - eps || x > h[s + 2] + eps) continue
+      if (x > h[s + 1] + eps) mask |= 8
+      if (x < h[s + 2] - eps) mask |= 2
+    }
+    if ((mask & 1) + ((mask >> 1) & 1) + ((mask >> 2) & 1) + ((mask >> 3) & 1) >= 3) { seen.add(id); out.push(x, y) }
+  }
+  return out
+}
+
+/** `s` cut with an ellipsis to fit `width` at font size `px`, given its full width per px. */
+export function fitText(s: string, emFull: number, width: number, px: number): string {
+  if (emFull * px <= width) return s
+  return shortText(s, Math.max(2, Math.floor((s.length * width) / (emFull * px))))
+}
+
 export function shortText(s: string, max: number): string {
   const flat = s.replace(/\s+/g, ' ').trim()
   return flat.length > max ? flat.slice(0, max - 1).trimEnd() + '…' : flat

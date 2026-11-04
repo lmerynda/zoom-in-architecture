@@ -7,7 +7,8 @@
  * shared trunks instead of running side by side.
  */
 
-export interface Rect { x: number; y: number; w: number; h: number }
+/** A card; one with a header (a container) is never entered or left through its top, which would cross the header. */
+export interface Rect { x: number; y: number; w: number; h: number; header?: boolean }
 
 /** Card side, also the outward direction: 0 up, 1 right, 2 down, 3 left. */
 export type Side = 0 | 1 | 2 | 3
@@ -121,6 +122,7 @@ export class ChannelGrid {
       return [top, tc]
     }
     for (let side = 0 as Side; side < 4; side = (side + 1) as Side) {
+      if (side === 0 && a.header) continue
       const n = this.approach(a, side)
       if (n < 0) continue
       const st = n * 4 + side
@@ -171,7 +173,7 @@ export class ChannelGrid {
   /** Route between two cards of this grid. Pass one `used` set for all routes in a container. */
   route(a: Rect, b: Rect, used?: Set<number>): Route | null {
     const goals = new Map<number, Side>()
-    for (let side = 0 as Side; side < 4; side = (side + 1) as Side) goals.set(this.approach(b, side), side)
+    for (let side = 0 as Side; side < 4; side = (side + 1) as Side) if (!(side === 0 && b.header)) goals.set(this.approach(b, side), side)
     const r = this.search(a, (node, dir) => {
       const side = goals.get(node)
       if (side == null) return Infinity

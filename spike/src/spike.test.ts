@@ -3,7 +3,7 @@ import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
 import { glyphOf } from './icons'
-import { clipToScreen, shortText } from './render'
+import { clipToScreen, fitText, junctions, shortText } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -236,6 +236,29 @@ describe('shortText', () => {
   it('collapses whitespace and keeps every letter', () => {
     expect(shortText('A customer of\n  the bank, with personal accounts.', 200)).toBe('A customer of the bank, with personal accounts.')
     expect(shortText('Sends emails using templates', 12)).toBe('Sends email…')
+  })
+})
+
+describe('junctions', () => {
+  it('dots a line that bends off a trunk', () => {
+    // Trunk along y = 0; a branch runs along it, then turns down at x = 50.
+    expect(junctions([[0, 0, 100, 0], [0, 0, 50, 0, 50, 40]])).toEqual([50, 0])
+  })
+
+  it('leaves plain crossings and lone bends alone', () => {
+    expect(junctions([[0, 20, 100, 20], [50, 0, 50, 40]])).toEqual([])
+    expect(junctions([[0, 0, 50, 0, 50, 40]])).toEqual([])
+    // Two lines bending at the same corner the same way are one line drawn twice.
+    expect(junctions([[0, 0, 50, 0, 50, 40], [0, 0, 50, 0, 50, 40]])).toEqual([])
+  })
+})
+
+describe('fitText', () => {
+  it('keeps a line that fits and cuts one that does not, with an ellipsis', () => {
+    // 10 characters, 0.5 px wide per px of font size each: 50 px wide at 10 px.
+    expect(fitText('0123456789', 5, 50, 10)).toBe('0123456789')
+    expect(fitText('0123456789', 5, 30, 10)).toBe('01234…')
+    expect(fitText('0123456789', 5, 30, 10).length).toBeLessThanOrEqual(6)
   })
 })
 
