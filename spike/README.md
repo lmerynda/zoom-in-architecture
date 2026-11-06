@@ -37,7 +37,9 @@ It warns when:
 - evidence doesn't land on a line the graph marked (it quotes that line), or sits in a file at neither end of the link;
 - the map lists no features;
 - a feature sits more than three levels down;
-- a top-level app carries no feature, which usually means it is tooling.
+- a top-level app carries no feature, which usually means it is tooling;
+- a top-level library is used by fewer than two product parts (dev tools don't count, and a published package is exempt);
+- the top level holds more than three libraries.
 
 `npm run zoom -- why <repo> <map.json> <file>…` shows which node holds each file, and its users and uses grouped by node. `npm run zoom -- audit <repo> <map.json>` lists files used mostly from a sibling node that use nothing in their own: placement to review. For a re-map, `check … --uncited` lists marked lines no link cites.
 

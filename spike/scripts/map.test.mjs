@@ -175,6 +175,26 @@ describe('buildModel', () => {
     expect(build(edit(m => { delete m.features })).warnings).toEqual(['the map lists no features: name the product’s headline features and the nodes that carry them'])
   })
 
+  it('keeps the top level to libraries two product parts share, dev tools not counted', () => {
+    const libs = w => w.filter(s => s.includes('librar'))
+    // The engine only the game uses, and the helpers the storefront and a demo use, are not shared.
+    const split = m => {
+      m.nodes.find(n => n.id === 'game').files = ['game/**']
+      m.nodes.find(n => n.id === 'web.shopping').files = ['web/src/**']
+      m.nodes.push({ id: 'engine', kind: 'library', title: 'Engine', files: ['engine/**'] }, { id: 'shared', kind: 'library', title: 'Shared', files: ['shared/**'] })
+    }
+    const unpublished = { ...graph, projects: graph.projects.map(p => ({ ...p, published: false })) }
+    expect(libs(buildModel(unpublished, edit(split), { name: 'shop' }).warnings)).toEqual([
+      'top-level library "engine" is used by one product part, "game": fold it into "game"',
+      'top-level library "shared" is used by one product part, "web", and otherwise only by dev tools: fold it into "web"',
+    ])
+    // A published package is a deliverable, whoever uses it.
+    expect(libs(build(edit(split)).warnings)).toEqual(['top-level library "engine" is used by one product part, "game": fold it into "game"'])
+    // Libraries that ship together belong in one node.
+    const many = build(edit(m => { split(m); m.nodes.push(...['a', 'b'].map(id => ({ id, kind: 'library', title: id.toUpperCase() }))) }))
+    expect(libs(many.warnings)).toContain('the top level holds 4 libraries: make libraries that ship together one library node, with a component each')
+  })
+
   it('names models after the repo folder', () => {
     expect(toName('C:/code/KnightsOfDarkness')).toBe('knights-of-darkness')
     expect(toName('/src/my_shop')).toBe('my-shop')

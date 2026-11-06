@@ -471,7 +471,7 @@ export function buildGraph(repo) {
     repo,
     // Manifests with no application code, and why: a docs site or a monorepo root, say.
     unmapped: projects.filter(p => p.kind !== 'test' && !p.unity && !appFiles.some(f => f.project === p)).map(p => ({ dir: p.dir, name: p.name, reason: candidates.some(c => owner.get(c) === p) ? 'no entry point reaches its code' : 'no source files' })),
-    projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description }) => ({ lang, dir, name, kind: lang === 'go' && mains.some(m => recs.get(m)?.project?.dir === dir && recs.get(m)?.project?.lang === 'go') ? 'app' : kind, technology, description: description ?? '' })),
+    projects: projects.filter(p => p.kind !== 'test' && appFiles.some(f => f.project === p)).map(({ lang, dir, name, kind, technology, description, pkg }) => ({ lang, dir, name, kind: lang === 'go' && mains.some(m => recs.get(m)?.project?.dir === dir && recs.get(m)?.project?.lang === 'go') ? 'app' : kind, technology, description: description ?? '', ...(lang === 'js' && kind === 'library' && !pkg?.private ? { published: true } : {}) })),
     entries: [...new Set([...entries, ...pages.inline, ...pyEntries, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),

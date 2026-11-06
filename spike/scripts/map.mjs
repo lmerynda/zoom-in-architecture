@@ -192,6 +192,23 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   for (const n of nodes.values()) if (byNode.has(n.id) && [...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" has child nodes and also holds ${byNode.get(n.id).length} files; move them into a child`)
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)
 
+  // Top-level libraries: shared means two product parts use it. Dev tools don't count, or every
+  // library a profiler touches would crowd the top level. A published package is a deliverable.
+  const top = id => id.split('.')[0]
+  const product = id => ['app', 'webapp', 'library'].includes(nodes.get(top(id))?.kind)
+  const published = new Set((graph.projects ?? []).filter(p => p.published).map(p => p.dir))
+  const libraries = [...nodes.values()].filter(n => !parentOf(n.id) && n.kind === 'library')
+  for (const lib of libraries) {
+    const own = graph.files.filter(f => placed.get(f.path) && top(placed.get(f.path)) === lib.id)
+    if (own.some(f => published.has(f.project))) continue
+    const mine = new Set(own.map(f => f.path))
+    const users = new Set(graph.edges.filter(e => !e.types && mine.has(e.to) && !mine.has(e.from) && placed.get(e.from)).map(e => top(placed.get(e.from))))
+    const apps = [...users].filter(product)
+    if (apps.length === 1) warnings.push(`top-level library "${lib.id}" is used by one product part, "${apps[0]}"${users.size > 1 ? ', and otherwise only by dev tools' : ''}: fold it into "${apps[0]}"`)
+    else if (!apps.length && users.size) warnings.push(`top-level library "${lib.id}" is used only by dev tools: put it in their group`)
+  }
+  if (libraries.length > 3) warnings.push(`the top level holds ${libraries.length} libraries: make libraries that ship together one library node, with a component each`)
+
   // Each node with the files under it, for judging component sizes.
   // Files placed by neighbour votes rather than by the map are counted apart, so sizes don't mislead.
   const voted = new Set(unplaced)
