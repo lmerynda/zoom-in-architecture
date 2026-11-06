@@ -1,0 +1,2 @@
+/** The shop. */
+package shop;

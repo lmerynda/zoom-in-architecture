@@ -1,0 +1,4 @@
+<html th:fragment="layout (body)">
+<nav><li th:replace="~{::menuItem ('/oups','error','see an error')}"></li></nav>
+<div th:replace="${body}"></div>
+</html>

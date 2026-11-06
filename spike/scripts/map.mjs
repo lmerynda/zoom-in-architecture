@@ -59,24 +59,20 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const parentOf = id => (id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null)
   for (const id of nodes.keys()) if (parentOf(id) && !nodes.has(parentOf(id))) errors.push(`node "${id}" has no parent node "${parentOf(id)}"`)
 
-  // Features: what the product does, in its own words, each pointing at the nodes that carry it.
-  // They keep a map honest about the essence: a top-level app that carries no feature is usually
-  // tooling that belongs under a system node.
-  const featured = new Map() // node id → feature titles
+  // Features: what the product does, in its own words, each pointing at the nodes or files that
+  // carry it (files, when a layered app spreads a feature across layers). They keep a map honest
+  // about the essence: a top-level app that carries no feature is usually tooling.
+  const featured = new Map() // node id or file path → feature titles
+  const isFile = new Set(graph.files.map(x => x.path))
   if (!map.features?.length) warnings.push('the map lists no features: name the product’s headline features and the nodes that carry them')
   for (const f of map.features ?? []) {
     if (!f.title) { errors.push('a feature has no title'); continue }
     if (!f.nodes?.length) errors.push(`feature "${f.title}" names no nodes`)
     for (const id of f.nodes ?? []) {
-      if (!nodes.has(id)) { errors.push(`feature "${f.title}" names node "${id}", which the map does not declare`); continue }
+      if (isFile.has(id)) { featured.set(id, [...(featured.get(id) ?? []), f.title]); continue }
+      if (!nodes.has(id)) { errors.push(`feature "${f.title}" names "${id}", which is neither a node the map declares nor an application file`); continue }
       if (id.split('.').length > FEATURE_DEPTH) warnings.push(`feature "${f.title}" sits at "${id}", ${id.split('.').length} levels down: give it a node in the top ${FEATURE_DEPTH} levels`)
       featured.set(id, [...(featured.get(id) ?? []), f.title])
-    }
-  }
-  if (map.features?.length) {
-    for (const n of nodes.values()) {
-      const carries = [...featured.keys()].some(id => id === n.id || id.startsWith(`${n.id}.`))
-      if (!parentOf(n.id) && (n.kind === 'app' || n.kind === 'webapp') && !carries) warnings.push(`top-level ${n.kind} "${n.id}" carries no feature: put it under a system node if it is a tool, or name the feature it serves`)
     }
   }
 
@@ -119,6 +115,14 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   if (unplaced.length) (loose ? warnings : errors).push(`${unplaced.length} application files are not in the map: ${unplaced.slice(0, 12).join(', ')}${unplaced.length > 12 ? ', …' : ''}`)
   if (unplaced.some(p => !placed.has(p))) nodes.set('unplaced', { id: 'unplaced', kind: 'component', title: 'Unplaced', description: 'Files the map does not cover yet.' })
   for (const p of unplaced) if (!placed.has(p)) placed.set(p, 'unplaced')
+  if (map.features?.length) {
+    // A node carries a feature named on it, on a node inside it, or on a file it holds.
+    const carried = [...featured.keys()].map(k => placed.get(k) ?? k)
+    for (const n of nodes.values()) {
+      const carries = carried.some(id => id === n.id || id.startsWith(`${n.id}.`))
+      if (!parentOf(n.id) && (n.kind === 'app' || n.kind === 'webapp') && !carries) warnings.push(`top-level ${n.kind} "${n.id}" carries no feature: put it under a system node if it is a tool, or name the feature it serves`)
+    }
+  }
 
   // Elements: the map's nodes, then each file under its node.
   const elements = []
@@ -143,7 +147,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       used.add(seg)
       fileId.set(p, `${id}.${seg}`)
       const f = app.get(p)
-      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn), marks: f.hints.map(h => `${h.line}:${h.kind}`).join(' ') } })
+      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], features: featured.get(p) ?? [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn), marks: f.hints.map(h => `${h.line}:${h.kind}`).join(' ') } })
     }
   }
 

@@ -14,9 +14,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 
 const LANG = { '.ts': 'js', '.tsx': 'js', '.mts': 'js', '.cts': 'js', '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js', '.cs': 'cs', '.rs': 'rs', '.java': 'java', '.py': 'py', '.go': 'go' }
-// Generated code and vendored dependencies are not the application's own.
-const GENERATED = /(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js|_pb2(_grpc)?\.py|\.pb(\.gw)?\.go|_gen\.go)$|(^|\/)Migrations\/.*\.cs$|(^|\/)(migrations|alembic\/versions)\/[^/]*\.py$|(^|\/)vendor\//
+// Generated code, vendored dependencies and Java's package and module docs are not the application's own.
+const GENERATED = /(^|\/)(package|module)-info\.java$|(\.Designer\.cs|\.g\.cs|AssemblyInfo\.cs|\.d\.ts|\.min\.js|_pb2(_grpc)?\.py|\.pb(\.gw)?\.go|_gen\.go)$|(^|\/)Migrations\/.*\.cs$|(^|\/)(migrations|alembic\/versions)\/[^/]*\.py$|(^|\/)vendor\//
 const TEST = /(^|\/)(tests?|__tests__|__mocks__|mocks?|specs?|e2e|cypress|playwright|benches|fixtures)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|[.-]test[.-]?helpers?\.[cm]?[jt]sx?$|(^|\/)(setupTests|test-utils|testUtils)\.[cm]?[jt]sx?$|Tests?\.cs$|_test\.go$|(^|\/)testdata\/|(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/
+// Server-side view templates (Thymeleaf, Jinja, Razor, ERB, Handlebars and the like).
+const VIEW = /\.(html?|jinja2?|j2|cshtml|razor|erb|hbs|handlebars|mustache|ejs|pug|jade|twig|ftlh?|vm|jsp|tmpl|gohtml|liquid|njk)$/
+// Where a bare view name is a view: returned or passed to a view or render call, or a template's
+// layout, fragment or include.
+const VIEW_AT = /(\breturn\s+|\b(?:ModelAndView|setViewName|View|render\w*|TemplateResponse|get_template|PartialView)\s*\((?:[^()'"]*,\s*)?|~\{\s*|\b(?:extends|include|import|partial|layout|th:(?:replace|insert|include))\b[=\s(]*)["'`~]?$/
 // Python files that configure tooling rather than run the app.
 const PY_TOOLING = /(^|\/)(setup|noxfile|fabfile)\.py$|(^|\/)docs?\/.*\.py$/
 const SKIP_DIRS = new Set(['node_modules', 'bin', 'obj', 'target', 'dist', 'build', 'out', 'coverage', 'Library', 'Temp', 'Logs'])
@@ -250,7 +255,7 @@ function summary(src, lang) {
 const HINTS = [
   ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
-  ['store', /\b(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(.*|\bindexedDB\.open\s*\(.*|\bcreateStore\s*\(\s*['"].*|\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
+  ['store', /\b(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(.*|\bindexedDB\.open\s*\(.*|\bcreateStore\s*\(\s*['"].*|\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(extends|implements)\s+Repository\s*<.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
   ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(socketIOClient|io\.connect)\s*\(.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
   ['message', /\.postMessage\s*\(.*|\baddEventListener\s*\(\s*['"]message['"].*|\bonmessage\s*=.*/],
   ['process', /\bnew\s+(?:Shared)?Worker\s*\(.*|\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
@@ -446,6 +451,34 @@ export function buildGraph(repo) {
       relate(f, rec(target), label(spec))
       // A Rust crate behind wasm-pack output is linked to, not read as JS.
       reach(target)
+    }
+  }
+
+  // Server-side views: templates in a templates/ or views/ folder of a project with application code.
+  // A controller names its view by its path ("owners/ownerDetails"), and a template names the
+  // layouts and fragments it uses the same way, so those strings become edges.
+  const codeDirs = [...new Set([...recs.values()].map(r => r.project?.dir).filter(d => d != null))]
+  const viewRoot = p => p.match(/^(.*?(?:^|\/)(?:templates|views|Views))\//)?.[1]
+  const views = new Map() // key (path in its root, with and without extension) → path
+  for (const p of all) {
+    const root = viewRoot(p)
+    if (root == null || !VIEW.test(p) || TEST.test(p) || !codeDirs.some(d => under(p, d))) continue
+    const f = rec(p)
+    f.lang = 'view'
+    const key = p.slice(root.length + 1)
+    views.set(key, p).set(key.replace(/\.[^./]+(\.[^./]+)?$/, ''), p)
+  }
+  if (views.size) {
+    const named = /["'`]\s*(?:~\{\s*)?([\w][\w./-]*)|~\{\s*([\w][\w./-]*)/g
+    for (const f of recs.values()) {
+      const text = f.lang === 'view' ? f.src : f.src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*(\/\/|#).*$/gm, ' ')
+      for (const m of text.matchAll(named)) {
+        const key = (m[1] ?? m[2]).replace(/^\/+/, ''), t = views.get(key)
+        if (!t || t === f.path) continue
+        // A one-word name ("error") is also a flash key or a label: it names a view only where a view is chosen.
+        if (!/[/.]/.test(key) && !VIEW_AT.test(text.slice(Math.max(0, m.index - 40), m.index + 1))) continue
+        relate(f, recs.get(t), f.lang === 'view' ? 'uses' : 'view')
+      }
     }
   }
 

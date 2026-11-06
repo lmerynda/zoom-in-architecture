@@ -159,4 +159,26 @@ describe('buildGraph', () => {
     expect(text).toContain('game/www/ · 3 · 19 · 1 message · → engine/src (1)')
     expect(text).toContain('server/src/main/java/com/shop/orders/ · 2 · 20 · 1 route, 1 store · → server/src/main/java/com/shop/orders/model (2)')
   })
+
+  it('keeps server-side views, linked from the controller that renders them and to their layouts', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
+    const t = 'src/main/resources/templates/'
+    expect(m.files.filter(f => f.lang === 'view').map(f => f.path).sort()).toEqual([`${t}error.html`, `${t}fragments/layout.html`, `${t}orders/list.html`, `${t}welcome.html`])
+    const has = (from, to) => m.edges.some(e => e.from === from && e.to === to)
+    expect(has('src/main/java/shop/OrderController.java', `${t}orders/list.html`)).toBe(true)
+    expect(has('src/main/java/shop/OrderController.java', `${t}welcome.html`)).toBe(true)
+    expect(has(`${t}orders/list.html`, `${t}fragments/layout.html`)).toBe(true)
+    // "error" is a flash key in the controller and a menu label in the layout, not a view either renders.
+    expect(m.edges.filter(e => e.to === `${t}error.html`)).toEqual([])
+  })
+
+  it('leaves out Java package docs, which hold no code', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
+    expect(m.files.some(f => f.path.endsWith('package-info.java'))).toBe(false)
+  })
+
+  it('marks a Spring Data repository on the plain Repository interface as a store', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
+    expect(m.files.find(f => f.path.endsWith('OrderRepository.java')).hints.map(h => `${h.line} ${h.kind}`)).toEqual(['3 store'])
+  })
 })

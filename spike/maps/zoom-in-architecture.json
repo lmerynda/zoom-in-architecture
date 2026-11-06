@@ -33,12 +33,12 @@
     { "from": "developer", "to": "viewer", "title": "browses maps" },
     { "from": "agent", "to": "mapper.cli", "title": "runs graph, check, publish" },
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
-      "evidence": ["spike/scripts/graph.mjs:42"] },
+      "evidence": ["spike/scripts/graph.mjs:47"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/main.ts", "title": "publishes models/<name>.json",
-      "evidence": ["spike/scripts/map.mjs:241", "spike/src/main.ts:27"] },
+      "evidence": ["spike/scripts/map.mjs:245", "spike/src/main.ts:27"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/map.mjs:241", "spike/src/models.ts:7"] },
+      "evidence": ["spike/scripts/map.mjs:245", "spike/src/models.ts:7"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/map.mjs:241", "spike/src/main.ts:27"] }
+      "evidence": ["spike/scripts/map.mjs:245", "spike/src/main.ts:27"] }
   ]
 }

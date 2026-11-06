@@ -240,6 +240,19 @@ The cause: the skill built the map bottom-up from the graph and the folders. Not
 
 Re-mapped under the new skill, the same repository opens on its server top left, with the feature components ahead of a single infrastructure component. Development tools and experiments are small cards at the edge. Every feature has a node, and the check is clean with every file placed.
 
+## The agent chooses the split
+
+Cold runs (fresh agents that saw only the skill) mapped the private repository above, Spring PetClinic and the FastAPI full-stack template. The skill had grown into a rulebook tuned to one repository, and it pushed every app towards feature components, even where the developers split their code by layer. It now works the other way round:
+- **It describes the viewer.** Nested cards at any depth, files as leaves with their source, relations rolled up and counted between cards, map order as reading order, size earned by features, and what reads well (about 3 to 9 cards inside a card, 25 files before it crowds).
+- **It says what a good map does.** The landscape shows the product first. Each zoom answers the next question in the team's own words, following the repository's split, by feature or by layer. The bottom levels show the individual controllers, models, views and services with their arrows. Depth fits the repository.
+- **The rules became defaults.** The agent may depart from one when the repository argues for it, and its report says why.
+
+Two tool changes came with it:
+- **Server-side views are in the graph.** PetClinic's twelve Thymeleaf templates were invisible, so a map of an MVC app had no V. Templates in a `templates/` or `views/` folder now count. A controller that names a view, or a template that names a layout or fragment, points at it. A one-word name only counts where a view is chosen, so a flash key or a menu label called "error" is not mistaken for the error page.
+- **Features can name files,** for a feature spread across layers or several features sharing one folder.
+
+On the cold runs, PetClinic came out as one app with feature parts, each holding its controller, model, repository and views. FastAPI's backend kept its layers (routes, CRUD, models, security, database access) and its React front end came out as a shell plus screens. Both checked clean. Their reports listed 17 places where the text left them guessing (server-rendered apps as `webapp`, schema declarations and browser storage are not database links, uncalled generated client methods, ties for shared helpers, one-file layers, when a Developer actor exists). Each is now settled in the skill.
+
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.
@@ -259,7 +272,7 @@ None open from the passes above.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
 - Map quality on repositories other than the two pilots; stability was measured on one repository only.
-- The feature-first skill with a cold agent: the re-map above was done in the session that wrote the rules, starting from the old map.
+- A second cold run of the revised skill on PetClinic and FastAPI, to confirm the 17 settled guesses now land the same way.
 
 ## Recommended next steps
 

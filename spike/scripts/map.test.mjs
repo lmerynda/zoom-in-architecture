@@ -166,7 +166,7 @@ describe('buildModel', () => {
       m.features.push({ title: 'Cart lines', nodes: ['web.shopping.cart.lines'] })
       m.features = m.features.filter(f => f.title !== 'Shop kit')
     }))
-    expect(bad.errors).toEqual(['feature "Ghost" names node "nowhere", which the map does not declare', 'feature "Empty" names no nodes', 'a feature has no title'])
+    expect(bad.errors).toEqual(['feature "Ghost" names "nowhere", which is neither a node the map declares nor an application file', 'feature "Empty" names no nodes', 'a feature has no title'])
     expect(bad.warnings.filter(w => w.includes('feature'))).toEqual([
       'feature "Cart lines" sits at "web.shopping.cart.lines", 4 levels down: give it a node in the top 3 levels',
       'top-level app "py" carries no feature: put it under a system node if it is a tool, or name the feature it serves',
@@ -197,6 +197,15 @@ describe('buildModel', () => {
     // Libraries that ship together belong in one node.
     const many = build(edit(m => { split(m); m.nodes.push(...['a', 'b'].map(id => ({ id, kind: 'library', title: id.toUpperCase() }))) }))
     expect(libs(many.warnings)).toContain('the top level holds 4 libraries: make libraries that ship together one library node, with a component each')
+  })
+
+  it('lets a feature name files, when a layered app spreads it across layers', () => {
+    const r2 = build(edit(m => { m.features.push({ title: 'Order list', nodes: ['web/src/api.ts', 'server/src/main/java/com/shop/orders/OrderController.java'] }) }))
+    expect(r2.errors).toEqual([])
+    expect(at(r2, 'web/src/api.ts').features).toEqual(['Order list'])
+    // A top-level app carries the features of the files it holds.
+    const py = build(edit(m => { m.features = m.features.filter(f => f.title !== 'Shop kit'); m.features.push({ title: 'Kit', nodes: ['py/src/shopkit/cli.py'] }) }))
+    expect(py.warnings.filter(w => w.includes('"py"'))).toEqual([])
   })
 
   it('names models after the repo folder', () => {

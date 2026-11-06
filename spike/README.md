@@ -14,7 +14,7 @@ URL parameters: `?model=<name>` (default `acme`), and `?model=synthetic&n=10000`
 
 A map shows a codebase's architecture: the processes that run, the components inside them, and the files inside those. Making one takes two steps.
 - **The file graph, from code:** `npm run zoom -- graph <repo>`. For a large repo, `--folders` gives an overview by folder and `--under <folder>` lists one part.
-  - It keeps only application files: JS/TS that an entry point reaches through imports, what non-test C#, Rust, Java and Go projects compile, and Python packages plus the scripts and app modules that start them.
+  - It keeps only application files: JS/TS that an entry point reaches through imports, what non-test C#, Rust, Java and Go projects compile, and Python packages plus the scripts and app modules that start them. Server-side views (templates in a `templates/` or `views/` folder of a project with application code) count too: a controller that names a view (`return "owners/ownerDetails"`) points at it, and a template points at the layouts and fragments it uses.
   - Entry points are pages' scripts (inline module scripts included), package.json entries, `node <file>` npm scripts and `main` methods. Imports of wasm-pack output lead back to the Rust crate, Unity sees only the projects its `Packages/manifest.json` names, Go `//go:embed` files and build-tag variants count, and Python imports resolve through `__init__.py` re-exports (`TYPE_CHECKING` imports are type-only).
   - Tests, `eslint.config`, `vite.config`, `playwright.config` and dead code drop out.
   - It resolves every reference between the files it keeps: relative imports, tsconfig paths, workspace packages, C# types through ProjectReferences, Java packages and imports, and Rust modules and crates.
@@ -22,8 +22,8 @@ A map shows a codebase's architecture: the processes that run, the components in
   - It marks each file's routes, outbound calls, stores, schedules, sockets, messages (`postMessage`), process launches and file handoffs, with line numbers, and lists the config and deploy files. Manifests with no application code (a docs site, a monorepo root) are listed with the reason.
 - **The map, from an agent:** `/map-repo <repo>` in Claude Code runs the [map-repo skill](../.claude/skills/map-repo/SKILL.md).
   - The agent first works out what the product is for and lists its headline features, in the product's own words, from its README, docs, screens and routes.
-  - It puts the product's apps on top and its development tooling in a group of its own, gives each feature a node named for it, and groups the remaining files by responsibility.
-  - Each feature in the map names the nodes that carry it. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
+  - The skill describes what the viewer can show, and the agent chooses the levels that suit the repo. There is no fixed depth. The defaults: the product's apps on top and development tooling in a group of its own; inside an app, the repo's own split, by feature or by layer (controllers, models, views); the individual files at the bottom, with the graph's arrows between them.
+  - Each feature in the map names the nodes that carry it, or the files, when a layered app spreads a feature across layers. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
   - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
 
@@ -31,7 +31,7 @@ A map shows a codebase's architecture: the processes that run, the components in
 - a map that leaves an application file out, or lists a file that isn't one;
 - a link without evidence, or with evidence that isn't in the repo;
 - bad node ids and kinds;
-- a feature that names a node the map does not declare.
+- a feature that names neither a node the map declares nor an application file.
 
 It warns when:
 - evidence doesn't land on a line the graph marked (it quotes that line), or sits in a file at neither end of the link;
