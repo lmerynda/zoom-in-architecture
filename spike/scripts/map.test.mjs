@@ -249,6 +249,17 @@ describe('zoom why', () => {
   })
 })
 
+describe('zoom check --uncited', () => {
+  it('lists routes no link reaches apart from the lines still to link', () => {
+    const out = execFileSync(process.execPath, ['scripts/zoom.mjs', 'check', 'test/fixtures/polyglot', 'test/fixtures/polyglot-map.json', '--uncited'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' })
+    const gaps = out.slice(out.indexOf('marked lines no link cites:'), out.indexOf('routes no link reaches'))
+    expect(gaps).toContain('web/src/ui/cart.ts:3 store')
+    expect(gaps).not.toContain(' route ')
+    expect(out).toContain('4 routes no link reaches')
+    expect(out.slice(out.indexOf('routes no link reaches'))).toContain('py/src/shopkit/api.py:7 route')
+  })
+})
+
 describe('re-map helpers', () => {
   it('leaves files one map does not place out of a comparison', () => {
     const partial = edit(m => { m.nodes.find(n => n.id === 'web.shopping').files = ['shared/index.js', 'web/src/main.ts'] })

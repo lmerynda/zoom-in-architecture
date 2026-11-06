@@ -80,7 +80,10 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 
    Write down two things:
    - **What it is, in two sentences:** what the product does and for whom. It opens your report. Each app's description then says what that app does for the product.
-   - **The headline features, 5 to 15 of them,** in the product's own words: what a user can do, or what the system does for them ("Checkout", "Live collaboration", "Export to PNG", "Turn processing"). Use the names the docs and the UI use, not the folder names. Mark the few that are the core, the reason people use the product.
+   - **The headline features, 5 to 15 of them,** in the product's own words: what a user can do, or what the system does for them ("Checkout", "Live collaboration", "Export to PNG", "Turn processing").
+     - Use the names the docs and the UI use, not the folder names.
+     - Technical qualities (caching, logging, metrics) are not features, unless the product's pitch is about them.
+     - The core features, the reason people use the product, go first in the list.
 
    These features go into the map (`features`, below). When the docs name a feature and you can't find its code, search for its vocabulary (class names, routes, UI strings) before you give up.
 4. **Read the code that defines the structure.** You don't need every file. Read:
@@ -94,19 +97,20 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 
    Then check the sketch against "What makes a good map". `node scripts/zoom.mjs why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node. Use it to see what a grouping does to the arrows. The defaults below settle the common cases.
 6. **Add the links**, one per pair of files that talk across a process boundary. Point each from the side that starts the exchange: caller to handler, client to server, writer to reader.
-   - **An actor** to the app they use. Evidence is optional. In a server-rendered app you may cite the main pages' route lines. Route lines that only people reach can stay uncited.
+   - **An actor** to the app they use. Evidence is optional. Route lines that no app in the map calls are the pages people open, or an API that outside callers use. `check --uncited` lists them apart from the lines still to link; leave them.
    - **Calls:** from the calling file to the handling file, for example from the browser's API client to the backend controller.
      - **Which calls:** the ones the app's code makes. A generated client method that no app code calls (a health check, a test-only endpoint) is not a link, so leave its line uncited.
      - **Evidence:**
        - every `call` line and its `route` line;
        - the controller's class-level route line (such as `@RequestMapping("/kingdom")`) on each link into it;
        - the production config line that sets the client's base URL, when there is one (such as `VITE_API` in `.env.production`). When the client calls its own origin, there is no such line to cite.
-     - **A shared HTTP helper:** when feature clients call a helper that does the real `fetch`, the link starts at the feature client and cites its lines; the helper is not a link end. The exception is a helper in a different app or library node from the caller. Then the link starts at the helper, where the network work happens, and the graph draws the caller → helper relation.
+     - **A generated API client** (OpenAPI or gRPC stubs) is where the calls happen. Links start at its file, citing its call lines, and the graph draws the screens → client relations.
+     - **A hand-written HTTP helper:** when feature clients call a helper that does the real `fetch`, the link starts at the feature client and cites its lines; the helper is not a link end. The exception is a helper in a different app or library node from the caller. Then the link starts at the helper, where the network work happens, and the graph draws the caller → helper relation.
      - **Title:** what the calls do, or their shared path ("kingdom actions, /kingdom/*"), not a list of every endpoint.
    - **Stores:** from each file that reads or writes the store at run time (the repository, the DbContext, the files that call the ORM session) to the database node. Evidence is its `store` line plus the datasource line in the config.
      - A table or entity declaration is schema, not traffic: no link.
      - Browser storage (`localStorage`, IndexedDB) is the browser's own, not the database, so leave those lines uncited.
-     - A database chosen per profile (H2 locally, PostgreSQL in production) is one database node. Its `technology` names the engines, and its evidence cites each profile's datasource line.
+     - A database chosen per profile (H2 locally, PostgreSQL in production) is one database node. Its `technology` names the engines. Its evidence cites each profile's datasource line, or for a profile with no URL (an embedded default), the lines that select it.
    - **Queues, sockets, pipes, external APIs, launched processes and file handoffs:** the same way, from the file to the node or file on the other side. Read the code to confirm the peer: a `socket` line can be a health probe or a free-port pick, and many `file` lines are reports, not handoffs.
    - **Navigation** (`window.open`, a link to another site) is a link only when a feature depends on that site, such as exporting to a companion service. Plain links to social pages or docs are not.
    - **Timers inside the process** (`@Scheduled`, `setInterval`, BackgroundService) are not links. They belong to the node they drive, which you can say in its description. Only an outside scheduler (cron, a cloud scheduler) becomes a node with a link.
@@ -130,7 +134,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 ### The landscape
 
 - **The top level holds:**
-  - the people who use the product;
+  - the people who use the product. A role with screens or rights of its own (an administrator with an admin area) is its own actor. A role that only sees more of the same screens is part of one actor;
   - one node per process that runs (web app, backend service, worker, CLI);
   - the stores and external services those apps use (database, queue, third-party API);
   - shared libraries.
@@ -175,15 +179,18 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
   - Features never force a split: when one folder holds several headline features (an `owner/` package with owners, pets and visits), keep the folder and let each feature name the files that carry it. Split the folder only when its card is crowded.
   - When an app serves more feature folders than fit, pair related ones under a parent named for both ("Cart and checkout"), never a generic bucket ("Core", "Players").
 - **Plumbing stays small.** Connections, serialization, storage, hosting, logging and diagnostics go into a few nodes, and in a feature split they never outnumber the features.
-- **Code that belongs to no feature:** when the repository's split already gives it a home (a `config/`, `system/` or `core/` package), keep it there. Otherwise it goes to the same places every time, so different runs agree:
+- **Code that belongs to no feature:** when the repository's split already gives it a home (a `config/`, `system/` or `core/` package), keep it there, and the entry point joins it there even when it sits in the root package. Otherwise it goes to the same places every time, so different runs agree:
   - **Startup:** the entry point, seeders, a dedicated health check, and config classes that only wire things up. A config class that sets one feature's behaviour (security rules for sign-in) goes with that feature.
   - **Shared model:** types and helpers that three or more parts use and no part owns, such as ids, shared enums, base DTOs and formatting helpers.
-  - **Infrastructure with one job** (the database connection, migrations and transactions) is a small node of its own, such as "Database access".
+  - **Infrastructure with one job** (the database connection, migrations and transactions) is a small node of its own, such as "Database access". When the repository keeps the connection in its own home (a `core/` package), migrations join it there.
+  - **A file that talks to an outside service** (an email sender, a payment client) is that integration's home, not a utility. It joins the other infrastructure, or is a small node of its own ("Email"), so the link to the service starts somewhere a reader would look.
   - **Utilities and other shared files:** a file several parts use goes with the part whose files reference it most. On a tie, it goes in Shared model, or with the UI kit if it is a UI component.
   - **A part's own code** (its services, interfaces and types) stays with that part, however much another part uses it.
-- **Small layers:** in a layer split, a layer of one or two files sits better with its neighbour than as a card of its own. For example, the models and the CRUD functions can share a "Data" node. A layered app of about 20 files may need no nodes at all: its files can sit directly in the app.
+- **Small layers:** in a layer split, a layer of one or two files sits better with its neighbour than as a card of its own. For example, the models and the CRUD functions can share a "Data" node. Keep layer nodes while they read as the steps of a request (routes → data → database). Drop them only when nearly every node would hold one or two files; the files then sit directly in the app.
 - **Common shapes:**
-  - **Server-side views** (Thymeleaf, Razor, Jinja and the like) go with what renders them. In a layer split they form the Views node. Shared layouts and fragments go with the views or with the app shell.
+  - **Server-side views** (Thymeleaf, Razor, Jinja and the like) go with what renders them. In a layer split they form the Views node.
+    - The page layout every view wraps itself in is the app shell's. In a feature split, that is the package that holds the shared web code, such as `system/`; `audit` will list the layout, and that is expected.
+    - A form fragment used by one feature only goes with that feature.
   - **In a front end,** the app shell (entry, router, layout) is one node, and each screen or group of tabs is another. API clients go with the screen they serve, and the shared HTTP helper goes in Shared model. Sign-in pages belong to the shell, unless the docs list account features (sign-up, password recovery) among the headlines; then they form a "Sign-in" node.
   - **A library's barrel** (an `index.ts` that re-exports its modules) is its "Public API" node.
   - **A generated API client** (OpenAPI or gRPC stubs) that serves every feature is one "API client" node of the app that uses it.
@@ -210,7 +217,8 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
     { "id": "devtools", "kind": "system", "title": "Development tools", "description": "What the team builds, tests and releases with." }
   ],
   "features": [
-    { "title": "Checkout", "nodes": ["web.checkout", "api.orders"] }
+    { "title": "Checkout", "nodes": ["web.checkout", "api.orders"] },
+    { "title": "Order history", "nodes": ["web/src/orders/History.tsx", "api/src/main/java/shop/orders/OrderController.java"] }
   ],
   "links": [
     { "from": "customer", "to": "web", "title": "shops in a browser" },
@@ -227,7 +235,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 - **files:** repo paths or globs (`*` within a folder, `**` across folders). An exact path beats a glob, and a longer glob beats a shorter one.
 - **features:**
   - the headline features from step 3, in the product's words, core first;
-  - each names the nodes that carry it (within the top three levels), or the application files that do: when a layered app spreads a feature across layers, or when one node holds several features;
+  - `nodes` lists what carries the feature: node ids (within the top three levels), or application file paths, or both. Use files when a layered app spreads a feature across layers, or when one node holds several features;
   - Ctrl K finds them, and the details panel shows them;
   - `check` refuses a feature that names neither a declared node nor an application file. It warns about a feature node deeper than three levels, and about a top-level app that carries no feature.
 - **link ends:** a node id, or the repo path of an application file.

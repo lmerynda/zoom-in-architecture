@@ -95,10 +95,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     } else if (cmd === 'check' && a && b) {
       const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
       report(r)
+      // Routes nothing in the map calls are pages people open or an API outside callers use: listed apart, not as gaps.
+      const open = r.uncited.filter(u => u.kind !== 'route'), routes = r.uncited.filter(u => u.kind === 'route')
       if (args.uncited) {
-        console.log(`${r.uncited.length} marked lines no link cites:`)
-        for (const u of r.uncited) console.log(`  ${u.path}:${u.line} ${u.kind} ${u.text.slice(0, 100)}`)
-      } else if (r.uncited.length) console.log(`${r.uncited.length} marked lines no link cites (--uncited lists them)`)
+        console.log(`${open.length} marked lines no link cites:`)
+        for (const u of open) console.log(`  ${u.path}:${u.line} ${u.kind} ${u.text.slice(0, 100)}`)
+        if (routes.length) console.log(`${routes.length} routes no link reaches (pages people open, or an API outside callers use; link them only when an app in the map calls them):`)
+        for (const u of routes) console.log(`  ${u.path}:${u.line} ${u.kind} ${u.text.slice(0, 100)}`)
+      } else if (open.length) console.log(`${open.length} marked lines no link cites (--uncited lists them)`)
       if (r.errors.length) process.exitCode = 1
     } else if (cmd === 'publish' && a && b) {
       const r = publish(a, readMap(b), { name: args.name ?? toName(a) })

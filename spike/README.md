@@ -41,7 +41,7 @@ It warns when:
 - a top-level library only one app uses (fold it in), or only one product app and dev tools use (make it a component of the shared-library node); a published package is exempt;
 - the top level holds more than three libraries.
 
-`npm run zoom -- why <repo> <map.json> <file>…` shows which node holds each file, and its users and uses grouped by node. `npm run zoom -- audit <repo> <map.json>` lists files used mostly from a sibling node that use nothing in their own: placement to review. For a re-map, `check … --uncited` lists marked lines no link cites.
+`npm run zoom -- why <repo> <map.json> <file>…` shows which node holds each file, and its users and uses grouped by node. `npm run zoom -- audit <repo> <map.json>` lists files used mostly from a sibling node that use nothing in their own: placement to review. For a re-map, `check … --uncited` lists marked lines no link cites, with the routes no link reaches (pages people open, or an API outside callers use) listed apart.
 
 `npm run zoom -- compare <repo> <a.json> <b.json>` measures how alike two maps of one repo are, for example two agent runs. It reports grouping agreement at the process and leaf levels as an adjusted Rand index, pairs each group with its closest match by file overlap, and lists the links only one map has. Relations between files always come from the graph, so a map cannot invent a dependency.
 
