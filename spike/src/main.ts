@@ -245,7 +245,7 @@ async function main() {
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
     altimeter.update(path, renderer.altitude(path), cam.z / ((cam.w * 0.92) / world.rect[2]))
-    banner.update(path[path.length - 1] ?? 0, t)
+    banner.update(path[path.length - 1] ?? 0, t, code.reading)
     const key = path.join('/')
     if (key !== lastCrumb) {
       lastCrumb = key

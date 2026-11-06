@@ -66,8 +66,12 @@ export class Banner {
     document.body.append(this.root)
   }
 
-  /** Call every frame with the deepest element under the screen centre. */
-  update(node: number, now: number) {
+  /**
+   * Call every frame with the deepest element under the screen centre. While `quiet` (code is being
+   * read) the banner goes away at once and stays away for that place, so it never covers the code.
+   */
+  update(node: number, now: number, quiet = false) {
+    if (quiet) { this.root.classList.remove('show'); this.shown = this.pending = node; return }
     if (node !== this.pending) { this.pending = node; this.since = now }
     if (node === this.shown || node <= 0 || now - this.since < 450) return
     this.shown = node

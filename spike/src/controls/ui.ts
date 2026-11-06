@@ -260,7 +260,7 @@ export class Help {
   private root = el('div', 'help-overlay')
   constructor() {
     const groups: [string, [string, string][]][] = [
-      ['Mouse', [['Wheel', 'Zoom at the cursor'], ['Drag', 'Pan'], ['Click', 'Select (amber out, cyan in)'], ['Double-click', 'Fly into a card'], ['Right-click', 'Wheel: route, pin, look around'], ['Hover, hold still', 'Tooltip; names inside open more']]],
+      ['Mouse', [['Wheel', 'Zoom at the cursor'], ['Drag', 'Pan'], ['Click', 'Select (amber out, cyan in)'], ['Double-click', 'Fly into a card'], ['Right-click', 'Wheel: route, pin, look around'], ['Hover, hold still', 'Tooltip; names inside open more'], ['Click a cited line', 'Open its code at that line']]],
       ['Keys', [['Ctrl+K or /', 'Travel to anything, or run a command'], ['Backspace', 'Back to the last place'], [']  /  [', 'Look at what it calls / what calls it'], ['Enter', 'Go there'], ['Esc', 'Clear, then up a level'], ['?', 'This screen']]],
     ]
     const grid = el('div', 'help-grid')

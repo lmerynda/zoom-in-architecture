@@ -176,6 +176,8 @@ export class CodeView {
   private sources = new Map<string, Source | 'loading' | null>()
   private cited = new Map<string, Set<number>>()
   private fonts = new Map<number, number>()
+  /** Whether code is on screen as text someone is reading; the banner keeps out of its way. */
+  reading = false
 
   constructor(private root: HTMLElement, private model: string, private tree: Tree) {
     this.cited = citedLines(tree)
@@ -270,6 +272,7 @@ export class CodeView {
 
   update(slots: CodeSlot[], W: number, H: number) {
     this.fonts.clear()
+    this.reading = false
     let k = 0
     for (const slot of slots) {
       const path = this.tree.els[slot.i]?.metadata?.path
@@ -305,6 +308,7 @@ export class CodeView {
         continue
       }
       if (s.map) { s.map.remove(); s.map = null }
+      this.reading = true
       s.pre.hidden = false
       s.pre.style.transform = transform
       // Text: only the lines in view (and a margin) are in the page, re-rendered when the view leaves them.

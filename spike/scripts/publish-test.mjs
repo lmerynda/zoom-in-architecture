@@ -101,6 +101,20 @@ try {
   })
   check('a cited line opens its code there', !!opened && Math.abs(opened.y + opened.h / 2 - opened.mid) < 60 && opened.h > 12 && opened.left < opened.panelLeft, JSON.stringify(opened))
   await shot('02c-evidence-opened')
+  // The "Entering" title card never covers code being read.
+  let covered = 0
+  for (let k = 0; k < 20; k++) {
+    covered += await page.evaluate(() => document.querySelector('.banner').classList.contains('show') && [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) ? 1 : 0)
+    await sleep(100)
+  }
+  check('the banner keeps off code being read', covered === 0, `${covered} of 20 frames`)
+  // The controls screen tells readers a cited line opens its code.
+  await page.keyboard.press('?')
+  await sleep(250)
+  const help = await page.$eval('.help-overlay', e => e.textContent)
+  await shot('02d-help')
+  await page.keyboard.press('Escape')
+  check('the controls screen says cited lines open their code', help.includes('Click a cited line'), help.slice(0, 80))
 
   // A new file in the repo is published live, beside the files it talks to.
   writeFileSync(join(repo, 'web/src/ui/checkout.ts'), "import { cart } from './cart'\nexport const checkout = () => cart()\n")
