@@ -60,6 +60,13 @@ try {
   const ids = await page.evaluate(() => window.__spike.tree.els.map(e => e.id))
   check('it opens with the map’s levels', ['customer', 'web.shopping.main', 'server.orders.orderController', 'game', 'db'].every(id => ids.includes(id)), ids.slice(0, 8).join(' '))
   check('tests and configs are not on it', !ids.some(id => /vite|eslint|test|orphan/i.test(id)), ids.filter(id => /vite|eslint|test|orphan/i.test(id)).join(' '))
+  // A resized window is drawn in full: the camera takes the new size, so nothing past the old edge is culled.
+  await page.setViewport({ width: 1100, height: 700 })
+  await sleep(300)
+  await page.setViewport({ width: 1600, height: 1000 })
+  await sleep(300)
+  const view = await page.evaluate(() => ({ w: window.__spike.cam.w, h: window.__spike.cam.h, iw: innerWidth, ih: innerHeight }))
+  check('a resized window is drawn in full', view.w === view.iw && view.h === view.ih, JSON.stringify(view))
   // A feature's name finds the nodes that carry it, though none is titled that way.
   await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
   await page.keyboard.type('order tracking')

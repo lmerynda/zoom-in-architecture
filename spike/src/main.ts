@@ -85,7 +85,9 @@ async function main() {
     const z = Math.min((cam.w * 0.92) / r[2], (cam.h * 0.92) / r[3])
     cam.set(r[2] / 2, r[3] / 2, z)
   }
-  window.addEventListener('resize', resize)
+  // Pixi applies a window resize a frame later; reading the screen before that keeps the old
+  // size, and everything outside it is culled as off-screen.
+  app.renderer.on('resize', resize)
 
   // Selection: click a card to focus its relations; the panel lists them, each a jump.
   const details = $('details')
