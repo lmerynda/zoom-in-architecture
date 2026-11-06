@@ -82,7 +82,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    - **What it is, in two sentences:** what the product does and for whom. It opens your report. Each app's description then says what that app does for the product.
    - **The headline features, 5 to 15 of them,** in the product's own words: what a user can do, or what the system does for them ("Checkout", "Live collaboration", "Export to PNG", "Turn processing").
      - Use the names the docs and the UI use, not the folder names.
-     - Technical qualities (caching, logging, metrics) are not features, unless the product's pitch is about them.
+     - A page or menu item people can open is a feature, however small. Technical qualities they never see (caching, logging, metrics) are not, unless the product's pitch is about them. For a starter template or a framework sample, the pitch is the stack, so what it sets up for you (a generated client, API docs) counts.
      - The core features, the reason people use the product, go first in the list.
 
    These features go into the map (`features`, below). When the docs name a feature and you can't find its code, search for its vocabulary (class names, routes, UI strings) before you give up.
@@ -97,7 +97,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 
    Then check the sketch against "What makes a good map". `node scripts/zoom.mjs why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node. Use it to see what a grouping does to the arrows. The defaults below settle the common cases.
 6. **Add the links**, one per pair of files that talk across a process boundary. Point each from the side that starts the exchange: caller to handler, client to server, writer to reader.
-   - **An actor** to the app they use. Evidence is optional. Route lines that no app in the map calls are the pages people open, or an API that outside callers use. `check --uncited` lists them apart from the lines still to link; leave them.
+   - **An actor** to the app they use. Evidence is optional. Route lines that no app in the map calls are the pages people open, or an API that outside callers use. `check --uncited` lists them apart from the lines still to link; leave them. Outside callers become an actor or an `external` node only when the docs name them (partner systems, a mobile app in another repository).
    - **Calls:** from the calling file to the handling file, for example from the browser's API client to the backend controller.
      - **Which calls:** the ones the app's code makes. A generated client method that no app code calls (a health check, a test-only endpoint) is not a link, so leave its line uncited.
      - **Evidence:**
@@ -108,9 +108,9 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
      - **A hand-written HTTP helper:** when feature clients call a helper that does the real `fetch`, the link starts at the feature client and cites its lines; the helper is not a link end. The exception is a helper in a different app or library node from the caller. Then the link starts at the helper, where the network work happens, and the graph draws the caller → helper relation.
      - **Title:** what the calls do, or their shared path ("kingdom actions, /kingdom/*"), not a list of every endpoint.
    - **Stores:** from each file that reads or writes the store at run time (the repository, the DbContext, the files that call the ORM session) to the database node. Evidence is its `store` line plus the datasource line in the config.
-     - A table or entity declaration is schema, not traffic: no link.
+     - A table or entity declaration is schema, not traffic: no link. Migrations do link, because they change the store.
      - Browser storage (`localStorage`, IndexedDB) is the browser's own, not the database, so leave those lines uncited.
-     - A database chosen per profile (H2 locally, PostgreSQL in production) is one database node. Its `technology` names the engines. Its evidence cites each profile's datasource line, or for a profile with no URL (an embedded default), the lines that select it.
+     - A database chosen per profile (H2 locally, PostgreSQL in production) is one database node. Its `technology` names the engines. Its evidence cites each profile's datasource line, or for a profile with no URL (an embedded default), the lines that select it: the dependency that brings it in, the setting that picks it, or both.
    - **Queues, sockets, pipes, external APIs, launched processes and file handoffs:** the same way, from the file to the node or file on the other side. Read the code to confirm the peer: a `socket` line can be a health probe or a free-port pick, and many `file` lines are reports, not handoffs.
    - **Navigation** (`window.open`, a link to another site) is a link only when a feature depends on that site, such as exporting to a companion service. Plain links to social pages or docs are not.
    - **Timers inside the process** (`@Scheduled`, `setInterval`, BackgroundService) are not links. They belong to the node they drive, which you can say in its description. Only an outside scheduler (cron, a cloud scheduler) becomes a node with a link.
@@ -179,7 +179,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
   - Features never force a split: when one folder holds several headline features (an `owner/` package with owners, pets and visits), keep the folder and let each feature name the files that carry it. Split the folder only when its card is crowded.
   - When an app serves more feature folders than fit, pair related ones under a parent named for both ("Cart and checkout"), never a generic bucket ("Core", "Players").
 - **Plumbing stays small.** Connections, serialization, storage, hosting, logging and diagnostics go into a few nodes, and in a feature split they never outnumber the features.
-- **Code that belongs to no feature:** when the repository's split already gives it a home (a `config/`, `system/` or `core/` package), keep it there, and the entry point joins it there even when it sits in the root package. Otherwise it goes to the same places every time, so different runs agree:
+- **Code that belongs to no feature:** when the repository's split already gives it a home (a `config/`, `system/`, `core/` or `common/` folder, or any folder the developers made for shared code), keep it there, and the entry point joins it there even when it sits in the root package. Otherwise it goes to the same places every time, so different runs agree:
   - **Startup:** the entry point, seeders, a dedicated health check, and config classes that only wire things up. A config class that sets one feature's behaviour (security rules for sign-in) goes with that feature.
   - **Shared model:** types and helpers that three or more parts use and no part owns, such as ids, shared enums, base DTOs and formatting helpers.
   - **Infrastructure with one job** (the database connection, migrations and transactions) is a small node of its own, such as "Database access". When the repository keeps the connection in its own home (a `core/` package), migrations join it there.
