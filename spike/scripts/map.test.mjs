@@ -184,12 +184,16 @@ describe('buildModel', () => {
       m.nodes.push({ id: 'engine', kind: 'library', title: 'Engine', files: ['engine/**'] }, { id: 'shared', kind: 'library', title: 'Shared', files: ['shared/**'] })
     }
     const unpublished = { ...graph, projects: graph.projects.map(p => ({ ...p, published: false })) }
+    // One the tools use too stays a library, inside the shared-library node, so they don't seem to reach into the app.
     expect(libs(buildModel(unpublished, edit(split), { name: 'shop' }).warnings)).toEqual([
-      'top-level library "engine" is used by one product part, "game": fold it into "game"',
-      'top-level library "shared" is used by one product part, "web", and otherwise only by dev tools: fold it into "web"',
+      'top-level library "engine" is used only by "game": fold it into "game"',
+      'top-level library "shared" is used by one product part, "web", and dev tools: make it a component of the shared-library node',
     ])
+    // As the only library, it is the shared-library node.
+    const alone = edit(m => { split(m); m.nodes = m.nodes.filter(n => n.id !== 'engine'); m.nodes.find(n => n.id === 'game').files.push('engine/**') })
+    expect(libs(buildModel(unpublished, alone, { name: 'shop' }).warnings)).toEqual([])
     // A published package is a deliverable, whoever uses it.
-    expect(libs(build(edit(split)).warnings)).toEqual(['top-level library "engine" is used by one product part, "game": fold it into "game"'])
+    expect(libs(build(edit(split)).warnings)).toEqual(['top-level library "engine" is used only by "game": fold it into "game"'])
     // Libraries that ship together belong in one node.
     const many = build(edit(m => { split(m); m.nodes.push(...['a', 'b'].map(id => ({ id, kind: 'library', title: id.toUpperCase() }))) }))
     expect(libs(many.warnings)).toContain('the top level holds 4 libraries: make libraries that ship together one library node, with a component each')

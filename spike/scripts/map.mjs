@@ -204,7 +204,9 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
     const mine = new Set(own.map(f => f.path))
     const users = new Set(graph.edges.filter(e => !e.types && mine.has(e.to) && !mine.has(e.from) && placed.get(e.from)).map(e => top(placed.get(e.from))))
     const apps = [...users].filter(product)
-    if (apps.length === 1) warnings.push(`top-level library "${lib.id}" is used by one product part, "${apps[0]}"${users.size > 1 ? ', and otherwise only by dev tools' : ''}: fold it into "${apps[0]}"`)
+    // Folded into the app, a library dev tools also use would show the tools reaching into the app.
+    if (apps.length === 1 && users.size === 1) warnings.push(`top-level library "${lib.id}" is used only by "${apps[0]}": fold it into "${apps[0]}"`)
+    else if (apps.length === 1 && libraries.length > 1) warnings.push(`top-level library "${lib.id}" is used by one product part, "${apps[0]}", and dev tools: make it a component of the shared-library node`)
     else if (!apps.length && users.size) warnings.push(`top-level library "${lib.id}" is used only by dev tools: put it in their group`)
   }
   if (libraries.length > 3) warnings.push(`the top level holds ${libraries.length} libraries: make libraries that ship together one library node, with a component each`)
