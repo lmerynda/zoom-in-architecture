@@ -1,5 +1,5 @@
 import type { Tree } from '../model'
-import { fuzzy, type Hop } from './logic'
+import { elementScore, fuzzy, type Hop } from './logic'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
   const e = document.createElement(tag)
@@ -76,7 +76,7 @@ export class Palette {
     const cmdOnly = raw.startsWith('>')
     const q = raw.replace(/^>\s*/, '').trim()
     const cmds = this.commands().map(c => ({ c, s: fuzzy(q, c.name) })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s)
-    const els = cmdOnly || !q ? [] : this.tree.els.map((e, i) => ({ i, s: i > 0 ? Math.max(fuzzy(q, e.title), fuzzy(q, e.id) - 4) : -1 })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, 12)
+    const els = cmdOnly || !q ? [] : this.tree.els.map((e, i) => ({ i, s: i > 0 ? elementScore(q, e) : -1 })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, 12)
     this.items = [
       ...els.map(({ i }) => ({ label: this.tree.els[i].title, sub: pathOf(this.tree, i), kind: this.tree.els[i].kind, run: (shift: boolean) => this.warp(i, shift) })),
       ...cmds.slice(0, cmdOnly || !q ? 12 : 4).map(({ c }) => ({ label: c.name, sub: c.hint ?? '', kind: 'command', run: () => c.run() })),

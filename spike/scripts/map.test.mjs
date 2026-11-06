@@ -18,7 +18,7 @@ describe('buildModel', () => {
   it('publishes a clean map without errors or warnings', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings).toEqual([])
-    expect(r.stats).toEqual({ nodes: 14, files: 39, relations: 34, links: 3, unplaced: 0 })
+    expect(r.stats).toEqual({ nodes: 15, files: 39, relations: 34, links: 3, unplaced: 0 })
   })
 
   it('nests nodes by id and files under the node that holds them', () => {
@@ -151,6 +151,28 @@ describe('buildModel', () => {
     const r2 = build(edit(m => { m.nodes = m.nodes.filter(n => n.id !== 'game') }), { loose: true })
     expect(at(r2, 'game/src/main.rs').parent).toBe('unplaced')
     expect(r2.model.elements.find(e => e.id === 'unplaced').title).toBe('Unplaced')
+  })
+
+  it('marks each node with the features it carries, so readers can travel to them', () => {
+    const el = id => r.model.elements.find(e => e.id === id)
+    expect(el('server.orders').features).toEqual(['Order tracking'])
+    expect(el('server').features).toEqual([])
+  })
+
+  it('holds the map to its features: declared nodes, near the top, and no top-level app without one', () => {
+    const bad = build(edit(m => {
+      m.features.push({ title: 'Ghost', nodes: ['nowhere'] }, { title: 'Empty', nodes: [] }, { nodes: ['web'] })
+      m.nodes.push({ id: 'web.shopping.cart', kind: 'component', title: 'Cart' }, { id: 'web.shopping.cart.lines', kind: 'component', title: 'Lines', files: ['web/src/ui/cart.ts'] })
+      m.features.push({ title: 'Cart lines', nodes: ['web.shopping.cart.lines'] })
+      m.features = m.features.filter(f => f.title !== 'Shop kit')
+    }))
+    expect(bad.errors).toEqual(['feature "Ghost" names node "nowhere", which the map does not declare', 'feature "Empty" names no nodes', 'a feature has no title'])
+    expect(bad.warnings.filter(w => w.includes('feature'))).toEqual([
+      'feature "Cart lines" sits at "web.shopping.cart.lines", 4 levels down: give it a node in the top 3 levels',
+      'top-level app "py" carries no feature: put it under a system node if it is a tool, or name the feature it serves',
+      'top-level app "goapp" carries no feature: put it under a system node if it is a tool, or name the feature it serves',
+    ])
+    expect(build(edit(m => { delete m.features })).warnings).toEqual(['the map lists no features: name the product’s headline features and the nodes that carry them'])
   })
 
   it('names models after the repo folder', () => {

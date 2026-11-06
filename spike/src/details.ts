@@ -57,6 +57,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
     crumbs.append(b)
   }
   const tags = el('div', 'd-tags')
+  for (const f of e.features ?? []) tags.append(el('span', 'feat', f))
   for (const t of [e.technology, ...e.tags.map(t => '#' + t)].filter(Boolean)) tags.append(el('span', '', t))
   if (tree.children[i].length) tags.append(el('span', '', `${tree.children[i].length} inside`))
 

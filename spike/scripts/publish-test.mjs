@@ -60,6 +60,13 @@ try {
   const ids = await page.evaluate(() => window.__spike.tree.els.map(e => e.id))
   check('it opens with the map’s levels', ['customer', 'web.shopping.main', 'server.orders.orderController', 'game', 'db'].every(id => ids.includes(id)), ids.slice(0, 8).join(' '))
   check('tests and configs are not on it', !ids.some(id => /vite|eslint|test|orphan/i.test(id)), ids.filter(id => /vite|eslint|test|orphan/i.test(id)).join(' '))
+  // A feature's name finds the nodes that carry it, though none is titled that way.
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await page.keyboard.type('order tracking')
+  await sleep(300)
+  const found = await page.evaluate(() => [...document.querySelectorAll('.palette .row b')].map(b => b.textContent))
+  check('a feature’s name finds the nodes that carry it', ['Orders client', 'Orders', 'Orders API'].every(t => found.includes(t)), found.join(', '))
+  await page.keyboard.press('Escape')
   await page.evaluate(() => { const s = window.__spike; s.unhover(); s.select(s.id('web.orders.api')); s.fit(0) })
   await page.waitForFunction(() => !window.__spike.cam.flying)
   await sleep(600)

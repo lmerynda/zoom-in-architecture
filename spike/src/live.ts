@@ -14,7 +14,7 @@ export interface ModelDiff {
 
 const fields = (t: Tree, i: number) => {
   const e = t.els[i]
-  return JSON.stringify([e.title, e.kind, e.description, e.technology, e.tags, e.color, e.shape, e.metadata ?? null])
+  return JSON.stringify([e.title, e.kind, e.description, e.technology, e.tags, e.features ?? [], e.color, e.shape, e.metadata ?? null])
 }
 const childIds = (t: Tree, i: number) => t.children[i].map(c => t.els[c].id).join('\n')
 

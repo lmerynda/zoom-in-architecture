@@ -105,3 +105,8 @@ export function fuzzy(query: string, text: string): number {
   }
   return score - t.length * 0.02
 }
+
+/** How well a query finds an element: by its title, its id, or a feature it carries. */
+export function elementScore(query: string, e: { title: string; id: string; features?: string[] }): number {
+  return Math.max(fuzzy(query, e.title), fuzzy(query, e.id) - 4, ...(e.features ?? []).map(f => fuzzy(query, f) - 1))
+}

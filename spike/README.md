@@ -21,16 +21,23 @@ A map shows a codebase's architecture: the processes that run, the components in
   - Named imports through a barrel (an `index.ts` that re-exports) point at the file that defines the name. Type-only imports are listed but not drawn, since they are compile-time coupling, not runtime use.
   - It marks each file's routes, outbound calls, stores, schedules, sockets, messages (`postMessage`), process launches and file handoffs, with line numbers, and lists the config and deploy files. Manifests with no application code (a docs site, a monorepo root) are listed with the reason.
 - **The map, from an agent:** `/map-repo <repo>` in Claude Code runs the [map-repo skill](../.claude/skills/map-repo/SKILL.md).
-  - The agent groups files into nodes by responsibility, and names and describes them.
+  - The agent first works out what the product is for and lists its headline features, in the product's own words, from its README, docs, screens and routes.
+  - It puts the product's apps on top and its development tooling in a group of its own, gives each feature a node named for it, and groups the remaining files by responsibility.
+  - Each feature in the map names the nodes that carry it. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
   - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
 
 `check` refuses:
 - a map that leaves an application file out, or lists a file that isn't one;
 - a link without evidence, or with evidence that isn't in the repo;
-- bad node ids and kinds.
+- bad node ids and kinds;
+- a feature that names a node the map does not declare.
 
-It warns when evidence doesn't land on a line the graph marked (and quotes that line), or sits in a file at neither end of the link.
+It warns when:
+- evidence doesn't land on a line the graph marked (it quotes that line), or sits in a file at neither end of the link;
+- the map lists no features;
+- a feature sits more than three levels down;
+- a top-level app carries no feature, which usually means it is tooling.
 
 `npm run zoom -- why <repo> <map.json> <file>…` shows which node holds each file, and its users and uses grouped by node. `npm run zoom -- audit <repo> <map.json>` lists files used mostly from a sibling node that use nothing in their own: placement to review. For a re-map, `check … --uncited` lists marked lines no link cites.
 

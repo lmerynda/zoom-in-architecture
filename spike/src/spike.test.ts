@@ -111,6 +111,23 @@ describe('spans', () => {
     expect(span[id('app.core.f0')]).toBe(1)
   })
 
+  it('grows only what carries a feature, once the map names features', () => {
+    // A big pile of tooling beside a smaller app that carries the product's feature.
+    const featured: ModelJson = {
+      name: 'm',
+      elements: [el('user', null), el('db', null), el('app', null), el('app.core', 'app'), ...files('app.core', 12), el('tools', null), el('tools.cli', 'tools'), ...files('tools.cli', 40), el('lib', null), ...files('lib', 2)],
+      relations: [],
+    }
+    featured.elements.find(e => e.id === 'app.core')!.features = ['Checkout']
+    const t = new Tree(featured), s = spans(t)
+    expect(s[t.byId.get('app')!]).toBe(2)
+    expect(s[t.byId.get('tools')!]).toBe(1)
+    // Without features, size alone decides.
+    featured.elements.find(e => e.id === 'app.core')!.features = []
+    const u = new Tree(featured)
+    expect(spans(u)[u.byId.get('tools')!]).toBe(2)
+  })
+
   it('places a two-cell card as two cells and the gutter between them', () => {
     const local = new Map<number, LocalLayout>()
     const top = tree.children[0]

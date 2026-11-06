@@ -33,6 +33,15 @@ export function spans(tree: Tree): Uint8Array {
     if (!tree.children[i].length && i > 0) leaves[i] = 1
     if (i > 0) leaves[tree.parent[i]] += leaves[i]
   }
+  // When the map names the product's features, size is earned by carrying one: a big pile of
+  // tooling or plumbing stays one cell, so it does not outweigh what the product does.
+  const carries = new Uint8Array(tree.size)
+  for (let k = order.length - 1; k >= 0; k--) {
+    const i = order[k]
+    if (tree.els[i].features?.length) carries[i] = 1
+    if (i > 0 && carries[i]) carries[tree.parent[i]] = 1
+  }
+  const featured = carries[0] === 1
   const span = new Uint8Array(tree.size).fill(1)
   for (let i = 0; i < tree.size; i++) {
     const c = tree.children[i]
@@ -40,7 +49,7 @@ export function spans(tree: Tree): Uint8Array {
     // A file is a leaf of its own, not a holder of files: only containers can grow.
     const held = c.map(k => (tree.children[k].length ? leaves[k] : 0)).sort((a, b) => a - b)
     const median = held[held.length >> 1]
-    for (const k of c) if (tree.children[k].length && leaves[k] >= BIG_FILES && leaves[k] >= BIG_RATIO * Math.max(1, median)) span[k] = 2
+    for (const k of c) if (tree.children[k].length && (!featured || carries[k]) && leaves[k] >= BIG_FILES && leaves[k] >= BIG_RATIO * Math.max(1, median)) span[k] = 2
   }
   return span
 }

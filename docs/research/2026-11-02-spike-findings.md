@@ -225,6 +225,21 @@ A scripted newcomer answered two questions on real maps with real input only (wh
 - **Evidence was a dead end.** A cited line now opens its file there: clicking `firebase.ts:66 ↗` flies to that line, readable and centred beside the panel, and Backspace comes back.
 - **Tooltips covered the code**, staying locked under a still cursor while you wheeled, and coming back once you stopped. Wheeling closes them, and none show for a card that fills the screen.
 
+## Maps lead with the product
+
+A re-map of a large private client and server repository showed the skill capturing the code's shape but not the product's essence. Three things went wrong:
+- **Development tooling sat beside the product.** Build tools, a headless test client, a profiler and an operator console were top-level peers of the server, and the biggest of them were drawn as large as the server.
+- **Headline features had no node.** A feature added after the first map landed in its own folder, and neighbour votes split its files between two unrelated components, one of them hosting. Other features were buried in broad buckets next to plumbing.
+- **Content was split by an attribute.** Authored levels were divided by difficulty rather than by what they are.
+
+The cause: the skill built the map bottom-up from the graph and the folders. Nothing asked what the product does, and nothing checked the result against it. The fixes:
+- **Features are part of the map.** The skill now starts by reading the README, docs, screens and routes for what the product is and its 5 to 15 headline features, and the map lists them with the nodes that carry each one. `check` refuses a feature that names an undeclared node. It warns when a map has no features, when a feature sits more than three levels down, and when a top-level app carries no feature: the last one is how tooling gets caught.
+- **Product first, in reading order.** Tooling and experiments go in `system` groups listed last. The core app comes first, since the viewer packs each level from the top left in map order. Plumbing comes after the features inside each app.
+- **Size is earned by features.** In a map with features, only cards that carry one grow to double size. A tooling group or an infrastructure component with a hundred files now stays one cell.
+- **Features are searchable.** Ctrl K matches feature names, so a phrase that appears only in a feature still finds the nodes that carry it, and the details panel shows the features as chips.
+
+Re-mapped under the new skill, the same repository opens on its server top left, with the feature components ahead of a single infrastructure component. Development tools and experiments are small cards at the edge. Every feature has a node, and the check is clean with every file placed.
+
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.
@@ -244,6 +259,7 @@ None open from the passes above.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
 - Map quality on repositories other than the two pilots; stability was measured on one repository only.
+- The feature-first skill with a cold agent: the re-map above was done in the session that wrote the rules, starting from the old map.
 
 ## Recommended next steps
 

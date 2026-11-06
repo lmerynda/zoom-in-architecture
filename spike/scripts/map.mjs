@@ -28,6 +28,8 @@ export const toName = repo => basename(resolve(repo)).replace(/([a-z0-9])([A-Z])
 const humanize = s => s.replace(/[-_.]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/\b\w/g, c => c.toUpperCase())
 // Cited lines as the panel shows them: shared indentation removed, long ranges and lines cut short.
 const SNIPPET_LINES = 8, SNIPPET_WIDTH = 160
+/** A feature should be findable without digging: its node sits in the top three levels. */
+const FEATURE_DEPTH = 3
 const snippet = lines => {
   const ls = lines.map(s => s.replace(/\r$/, '').replace(/\t/g, '  ').trimEnd())
   const pad = Math.min(...ls.filter(Boolean).map(s => s.match(/^ */)[0].length))
@@ -56,6 +58,27 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   }
   const parentOf = id => (id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null)
   for (const id of nodes.keys()) if (parentOf(id) && !nodes.has(parentOf(id))) errors.push(`node "${id}" has no parent node "${parentOf(id)}"`)
+
+  // Features: what the product does, in its own words, each pointing at the nodes that carry it.
+  // They keep a map honest about the essence: a top-level app that carries no feature is usually
+  // tooling that belongs under a system node.
+  const featured = new Map() // node id → feature titles
+  if (!map.features?.length) warnings.push('the map lists no features: name the product’s headline features and the nodes that carry them')
+  for (const f of map.features ?? []) {
+    if (!f.title) { errors.push('a feature has no title'); continue }
+    if (!f.nodes?.length) errors.push(`feature "${f.title}" names no nodes`)
+    for (const id of f.nodes ?? []) {
+      if (!nodes.has(id)) { errors.push(`feature "${f.title}" names node "${id}", which the map does not declare`); continue }
+      if (id.split('.').length > FEATURE_DEPTH) warnings.push(`feature "${f.title}" sits at "${id}", ${id.split('.').length} levels down: give it a node in the top ${FEATURE_DEPTH} levels`)
+      featured.set(id, [...(featured.get(id) ?? []), f.title])
+    }
+  }
+  if (map.features?.length) {
+    for (const n of nodes.values()) {
+      const carries = [...featured.keys()].some(id => id === n.id || id.startsWith(`${n.id}.`))
+      if (!parentOf(n.id) && (n.kind === 'app' || n.kind === 'webapp') && !carries) warnings.push(`top-level ${n.kind} "${n.id}" carries no feature: put it under a system node if it is a tool, or name the feature it serves`)
+    }
+  }
 
   // Files to nodes: an exact path beats a glob, a longer glob beats a shorter one.
   const app = new Map(graph.files.map(f => [f.path, f]))
@@ -101,7 +124,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const elements = []
   for (const n of nodes.values()) {
     const style = KINDS[n.kind] ?? KINDS.component
-    elements.push({ id: n.id, parent: parentOf(n.id), title: n.title ?? n.id, kind: n.kind, description: n.description ?? '', technology: n.technology ?? '', tags: [], ...style, metadata: {} })
+    elements.push({ id: n.id, parent: parentOf(n.id), title: n.title ?? n.id, kind: n.kind, description: n.description ?? '', technology: n.technology ?? '', tags: [], features: featured.get(n.id) ?? [], ...style, metadata: {} })
   }
   const fileId = new Map()
   const byNode = new Map()

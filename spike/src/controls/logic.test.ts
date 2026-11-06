@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson } from '../model'
-import { findRoute, fuzzy, History } from './logic'
+import { elementScore, findRoute, fuzzy, History } from './logic'
 
 const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
 // web → api → db, and ops → api (so db reaches ops only against direction).
@@ -81,5 +81,11 @@ describe('fuzzy', () => {
   it('prefers word starts and runs', () => {
     expect(fuzzy('sr', 'SectorRuntime')).toBeGreaterThan(fuzzy('sr', 'Snapshot Broadcaster Rx'))
     expect(fuzzy('sector', 'SectorRuntime')).toBeGreaterThan(fuzzy('sector', 'SnapshotEncoderTor'))
+  })
+
+  it('finds an element by a feature it carries', () => {
+    const travel = { id: 'server.travel', title: 'Jump coordinator', features: ['Fast travel'] }
+    expect(elementScore('fast travel', travel)).toBeGreaterThan(0)
+    expect(elementScore('fast travel', { ...travel, features: [] })).toBe(-1)
   })
 })

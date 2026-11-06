@@ -6,6 +6,8 @@ export interface ElementJson {
   description: string
   technology: string
   tags: string[]
+  /** Headline features of the product this element carries, from the map. */
+  features?: string[]
   color: string
   shape: string
   /** LikeC4 metadata; the viewer reads numeric `lines` and `churn` for its lenses. */
