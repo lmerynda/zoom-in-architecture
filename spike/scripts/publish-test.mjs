@@ -67,6 +67,15 @@ try {
   await sleep(300)
   const view = await page.evaluate(() => ({ w: window.__spike.cam.w, h: window.__spike.cam.h, iw: innerWidth, ih: innerHeight }))
   check('a resized window is drawn in full', view.w === view.iw && view.h === view.ih, JSON.stringify(view))
+  // Flying into a file passes many file cards: every code box left showing holds its file.
+  await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.orders.orderController')) })
+  await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})
+  await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
+  await sleep(1500)
+  const boxes = await page.evaluate(() => [...document.querySelectorAll('.code')].filter(e => !e.hidden).map(e => !!e.querySelector('canvas') || !e.querySelector('pre').hidden))
+  check('every code box shows its file after a fly-in', boxes.length > 0 && boxes.every(Boolean), JSON.stringify(boxes))
+  await page.evaluate(() => window.__spike.fit(0))
+  await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
   // A feature's name finds the nodes that carry it, though none is titled that way.
   await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
   await page.keyboard.type('order tracking')

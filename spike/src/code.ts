@@ -158,6 +158,21 @@ interface Source {
 
 interface Shown { wrap: HTMLDivElement; pre: HTMLPreElement; map: HTMLCanvasElement | null; key: string; win: Window | null }
 
+/**
+ * Puts a file's minimap canvas in the box showing that file. A canvas is one element, and boxes
+ * trade files as the view moves, so another box may hold it still: the box showing the file takes
+ * it, and a box only ever removes a canvas that is still inside it.
+ */
+export function holdMinimap(s: Pick<Shown, 'wrap' | 'pre' | 'map' | 'key' | 'win'>, canvas: HTMLCanvasElement) {
+  if (s.map === canvas && canvas.parentElement === s.wrap) return
+  s.pre.replaceChildren()
+  if (s.map && s.map !== canvas && s.map.parentElement === s.wrap) s.map.remove()
+  s.map = canvas
+  s.wrap.append(canvas)
+  s.key = ''
+  s.win = null
+}
+
 /** Runs `step` until it returns false, a slice at a time, yielding to frames in between. */
 function sliced(step: () => boolean) {
   const run = () => { if (step()) setTimeout(run, 0) }
@@ -302,12 +317,13 @@ export class CodeView {
       const ox = codeLeft(slot, src.cols, columns, scale)
       const transform = `translate(${ox - x0}px,${slot.y - y0}px) scale(${scale})`
       if (!text) {
-        if (s.map !== map) { s.pre.replaceChildren(); s.map?.remove(); s.map = map as HTMLCanvasElement; s.wrap.append(s.map); s.key = ''; s.win = null }
-        s.map!.style.transform = transform
+        const canvas = map as HTMLCanvasElement
+        holdMinimap(s, canvas)
+        canvas.style.transform = transform
         s.pre.hidden = true
         continue
       }
-      if (s.map) { s.map.remove(); s.map = null }
+      if (s.map) { if (s.map.parentElement === s.wrap) s.map.remove(); s.map = null }
       this.reading = true
       s.pre.hidden = false
       s.pre.style.transform = transform

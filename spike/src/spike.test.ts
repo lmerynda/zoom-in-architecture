@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
 import { aggregateEdges, Tree, type ModelJson } from './model'
-import { citedLines, codeBox, codeLayout, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
+import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
 import { clipToScreen, fitText, junctions, shortText } from './render'
@@ -297,6 +297,25 @@ describe('glyphOf', () => {
 })
 
 describe('code view', () => {
+  it('keeps every box showing its minimap when boxes trade files', () => {
+    // Just enough DOM: an element knows its parent, and appending moves a child.
+    class Node { parentElement: Node | null = null; kids: Node[] = []
+      append(c: Node) { c.remove(); c.parentElement = this; this.kids.push(c) }
+      remove() { const p = this.parentElement; if (p) p.kids = p.kids.filter(k => k !== this); this.parentElement = null }
+      replaceChildren() {} }
+    const box = () => ({ wrap: new Node(), pre: new Node(), map: null, key: '', win: null }) as unknown as Parameters<typeof holdMinimap>[0]
+    const [a, b] = [box(), box()]
+    const [x, y, z] = [new Node(), new Node(), new Node()] as unknown as HTMLCanvasElement[]
+    holdMinimap(a, x); holdMinimap(b, y)
+    // The view moves: box a now shows y's file and box b shows z's. Box b must not take y back out of a.
+    holdMinimap(a, y); holdMinimap(b, z)
+    expect(y.parentElement).toBe(a.wrap)
+    expect(z.parentElement).toBe(b.wrap)
+    // And a box whose canvas was taken gets it back once it shows that file again.
+    holdMinimap(b, y); holdMinimap(a, y)
+    expect(y.parentElement).toBe(a.wrap)
+  })
+
   it('collects cited lines per file, ranges included', () => {
     const t = new Tree({
       name: 'm', elements: [el('a', null), el('b', null)],
