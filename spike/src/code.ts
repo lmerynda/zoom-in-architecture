@@ -154,6 +154,8 @@ interface Source {
   marks: Map<number, string[]>
   ready: boolean
   maps: Map<number, HTMLCanvasElement | 'drawing'>
+  /** Copies of a minimap, for when one file shows on several cards at once (the Requests view). */
+  copies: Map<string, HTMLCanvasElement>
 }
 
 interface Shown { wrap: HTMLDivElement; pre: HTMLPreElement; map: HTMLCanvasElement | null; key: string; win: Window | null }
@@ -171,6 +173,19 @@ export function holdMinimap(s: Pick<Shown, 'wrap' | 'pre' | 'map' | 'key' | 'win
   s.wrap.append(canvas)
   s.key = ''
   s.win = null
+}
+
+/** A copy of a drawn minimap, made once per key and kept with its source. */
+function copyOf(src: Source, key: string, canvas: HTMLCanvasElement): HTMLCanvasElement {
+  let c = src.copies.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = canvas.width; c.height = canvas.height
+    c.style.cssText = canvas.style.cssText
+    c.getContext('2d')!.drawImage(canvas, 0, 0)
+    src.copies.set(key, c)
+  }
+  return c
 }
 
 /** Runs `step` until it returns false, a slice at a time, yielding to frames in between. */
@@ -216,7 +231,7 @@ export class CodeView {
         const src: Source = {
           lines, tokens: [], html: [], pad: String(lines.length).length, ready: false, maps: new Map(),
           cols: Math.max(...lines.map(l => l.length)) + String(lines.length).length + 1,
-          cited: this.cited.get(path) ?? new Set(), marks: parseMarks(this.tree.els[i]?.metadata?.marks),
+          cited: this.cited.get(path) ?? new Set(), marks: parseMarks(this.tree.els[i]?.metadata?.marks), copies: new Map(),
         }
         this.sources.set(path, src)
         const lang = langOf(path), state: LineState = { open: '', close: '' }
@@ -289,6 +304,8 @@ export class CodeView {
     this.fonts.clear()
     this.reading = false
     let k = 0
+    // A canvas is one element: a second card showing the same minimap this frame gets a copy.
+    const used = new Map<HTMLCanvasElement, number>()
     for (const slot of slots) {
       const path = this.tree.els[slot.i]?.metadata?.path
       if (!path) continue
@@ -317,7 +334,9 @@ export class CodeView {
       const ox = codeLeft(slot, src.cols, columns, scale)
       const transform = `translate(${ox - x0}px,${slot.y - y0}px) scale(${scale})`
       if (!text) {
-        const canvas = map as HTMLCanvasElement
+        const n = used.get(map as HTMLCanvasElement) ?? 0
+        used.set(map as HTMLCanvasElement, n + 1)
+        const canvas = n ? copyOf(src, `${columns}:${n}`, map as HTMLCanvasElement) : (map as HTMLCanvasElement)
         holdMinimap(s, canvas)
         canvas.style.transform = transform
         s.pre.hidden = true

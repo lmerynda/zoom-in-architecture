@@ -3,9 +3,10 @@
 // which is nodes (apps, components, actors, stores) and the files each one holds, plus the links
 // code references cannot show (HTTP calls, the database), each with file:line evidence.
 // Relations between files come only from the graph, never from the map.
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
+import { buildRequests } from './requests.mjs'
 
 /** Node kinds a map may use, and how the viewer draws them. */
 export const KINDS = {
@@ -235,7 +236,7 @@ export function writeIndex() {
   const list = root => (existsSync(root) ? readdirSync(root).filter(n => statSync(join(root, n)).isDirectory()) : [])
   const title = name => { try { return JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')).title } catch { return humanize(name) } }
   const entries = [
-    ...list('imports').filter(n => existsSync(join('public/models', `${n}.json`))).map(n => ({ name: n, title: title(n), source: 'import' })),
+    ...list('imports').filter(n => existsSync(join('public/models', `${n}.json`))).map(n => ({ name: n, title: title(n), source: 'import', ...(existsSync(join('public/models', `${n}.requests.json`)) ? { views: ['requests'] } : {}) })),
     ...list('model').filter(n => existsSync(join('public/models', `${n}.json`))).map(n => ({ name: n, title: n, source: 'sample' })),
   ]
   writeAtomic(join('public/models', 'index.json'), JSON.stringify(entries))
@@ -263,6 +264,10 @@ export function publish(repo, map, { name = toName(repo), loose = false } = {}) 
   writeAtomic(join(dir, 'map.json'), `${JSON.stringify(map, null, 2)}\n`)
   writeAtomic(join(dir, 'source.json'), `${JSON.stringify({ repo: graph.repo, title: built.model.title }, null, 2)}\n`)
   writeAtomic(join('public/models', `${name}.json`), JSON.stringify({ ...built.model, buildMs: Date.now() - t0 }))
+  // The Requests view: the backend's endpoints and each request's path, when the code has endpoints.
+  const requests = buildRequests(graph, map, built.model)
+  if (requests) writeAtomic(join('public/models', `${name}.requests.json`), JSON.stringify({ ...requests, buildMs: Date.now() - t0 }))
+  else rmSync(join('public/models', `${name}.requests.json`), { force: true })
   writeIndex()
   return { name, ...built, published: true, ms: Date.now() - t0 }
 }

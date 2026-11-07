@@ -18,14 +18,17 @@ import { synthetic } from './synthetic'
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
 const modelName = new URLSearchParams(location.search).get('model') ?? 'acme'
+/** A second view of the same import, such as its requests; it reads code from the import's repo. */
+const view = new URLSearchParams(location.search).get('view')
+const modelFile = view ? `${modelName}.${view}` : modelName
 /** On-screen font size a jump into code aims for, and the largest the wheel zooms code to. */
 const READ_PX = 15
 const MAX_READ_PX = 28
 
 async function loadModel(): Promise<ModelJson> {
   if (modelName === 'synthetic') return synthetic(Number(new URLSearchParams(location.search).get('n') ?? 1000))
-  const res = await fetch(`${import.meta.env.BASE_URL}models/${modelName}.json`)
-  if (!res.ok) throw new Error(`model ${modelName}: ${res.status}`)
+  const res = await fetch(`${import.meta.env.BASE_URL}models/${modelFile}.json`)
+  if (!res.ok) throw new Error(`model ${modelFile}: ${res.status}`)
   return res.json()
 }
 
@@ -37,7 +40,7 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 async function main() {
   const t0 = performance.now()
-  renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'))
+  renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'), view)
   const model = await loadModel()
   // The current model version; live updates replace all four.
   let tree = new Tree(model)
@@ -220,7 +223,7 @@ async function main() {
   }
   let pending: Promise<void> = Promise.resolve()
   import.meta.hot?.on('model:update', ({ name }: { name: string }) => {
-    if (name !== modelName) return
+    if (name !== modelFile) return
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
@@ -228,7 +231,7 @@ async function main() {
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
-  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n')))
+  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'), view))
 
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)

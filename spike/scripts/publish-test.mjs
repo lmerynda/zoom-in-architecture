@@ -134,11 +134,26 @@ try {
   check('source edits re-publish it live', true, `${Date.now() - t1} ms · ${await page.$eval('.toast', e => e.textContent)}`)
   await sleep(400)
   await shot('03-source-edit')
+
+  // The Requests view: a switch beside the tab opens the edge, and an endpoint holds its request's path.
+  await page.evaluate(() => [...document.querySelectorAll('#models a.view')].find(a => a.textContent === 'Requests').click())
+  await page.waitForFunction(() => location.search.includes('view=requests') && window.__spike?.ready, { timeout: 60000 })
+  const edge = await page.evaluate(() => {
+    const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)
+    return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
+  })
+  check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · OrderController.all' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
+  await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.api-orders.e1')) })
+  await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})
+  await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
+  await sleep(1500)
+  await shot('04-request-path')
 } finally {
   console.log(JSON.stringify({ results, errors }, null, 1))
   await browser.close()
   rmSync(join(repo, '..'), { recursive: true, force: true })
   rmSync('imports/shop', { recursive: true, force: true })
   rmSync('public/models/shop.json', { force: true })
+  rmSync('public/models/shop.requests.json', { force: true })
   writeIndex()
 }

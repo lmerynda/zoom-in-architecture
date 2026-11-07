@@ -26,6 +26,15 @@ A map shows a codebase's architecture: the processes that run, the components in
   - Each feature in the map names the nodes that carry it, or the files, when a layered app spreads a feature across layers. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
   - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
+- **The Requests view, from code:** publishing also writes `<name>.requests.json` for any app with endpoints, and an Architecture / Requests switch appears beside the model's tab.
+  - The landscape is the edge: the callers, the backend, and the stores and services its requests reach.
+  - Inside the backend sit its route groups, by path, split again past 9 endpoints. Inside a group sit its endpoints, with their full path: a Spring class-level `@RequestMapping`, or FastAPI routers mounted with a prefix.
+  - Inside an endpoint is the request's path as numbered steps:
+    - the handler method;
+    - the files its body uses (fields lead to their types, constants to the view names they hold, helper methods in the same file count);
+    - below those, only the files on the way to a store or another service, stopping at the first that reaches it;
+    - the views it renders, and a Response card that says what comes back.
+  - Arrows between steps come from the graph. Arrows out to stores carry the map's own evidence.
 
 `check` refuses:
 - a map that leaves an application file out, or lists a file that isn't one;

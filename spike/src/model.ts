@@ -31,6 +31,8 @@ export interface RelationJson {
 
 export interface ModelJson {
   name: string
+  /** What the breadcrumb calls the landscape; the name when absent. */
+  title?: string
   elements: ElementJson[]
   relations: RelationJson[]
 }
@@ -60,7 +62,7 @@ export class Tree {
 
   constructor(model: ModelJson) {
     const root: ElementJson = {
-      id: '', parent: null, title: model.name, kind: 'landscape', description: '',
+      id: '', parent: null, title: model.title ?? model.name, kind: 'landscape', description: '',
       technology: '', tags: [], color: 'primary', shape: 'rectangle',
     }
     this.els = [root, ...model.elements]

@@ -35,6 +35,12 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
   - `app`, `library` (amber) and `component` are the code's own parts.
 - **Search and features.** Ctrl K finds any card by its title, its id, or a feature it carries. The details panel shows a card's features as chips, and what it calls and what calls it.
 - **Lenses** colour every card by size, coupling or churn (commits in the last 90 days).
+- **A Requests view, beside the map.** For every app that declares endpoints, publishing also builds a second view, from code:
+  - the callers, the backend and the stores on the landscape;
+  - the backend's route groups, then the endpoints;
+  - inside each endpoint, the request's path as numbered steps: the handler, the files its body uses, the repository that reaches the store, the view it renders, and the response.
+
+  You write nothing for it. It reads your map for which app holds each file and for the links out to stores and services, so link each store from the files that touch it.
 - **Live.** A published map re-imports when the code changes. Nodes whose ids stay the same keep their places.
 - **What reads well:**
   - about 3 to 9 cards inside one card;

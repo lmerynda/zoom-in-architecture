@@ -1,0 +1,2 @@
+class Item:
+    id: int

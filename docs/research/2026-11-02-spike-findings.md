@@ -253,6 +253,26 @@ Two tool changes came with it:
 
 On the cold runs, PetClinic came out as one app with feature parts, each holding its controller, model, repository and views. FastAPI's backend kept its layers (routes, CRUD, models, security, database access) and its React front end came out as a shell plus screens. Both checked clean. Their reports listed 17 places where the text left them guessing (server-rendered apps as `webapp`, schema declarations and browser storage are not database links, uncalled generated client methods, ties for shared helpers, one-file layers, when a Developer actor exists). Each is now settled in the skill.
 
+## A Requests view: the edge and each request's path
+
+The map shows how the code is grouped. It does not show what happens when a request arrives. A second view, built from code at publish time, does that. No mapping work is needed for it.
+- **The landscape is the edge:** who calls the backend, the backend, and the stores its requests reach.
+- **The backend holds its route groups** by path (`/owners`, `/api/v1/items`). A group of more than 9 endpoints splits by the next segment, as `/owners/{ownerId}` did in PetClinic.
+- **An endpoint holds its request's path as numbered steps,** like a sequence diagram laid out as cards:
+  - the handler method;
+  - the files its body uses;
+  - the repository that reaches the database;
+  - the view it renders, and a Response card.
+
+  Arrows between steps come from the graph, and the link out to the database carries the map's evidence.
+
+How a path is found:
+- **Full paths:** prefixes resolve through Spring's class-level `@RequestMapping` and through FastAPI routers mounted with a prefix given by a constant (`API_V1_STR`).
+- **What a handler uses:** its body names files directly, through fields (`this.owners` is an `OwnerRepository`), through constants (a view name held in `VIEWS_PETS_CREATE_OR_UPDATE_FORM`), and through helper methods in the same file.
+- **How far down:** below the files the handler names, the path follows only files on the way to a store, and stops at the first that reaches one. Before that rule, a database module that also imports the seeding code pulled the whole CRUD module into every request.
+
+Found while building it: the same file now shows on many cards, but a file's minimap is one canvas element. Each extra card showing it in the same frame now gets a copy.
+
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.
@@ -272,7 +292,7 @@ None open from the passes above.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
 - Map quality on repositories other than the two pilots; stability was measured on one repository only.
-- A second cold run of the revised skill on PetClinic and FastAPI, to confirm the 17 settled guesses now land the same way.
+- The Requests view beyond Spring and FastAPI: Express, ASP.NET and Go routers are read only from their route lines, without mounts.
 
 ## Recommended next steps
 

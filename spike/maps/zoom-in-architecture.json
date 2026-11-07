@@ -8,6 +8,7 @@
     { "id": "mapper", "kind": "app", "title": "Mapper", "technology": "Node.js", "description": "Commands that turn a repository into a viewer model: the file graph from code, the map from the agent." },
     { "id": "mapper.graph", "kind": "component", "title": "File graph", "description": "Application files reached from entry points, and the references between them, in JS/TS, C#, Rust and Java.", "files": ["spike/scripts/graph.mjs"] },
     { "id": "mapper.publish", "kind": "component", "title": "Map publishing", "description": "Checks a map against the graph, builds the viewer model, and publishes it; also extracts the LikeC4 samples.", "files": ["spike/scripts/map.mjs", "spike/scripts/extract-likec4.mjs"] },
+    { "id": "mapper.requests", "kind": "component", "title": "Request flows", "description": "Reads each backend endpoint and the path its requests take, and builds the Requests view from them.", "files": ["spike/scripts/routes.mjs", "spike/scripts/requests.mjs"] },
     { "id": "mapper.cli", "kind": "component", "title": "Agent commands", "description": "graph, check, publish and republish: small commands for agents.", "files": ["spike/scripts/zoom.mjs"] },
 
     { "id": "viewer", "kind": "webapp", "title": "Viewer", "technology": "TypeScript · PixiJS · Vite", "description": "The zoomable map: fly from the whole landscape into any element, with relations, routes and lenses." },
@@ -23,6 +24,7 @@
     { "title": "Map a repository", "nodes": ["mapper.graph", "mapper.publish", "mapper.cli"] },
     { "title": "Evidence for every link", "nodes": ["mapper.publish", "viewer.shell"] },
     { "title": "Zoom from landscape to file", "nodes": ["viewer.layout", "viewer.rendering"] },
+    { "title": "Requests view: endpoints and their paths", "nodes": ["mapper.requests", "viewer.shell"] },
     { "title": "Read the code in place", "nodes": ["viewer.code"] },
     { "title": "Travel, routes and pins", "nodes": ["viewer.controls"] },
     { "title": "Lenses: size, coupling, churn", "nodes": ["viewer.rendering"] },
@@ -35,10 +37,10 @@
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
       "evidence": ["spike/scripts/graph.mjs:47"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/main.ts", "title": "publishes models/<name>.json",
-      "evidence": ["spike/scripts/map.mjs:245", "spike/src/main.ts:27"] },
+      "evidence": ["spike/scripts/map.mjs:246", "spike/src/main.ts:30"] },
     { "from": "spike/scripts/map.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/map.mjs:245", "spike/src/models.ts:7"] },
+      "evidence": ["spike/scripts/map.mjs:246", "spike/src/models.ts:7"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/map.mjs:245", "spike/src/main.ts:27"] }
+      "evidence": ["spike/scripts/map.mjs:246", "spike/src/main.ts:30"] }
   ]
 }
