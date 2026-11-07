@@ -17,7 +17,7 @@ function answer(ep) {
   const parts = []
   if (ep.views.length) parts.push(`renders ${ep.views.map(stem).join(' or ')}`)
   if (ep.response.redirect) parts.push(`redirects to ${ep.response.redirect}`)
-  if (!parts.length) parts.push(ep.response.model ? `returns ${ep.response.model} as JSON` : 'returns what the handler returns')
+  if (!parts.length) parts.push(ep.response.model ? `returns ${ep.response.model} as JSON` : ep.response.json ? 'returns JSON' : 'returns what the handler returns')
   return parts.join(', or ')
 }
 
@@ -62,7 +62,9 @@ export function buildRequests(graph, map, model) {
     // Groups: the first path segment below what every endpoint of the app shares (/api/v1).
     const segs = mine.map(e => e.path.split('/').filter(Boolean))
     let common = 0
-    while (segs.every(s => s.length > common + 1 && s[common] === segs[0][common] && !s[common].startsWith('{'))) common++
+    // A root route (GET /, a health check) shares nothing, so it does not count against the others.
+    const deep = segs.filter(s => s.length > 0)
+    while (deep.length && deep.every(s => s.length > common + 1 && s[common] === deep[0][common] && !s[common].startsWith('{') && !s[common].startsWith(':'))) common++
     const groups = new Map()
     for (const [k, e] of mine.entries()) {
       const head = segs[k].slice(0, common + 1)
@@ -105,7 +107,9 @@ export function buildRequests(graph, map, model) {
           if (!base) return
           const id = `${eid}.s${k + 1}`
           sid.set(p, id)
-          const title = `${k + 1} · ${k === 0 ? handler : stem(p)}`
+          // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
+          const twin = steps.some(q => q !== p && stem(q) === stem(p))
+          const title = `${k + 1} · ${k === 0 ? handler : twin ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)}`
           // The handler's card marks its route line, so its code opens at the endpoint.
           const marks = k === 0 ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
           elements.push({ ...copy(base), id, parent: eid, title, ...CODE, metadata: { ...base.metadata, marks } })
@@ -115,7 +119,7 @@ export function buildRequests(graph, map, model) {
         for (const r of graph.edges) if (!r.types && sid.has(r.from) && sid.has(r.to)) relations.push({ source: sid.get(r.from), target: sid.get(r.to), title: r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ') })
         // Back out: the page it renders, or the handler's own return.
         for (const v of e.views) if (sid.has(v)) relations.push({ source: sid.get(v), target: rid, title: 'HTML page' })
-        if (!e.views.length || e.response.redirect) relations.push({ source: sid.get(e.file), target: rid, title: e.response.redirect ? 'redirect' : e.response.model ?? 'returns' })
+        if (!e.views.length || e.response.redirect) relations.push({ source: sid.get(e.file), target: rid, title: e.response.redirect ? 'redirect' : e.response.model ?? (e.response.json ? 'JSON' : 'returns') })
         // Out to the stores and services: the map's own links from these files, with their evidence.
         for (const p of steps) for (const l of linksFrom.get(p) ?? []) {
           const to = fileEl.has(l.to) ? top(fileEl.get(l.to).parent) : top(l.to)

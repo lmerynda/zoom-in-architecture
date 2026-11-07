@@ -172,6 +172,12 @@ describe('buildGraph', () => {
     expect(m.edges.filter(e => e.to === `${t}error.html`)).toEqual([])
   })
 
+  it('resolves a C# type of two homes to the file’s own namespace, and skips members after a variable', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/csharp'))
+    // Carts.Create, not Orders.Create; items.Add is a call, not the Lists.Add type; a qualified name still counts.
+    expect(m.edges.map(e => `${e.from} > ${e.to}`)).toEqual(['Program.cs > Carts/CartsController.cs', 'Carts/CartsController.cs > Carts/Create.cs'])
+  })
+
   it('leaves out Java package docs, which hold no code', () => {
     const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
     expect(m.files.some(f => f.path.endsWith('package-info.java'))).toBe(false)

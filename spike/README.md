@@ -28,7 +28,15 @@ A map shows a codebase's architecture: the processes that run, the components in
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
 - **The Requests view, from code:** publishing also writes `<name>.requests.json` for any app with endpoints, and an Architecture / Requests switch appears beside the model's tab.
   - The landscape is the edge: the callers, the backend, and the stores and services its requests reach.
-  - Inside the backend sit its route groups, by path, split again past 9 endpoints. Inside a group sit its endpoints, with their full path: a Spring class-level `@RequestMapping`, or FastAPI routers mounted with a prefix.
+  - Inside the backend sit its route groups, by path, split again past 9 endpoints. Inside a group sit its endpoints, with their full path, read from:
+    - Spring: a class-level `@RequestMapping`;
+    - ASP.NET: `[Route]` on the controller;
+    - FastAPI and Flask: routers or blueprints mounted with a prefix, even one held in a constant;
+    - Express: routers mounted with `.use('/api', router)`, down a chain;
+    - Gin: groups held in variables (`v1 := r.Group("/api")`) and passed to the functions that register routes on them.
+
+    A prefix added by a custom framework convention, such as an ASP.NET `IControllerModelConvention`, is not read.
+  - A route that names its handler (`router.POST("/login", UsersLogin)`) starts its path at that function, in the same file, its Go package, or the JS module it was imported from.
   - Inside an endpoint is the request's path as numbered steps:
     - the handler method;
     - the files its body uses (fields lead to their types, constants to the view names they hold, helper methods in the same file count);

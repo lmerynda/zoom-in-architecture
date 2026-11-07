@@ -28,7 +28,27 @@ describe('endpoints', () => {
       'GET /api/v1/items/{id} read_item: items.py > models.py > crud.py > db.py',
       'GET /api/v1/items/health health: items.py',
     ])
-    expect(eps[0].response).toEqual({ model: 'Item' })
+    expect(eps[0].response).toEqual({ model: 'Item', json: true })
+  })
+})
+
+describe('endpoints of Express and Gin routers', () => {
+  it('reads Express routes under the prefixes their routers are mounted at, inline handlers and named ones', () => {
+    const eps = endpoints(fixture('express'))
+    // .use('/api', api) on the exported router, and api.use(orders) down a chain; the path is on the next line.
+    expect(brief(eps)).toEqual([
+      'GET /api/orders : orders.controller.js > orders.service.js',
+      // A named handler is the function the route passes; the service is reached by its require name.
+      'POST /api/orders create: orders.controller.js > orders.service.js',
+    ])
+    expect(eps.map(e => e.response)).toEqual([{ json: true }, { json: true }])
+  })
+
+  it('reads Gin routes under the group their register function is called with, handlers anywhere in the package', () => {
+    const eps = endpoints(fixture('gin'))
+    // router.GET("") and router.GET("/") are one endpoint; Pay lives in another file of the package.
+    expect(brief(eps)).toEqual(['GET /api/orders List: routers.go > models.go', 'POST /api/orders/:id/pay Pay: pay.go > models.go'])
+    expect(eps.every(e => e.response.json)).toBe(true)
   })
 })
 

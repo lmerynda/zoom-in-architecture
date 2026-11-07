@@ -253,9 +253,9 @@ function summary(src, lang) {
 
 // Lines that show where one process talks to another, for the links a map adds. First match wins.
 const HINTS = [
-  ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|\b(app|router|server|fastify)\.(get|post|put|delete|patch|all)\s*\(\s*['"`].*|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
+  ['route', /@(Get|Post|Put|Delete|Patch|Request)Mapping\b.*|\[(Http(Get|Post|Put|Delete|Patch)|Route)\b[^\]]*\]|\.Map(Get|Post|Put|Delete|Patch|Hub|Fallback\w*)?\s*\(\s*\$?"\/.*|\.Use(StaticFiles|DefaultFiles|FileServer)\s*\(.*|(?<!@)\b(app|router|server|fastify|api|\w+Router)\.(get|post|put|delete|patch|all)\s*\(\s*(['"`].*|$)|\.route\(\s*"[^"]*".*|\bhttps?\.createServer\s*\(.*|\bexpress\.static\s*\(.*/],
   ['schedule', /@Scheduled\b.*|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(.*|\bcron\.schedule\s*\(.*|\bPeriodicTimer\b.*/],
-  ['store', /\b(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(.*|\bindexedDB\.open\s*\(.*|\bcreateStore\s*\(\s*['"].*|\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(extends|implements)\s+Repository\s*<.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
+  ['store', /\b(localStorage|sessionStorage)\.(setItem|getItem|removeItem)\s*\(.*|\bindexedDB\.open\s*\(.*|\bcreateStore\s*\(\s*['"].*|\b(extends|implements)\s+\w*(Jpa|Crud|PagingAndSorting|Mongo|Reactive\w*)Repository\b.*|\b(extends|implements)\s+Repository\s*<.*|\b(getFirestore|getStorage|getDatabase|initializeFirestore)\s*\(.*|:\s*DbContext\b.*|\b(new\s+)?(NpgsqlConnection|NpgsqlDataSource|SqlConnection|SqliteConnection|MySqlConnection)\b\s*[(.].*|\.Use(Npgsql|SqlServer|Sqlite|MySql)\s*\(.*|\bnew\s+PrismaClient\b.*|\bprisma\.\w+\.(findMany|findUnique|findFirst|create|createMany|update|updateMany|upsert|delete|deleteMany|count|aggregate|groupBy)\s*\(.*|\bprisma\.\$(transaction|queryRaw|executeRaw)\b.*|\bmongoose\.connect\s*\(.*|\bcreatePool\s*\(.*|\bsqlx::query\w*!?\s*\(.*|\bJdbcTemplate\b.*/],
   ['socket', /\bnew\s+(WebSocket|EventSource|HubConnectionBuilder)\b.*|\b(socketIOClient|io\.connect)\s*\(.*|\b(WebSocket|TcpStream|UdpSocket)::(new|connect)\s*\(.*|\bTcpListener::bind\s*\(.*|\bClientWebSocket\b.*|\.(UseWebSockets|AcceptWebSocketAsync)\s*\(.*|\bNamedPipe(Server|Client)Stream\b.*|\bio\s*\(\s*['"`].*|\bTcpListener\b.*|\bTcpClient\b.*/],
   ['message', /\.postMessage\s*\(.*|\baddEventListener\s*\(\s*['"]message['"].*|\bonmessage\s*=.*/],
   ['process', /\bnew\s+(?:Shared)?Worker\s*\(.*|\b(execFileSync|execFile|execSync|spawnSync|spawn|Process\.Start|ProcessBuilder|Command::new|CreateProcess\w*)\s*\(.*|\bnew\s+ProcessStartInfo\b.*/],
@@ -264,7 +264,7 @@ const HINTS = [
   // fetch with any string, or a string that looks like a URL path or an absolute URL, passed to a call.
   // HttpClient calls take relative paths from a BaseAddress, so any string literal counts there.
   // Python and Go seams.
-  ['route', /@(app|bp|blueprint|router|api|\w+_router)\.(route|get|post|put|delete|patch|websocket|api_route)\s*\(.*|\b(re_)?path\s*\(\s*r?['"][^'"]*['"]\s*,.*|\.(HandleFunc|Handle)\s*\(\s*"\/.*|\b\w+\.(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|Delete|Patch)\s*\(\s*"\/.*|\bhttp\.ListenAndServe(TLS)?\s*\(.*|\.(PathPrefix|Path|Methods|Host)\s*\(\s*"\/.*|\bAPIRouter\s*\(.*|\.include_router\s*\(.*|\bBlueprint\s*\(.*|\.register_blueprint\s*\(.*|\.mount\s*\(\s*['"]\/.*|\bStaticFiles\s*\(.*/],
+  ['route', /@(app|bp|blueprint|router|api|\w+_router)\.(route|get|post|put|delete|patch|websocket|api_route)\s*\(.*|\b(re_)?path\s*\(\s*r?['"][^'"]*['"]\s*,.*|\.(HandleFunc|Handle)\s*\(\s*"\/.*|\b\w+\.(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|Delete|Patch)\s*\(\s*"(\/[^"]*)?".*|\bhttp\.ListenAndServe(TLS)?\s*\(.*|\.(PathPrefix|Path|Methods|Host)\s*\(\s*"\/.*|\bAPIRouter\s*\(.*|\.include_router\s*\(.*|\bBlueprint\s*\(.*|\.register_blueprint\s*\(.*|\.mount\s*\(\s*['"]\/.*|\bStaticFiles\s*\(.*/],
   ['queue', /\bCelery\s*\(.*|@(shared_task|\w+\.task)\b.*|\.(delay|apply_async)\s*\(.*|\bpika\.\w*Connection\s*\(.*|\bKafka(Producer|Consumer)\s*\(.*|\bamqp\.Dial\s*\(.*|\bnats\.Connect\s*\(.*|\bkafka\.New(Writer|Reader)\s*\(.*/],
   ['store', /\bsession\.(exec|add|add_all|commit|delete|query|execute|scalars|merge|refresh|flush)\s*\(.*|\bSession\s*\(\s*engine\b.*|\b(tx|db|conn|stmt)\.(Exec|Query|QueryRow|Prepare)(Context)?\s*\(.*|\bcreate_(async_)?engine\s*\(.*|\b(psycopg2?|sqlite3|pymysql|asyncpg|aiosqlite)\.connect\s*\(.*|\bredis\.(Redis|StrictRedis|from_url)\s*\(.*|\bMongoClient\s*\(.*|\bclass\s+\w+\s*\((models\.Model|[^)]*table\s*=\s*True)[^)]*\).*|\bsql\.Open\s*\(.*|\bgorm\.Open\s*\(.*|\bpgx(pool)?\.(Connect|New)\w*\s*\(.*|\bredis\.NewClient\s*\(.*|\bmongo\.Connect\s*\(.*|\bbolt\.Open\s*\(.*/],
   ['socket', /\bautocert\.(NewListener|Manager)\b.*|\bwebsockets\.(connect|serve)\s*\(.*|\bsocket\.socket\s*\(.*|\bnet\.(Listen|Dial)\w*\s*\(.*|\bwebsocket\.Upgrader\b.*|\bgrpc\.(NewServer|Dial|NewClient)\s*\(.*/],
@@ -540,6 +540,8 @@ function relateCs(files, projects, relate) {
   for (const f of cs) {
     f.code = stripC(f.src)
     f.declares = new Set([...f.code.matchAll(/\b(?:class|struct|record|interface|enum)\s+([A-Z]\w*)/g)].map(m => m[1]))
+    f.ns = f.code.match(/\bnamespace\s+([\w.]+)/)?.[1] ?? ''
+    f.usings = new Set([...f.code.matchAll(/^\s*(?:global\s+)?using\s+(?:static\s+)?([\w.]+)\s*;/gm)].map(m => m[1]))
     // Only top-level, non-private types can be named from another file.
     for (const t of topLevelTypes(f.code, 'cs')) typeFiles.set(t, [...(typeFiles.get(t) ?? []), f])
   }
@@ -552,13 +554,19 @@ function relateCs(files, projects, relate) {
     p.visible = seen
   }
   for (const f of cs) {
-    for (const t of new Set(f.code.match(/\b[A-Z]\w{2,}\b/g) ?? [])) {
+    // A name after a variable's dot is a member (services.Add, list.Count), not a type the file uses;
+    // after a capitalised name it is still a type (Shop.Carts.CartsController).
+    for (const t of new Set(f.code.match(/(?<!\b[a-z_]\w*\.|[)\]]\.|\w)[A-Z]\w{2,}\b/g) ?? [])) {
       if (f.declares.has(t)) continue
       const cands = (typeFiles.get(t) ?? []).filter(g => f.project.visible.has(g.project))
       if (!cands.length) continue
       const same = cands.filter(g => g.project === f.project)
       const pool = same.length ? same : cands
-      relate(f, pool.find(g => posix.basename(g.path, '.cs') === t) ?? pool[0], t)
+      // Two types of one name (Articles.Create, Comments.Create): the file's own namespace first, then
+      // the namespaces it uses, then the file named for the type.
+      const named = g => posix.basename(g.path, '.cs') === t
+      const pick = pool.find(g => g.ns === f.ns && named(g)) ?? pool.find(g => g.ns === f.ns) ?? pool.find(g => f.usings.has(g.ns) && named(g)) ?? pool.find(g => f.usings.has(g.ns)) ?? pool.find(named) ?? pool[0]
+      relate(f, pick, t)
     }
   }
 }

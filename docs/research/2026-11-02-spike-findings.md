@@ -271,6 +271,16 @@ How a path is found:
 - **What a handler uses:** its body names files directly, through fields (`this.owners` is an `OwnerRepository`), through constants (a view name held in `VIEWS_PETS_CREATE_OR_UPDATE_FORM`), and through helper methods in the same file.
 - **How far down:** below the files the handler names, the path follows only files on the way to a store, and stops at the first that reaches one. Before that rule, a database module that also imports the seeding code pulled the whole CRUD module into every request.
 
+Tested on three RealWorld backends, which implement one API of 19 endpoints under `/api` in Express, Gin and ASP.NET Core. That made an answer key:
+- **Express:** 8 of 19 endpoints found before the fixes, all 19 after. Routes written over several lines were missed, and nothing read the `.use('/api', api)` mounts.
+- **Gin:** all 19 found, but most collapsed to `/` before the fixes. Now group variables (`v1 := r.Group("/api")`) and the register functions they are passed to give every path. A route that names its handler (`router.POST("/login", UsersLogin)`) starts at that function, in any file of the package.
+- **ASP.NET:** all 19 found. Two graph errors surfaced here and are fixed:
+  - a method call (`services.Add`) was read as a use of a class named `Add`;
+  - two classes of one name (`Articles.Create`, `Comments.Create`) resolved to the first found, instead of the file's own namespace or its `using`s.
+
+  The `/api` prefix itself comes from a custom convention class, which is not read.
+- **Responses:** each now says what comes back: `c.JSON`, `res.json`, a `ValueTask<ArticleEnvelope>` return type, `StatusCode(201, …)`. Prisma's query calls now count as store access, so an Express path ends at the service that queries.
+
 Found while building it: the same file now shows on many cards, but a file's minimap is one canvas element. Each extra card showing it in the same frame now gets a copy.
 
 ## Fixed rough edges
@@ -292,7 +302,7 @@ None open from the passes above.
 - Interaction feel: judged from frame intervals and screenshots, not by a person scrolling.
 - Large real models: 10k is synthetic, with random, dense relations.
 - Map quality on repositories other than the two pilots; stability was measured on one repository only.
-- The Requests view beyond Spring and FastAPI: Express, ASP.NET and Go routers are read only from their route lines, without mounts.
+- The Requests view on frameworks beyond the five tried (Spring, FastAPI, Express, Gin, ASP.NET), and on apps that build routes dynamically.
 
 ## Recommended next steps
 
