@@ -481,9 +481,10 @@ export class Renderer {
       const badge = (v.metric ??= this.text(label, texts))
       if (badge.text !== label) badge.text = label
       const bpx = Math.min(h * 0.1, 14)
-      if (bpx >= 7) {
+      badge.scale.set(bpx / FONT_PX)
+      // A value wider than its card would be cut ("37 relatio"); it waits until the card has room.
+      if (bpx >= 7 && badge.width <= w * 0.88) {
         badge.visible = true
-        badge.scale.set(bpx / FONT_PX)
         badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
         badge.position.set(x + w - w * 0.06 - badge.width, y + h - h * 0.08 - bpx * 1.25)
         badge.alpha = la

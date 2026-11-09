@@ -145,6 +145,18 @@ try {
   await sleep(1200)
   const far = await page.evaluate(() => window.__spike.cam.z)
   check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 2.5 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, far: far / deep.fit }))
+  // Double-clicking a file reads it: it is selected and its code shows as text, beside the panel.
+  const fileAt = await page.evaluate(async () => {
+    const s = window.__spike, f = s.tree.els.findIndex(e => e.metadata?.path === 'web/src/api.ts')
+    s.select(-1); s.fit(s.tree.parent[f])
+    await new Promise(r => setTimeout(r, 1800))
+    const r = s.world.rect, [x, y] = s.cam.toScreen(r[f * 4] + r[f * 4 + 2] / 2, r[f * 4 + 1] + r[f * 4 + 3] / 2)
+    return { x, y, f, under: s.renderer.pick(x, y) }
+  })
+  await page.mouse.click(fileAt.x, fileAt.y, { clickCount: 2 })
+  await sleep(3000)
+  const read = await page.evaluate(() => ({ sel: window.__spike.renderer.selected, text: [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) }))
+  check('double-clicking a file opens its code as text', fileAt.under === fileAt.f && read.sel === fileAt.f && read.text, JSON.stringify({ ...fileAt, ...read }))
   check('a lens does not reflow the top bar', bar.before === bar.after && bar.after < 60, JSON.stringify(bar))
   await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
   await sleep(300)

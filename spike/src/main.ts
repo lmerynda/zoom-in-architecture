@@ -160,7 +160,7 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor, read: path => void openCode(path, 1) })
   resize()
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new

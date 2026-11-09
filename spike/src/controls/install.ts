@@ -26,6 +26,8 @@ export interface Ctx {
   /** How far the wheel may zoom in at a screen point: past it, what is under the cursor has nothing more to show. */
   zoomLimit: (sx: number, sy: number) => number
   zoomFloor: () => number
+  /** Opens a file's code at its first line, at a size that reads. */
+  read: (path: string) => void
   now: () => number
 }
 
@@ -200,7 +202,13 @@ export function installControls(c: Ctx) {
     drag = null
   })
   canvas.addEventListener('pointerleave', () => { renderer.pointer = null })
-  canvas.addEventListener('dblclick', e => go(renderer.pick(e.offsetX, e.offsetY)))
+  // Double-click flies into a card; into a file, straight to its code at a size that reads.
+  canvas.addEventListener('dblclick', e => {
+    const n = renderer.pick(e.offsetX, e.offsetY)
+    const path = n > 0 && !tree.children[n].length ? tree.els[n].metadata?.path : undefined
+    if (path) c.read(path)
+    else go(n)
+  })
   canvas.addEventListener('contextmenu', e => {
     e.preventDefault()
     tooltips.closeAll()
