@@ -414,7 +414,9 @@ export class Renderer {
         const d = Math.hypot(cx + cw / 2 - this.cam.focusX, cy + ch / 2 - this.cam.focusY) / diag
         r = Math.min(1, Math.max(0, t * 1.8 - d * 0.8))
       }
-      this.visit(c, alpha * (i === 0 ? 1 : 0.35 + 0.65 * r), r, st)
+      // Names come first: a child's label is full strength a third of the way into the opening,
+      // so a container that has started to open never shows a row of nameless boxes.
+      this.visit(c, alpha * (i === 0 ? 1 : 0.35 + 0.65 * r), Math.min(1, r * 3), st)
     }
   }
 
@@ -508,9 +510,13 @@ export class Renderer {
         badge.visible = true
         badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
         // Inside the card and inside the screen: a card running off the edge keeps its value in view.
-        const bx = Math.max(x + w * 0.06, Math.min(x + w - w * 0.06 - badge.width, this.cam.w - SAFE.right - badge.width)), by = Math.max(y + h * 0.3, Math.min(y + h - h * 0.08 - bpx * 1.25, this.cam.h - SAFE.bottom - bpx * 1.4))
+        let bx = Math.max(x + w * 0.06, Math.min(x + w - w * 0.06 - badge.width, this.cam.w - SAFE.right - badge.width))
+        const by = Math.max(y + h * 0.3, Math.min(y + h - h * 0.08 - bpx * 1.25, this.cam.h - SAFE.bottom - bpx * 1.4))
+        // Out from under the minimap and the panels, which sit over the map; if that leaves the card, it waits.
+        for (const [hx, hy, hw, hh] of this.hud) if (hw && bx < hx + hw && hx < bx + badge.width && by < hy + hh && hy < by + bpx * 1.3) bx = hx - badge.width - 6
+        if (bx < x + w * 0.04) badge.visible = false
         badge.position.set(bx, by)
-        this.badges.push([bx, by, badge.width, bpx * 1.3])
+        if (badge.visible) this.badges.push([bx, by, badge.width, bpx * 1.3])
         badge.alpha = la
       }
     }
@@ -929,10 +935,16 @@ export class Renderer {
       let y = Math.min(Math.max(c.y - ch / 2, SAFE.top), H - ch - SAFE.bottom)
       // Keep chips off the HUD: lift them above the panels along the bottom (the minimap), and
       // step them past any along the side; then back inside the screen.
-      for (const [hx, hy, hw, hh] of this.hud) {
-        if (!hw || !(x < hx + hw && hx < x + cw && y + ch > hy && y < hy + hh)) continue
-        if (hy > H / 2) y = hy - ch - 4
-        else x = hx < W / 2 ? hx + hw + 4 : hx - cw - 4
+      // A few passes: lifting a chip above the help line can put it under the minimap.
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false
+        for (const [hx, hy, hw, hh] of this.hud) {
+          if (!hw || !(x < hx + hw && hx < x + cw && y + ch > hy && y < hy + hh)) continue
+          if (hy > H / 2) y = hy - ch - 4
+          else x = hx < W / 2 ? hx + hw + 4 : hx - cw - 4
+          moved = true
+        }
+        if (!moved) break
       }
       x = Math.min(Math.max(x, SAFE.left), W - cw - SAFE.right)
       y = Math.min(Math.max(y, SAFE.top), H - ch - SAFE.bottom)

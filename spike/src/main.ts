@@ -24,6 +24,8 @@ const modelFile = view ? `${modelName}.${view}` : modelName
 /** On-screen font size a jump into code aims for, and the largest the wheel zooms code to. */
 const READ_PX = 15
 const MAX_READ_PX = 28
+/** Longer than a double-click: a click that may be the first of two waits this long before moving the view. */
+const DOUBLE_CLICK_MS = 350
 
 /** After the breadcrumb, what an uploaded map was built from, so an old map does not pass for a current one. */
 function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[] {
@@ -157,12 +159,19 @@ async function main() {
     renderer.selected = i > 0 ? i : -1
     if (i > 0) sound.select()
     renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
-    // The panel opens on the right; a selected card under it glides left to clear it, at the same zoom.
-    if (i > 0 && !details.hidden && !cam.flying) {
-      const r = world.rect, [sx] = cam.toScreen(r[i * 4], 0), w = r[i * 4 + 2] * cam.z
-      const left = details.getBoundingClientRect().x - 24, dx = sx + w - left
-      if (dx > 0 && w < left - 24) cam.flyTo(cam.x + dx / cam.z, cam.y, cam.w / cam.z, cam.h / cam.z, now(), 1)
-    }
+    // The panel opens on the right; a selected card under it glides left to clear it, at the same
+    // zoom. It waits out a double-click, so a second click still lands on the card it aimed at.
+    if (i > 0) setTimeout(() => clearPanel(i), DOUBLE_CLICK_MS)
+  }
+  /** Glides the view so card i sits left of the details panel, if the panel covers it. */
+  const clearPanel = (i: number) => {
+    if (renderer.selected !== i || details.hidden || cam.flying) return
+    const r = world.rect, [sx] = cam.toScreen(r[i * 4], 0), w = r[i * 4 + 2] * cam.z
+    const left = details.getBoundingClientRect().x - 24, dx = sx + w - left
+    if (dx <= 0 || w >= left - 24) return
+    // flyTo takes the view's rectangle: the same size, its left edge moved right by dx.
+    const vw = cam.w / cam.z, vh = cam.h / cam.z
+    cam.flyTo(cam.x - vw / 2 + dx / cam.z, cam.y - vh / 2, vw, vh, now(), 1)
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.

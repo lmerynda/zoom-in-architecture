@@ -65,8 +65,11 @@ try {
   check('it opens with the map’s levels', ['customer', 'web.shopping.main', 'server.orders.orderController', 'game', 'db'].every(id => ids.includes(id)), ids.slice(0, 8).join(' '))
   check('tests and configs are not on it', !ids.some(id => /vite|eslint|test|orphan/i.test(id)), ids.filter(id => /vite|eslint|test|orphan/i.test(id)).join(' '))
   // A resized window is drawn in full: the camera takes the new size, so nothing past the old edge is culled.
+  // And what was in view stays in view: the landscape still fits a smaller window.
   await page.setViewport({ width: 1100, height: 700 })
   await sleep(300)
+  const small = await page.evaluate(() => { const s = window.__spike, r = s.world.rect, [x, y] = s.cam.toScreen(0, 0), [x2, y2] = s.cam.toScreen(r[2], r[3]); return { x, y, x2, y2, w: s.cam.w, h: s.cam.h } })
+  check('a smaller window keeps the landscape in view', small.x >= -2 && small.y >= -2 && small.x2 <= small.w + 2 && small.y2 <= small.h + 2, JSON.stringify(small))
   await page.setViewport({ width: 1600, height: 1000 })
   await sleep(300)
   const view = await page.evaluate(() => ({ w: window.__spike.cam.w, h: window.__spike.cam.h, iw: innerWidth, ih: innerHeight }))
@@ -157,6 +160,23 @@ try {
   await sleep(3000)
   const read = await page.evaluate(() => ({ sel: window.__spike.renderer.selected, text: [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) }))
   check('double-clicking a file opens its code as text', fileAt.under === fileAt.f && read.sel === fileAt.f && read.text, JSON.stringify({ ...fileAt, ...read }))
+  // Selecting a card the details panel would cover glides it clear, and it stays on screen.
+  const cleared = await page.evaluate(async () => {
+    const s = window.__spike, r = s.world.rect, wait = ms => new Promise(res => setTimeout(res, ms))
+    s.select(-1); s.unhover(); s.fit(0)
+    await wait(1500)
+    s.select(1)
+    await wait(200)
+    const panelLeft = document.getElementById('details').getBoundingClientRect().x
+    const rect = i => { const [x, y] = s.cam.toScreen(r[i * 4], r[i * 4 + 1]); return [x, y, r[i * 4 + 2] * s.cam.z, r[i * 4 + 3] * s.cam.z] }
+    const under = s.tree.els.map((_, i) => i).find(i => { if (i < 1) return false; const [x, , w] = rect(i); return x < panelLeft && x + w > panelLeft && w < panelLeft / 2 })
+    if (under == null) return { under: null }
+    s.select(under)
+    await wait(2000)
+    const [x, y, w, h] = rect(under)
+    return { under: s.tree.els[under].id, x, y, w, h, panelLeft, W: s.cam.w, H: s.cam.h }
+  })
+  check('selecting a card under the panel glides it clear and keeps it on screen', cleared.under != null && cleared.x >= 0 && cleared.y >= 0 && cleared.x + cleared.w <= cleared.panelLeft && cleared.y + cleared.h <= cleared.H, JSON.stringify(cleared))
   check('a lens does not reflow the top bar', bar.before === bar.after && bar.after < 60, JSON.stringify(bar))
   await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
   await sleep(300)

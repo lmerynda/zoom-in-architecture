@@ -90,7 +90,8 @@ function same(a: View, b: View, viewportW: number) {
  * at word starts and consecutive runs score higher; -1 means no match.
  */
 export function fuzzy(query: string, text: string): number {
-  const q = query.toLowerCase(), t = text.toLowerCase()
+  // A space in the query stands for any separator, or none: "sign in" finds "sign-in" and "SignIn".
+  const q = query.toLowerCase().replace(/\s+/g, ''), t = text.toLowerCase()
   if (!q) return 0
   let score = 0, ti = 0, run = 0
   for (let qi = 0; qi < q.length; qi++) {

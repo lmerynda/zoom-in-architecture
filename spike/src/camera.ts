@@ -21,7 +21,15 @@ export class Camera {
   private vy = 0
   private fly: Flight | null = null
 
-  resize(w: number, h: number) { this.w = w; this.h = h; this.focusX = w / 2; this.focusY = h / 2 }
+  /** A new window size keeps what was in view in view: the zoom scales with the window. */
+  resize(w: number, h: number) {
+    if (this.w > 0 && this.h > 0 && !this.fly) {
+      const k = Math.min(w / this.w, h / this.h)
+      this.z *= k
+      this.targetLogZ += Math.log(k)
+    }
+    this.w = w; this.h = h; this.focusX = w / 2; this.focusY = h / 2
+  }
 
   toScreen(wx: number, wy: number): [number, number] {
     return [(wx - this.x) * this.z + this.w / 2, (wy - this.y) * this.z + this.h / 2]

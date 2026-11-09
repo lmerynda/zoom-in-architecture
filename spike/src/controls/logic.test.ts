@@ -78,6 +78,11 @@ describe('fuzzy', () => {
     expect(fuzzy('xyz', 'SectorRuntime')).toBe(-1)
   })
 
+  it('reads a space as any separator, or none', () => {
+    expect(fuzzy('sign in', 'Accounts and sign-in')).toBeGreaterThan(0)
+    expect(fuzzy('sign in', 'SignInPage')).toBeGreaterThan(0)
+  })
+
   it('prefers word starts and runs', () => {
     expect(fuzzy('sr', 'SectorRuntime')).toBeGreaterThan(fuzzy('sr', 'Snapshot Broadcaster Rx'))
     expect(fuzzy('sector', 'SectorRuntime')).toBeGreaterThan(fuzzy('sector', 'SnapshotEncoderTor'))
