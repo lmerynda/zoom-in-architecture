@@ -43,7 +43,7 @@
     { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
       "evidence": ["spike/scripts/store.mjs:16", "spike/src/main.ts:30"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/store.mjs:16", "spike/src/models.ts:7"] },
+      "evidence": ["spike/scripts/store.mjs:16", "spike/src/models.ts:11"] },
     { "from": "spike/src/code.ts", "to": "spike/scripts/store.mjs", "title": "reads a file's uploaded source (/source)",
       "evidence": ["spike/src/code.ts:226", "spike/vite.config.ts:99"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",

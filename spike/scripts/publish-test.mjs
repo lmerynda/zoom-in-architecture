@@ -142,8 +142,12 @@ try {
   await sleep(400)
   await shot('03-source-edit')
 
-  // The Requests view: a switch beside the tab opens the edge, and an endpoint holds its request's path.
-  await page.evaluate(() => [...document.querySelectorAll('#models a.view')].find(a => a.textContent === 'Requests').click())
+  // The Requests view: a switch beside the lenses opens the edge, and an endpoint holds its request's path.
+  check('the view switch sits with the lenses, not among the models', await page.evaluate(() => {
+    const views = document.querySelector('#views'), lenses = document.querySelector('.lensbar')
+    return !views.hidden && views.nextElementSibling === lenses && !document.querySelector('#models').textContent.includes('Requests')
+  }))
+  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Requests').click())
   await page.waitForFunction(() => location.search.includes('view=requests') && window.__spike?.ready, { timeout: 60000 })
   const edge = await page.evaluate(() => {
     const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)

@@ -18,8 +18,16 @@
     #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; flex: none; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
     #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
     #models a.imported { color: #fde68a; }
-    #models a.view { font-size: 12px; color: var(--dim); border: 1px solid rgba(148, 163, 184, 0.25); }
-    #models a.view.on { color: #a7f3d0; border-color: rgba(52, 211, 153, 0.55); background: rgba(52, 211, 153, 0.1); }
+    /* The open model's views sit with the lenses on the right: ways of looking at it, not other models. */
+    /* In a narrow window the model tabs scroll; the controls around them keep their size. */
+    #brand, #sound, #views, .lensbar { flex: none; white-space: nowrap; }
+    #models { min-width: 0; }
+    #views { display: flex; gap: 2px; padding: 3px; margin-left: auto; }
+    #views[hidden] { display: none; }
+    #views:not([hidden]) + .lensbar { margin-left: 0; }
+    #views a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
+    #views a:hover { color: var(--text); }
+    #views a.on { color: #0b0f17; background: #6ee7b7; font-weight: 600; }
     #crumbs { position: fixed; top: 64px; left: 24px; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
     #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
@@ -175,6 +183,7 @@
     <div id="brand" class="panel" style="position: static">Zoom spike</div>
     <nav id="models" class="panel" style="position: static"></nav>
     <button id="travel">Travel to…<kbd>Ctrl K</kbd></button>
+    <nav id="views" class="panel" style="position: static" hidden></nav>
     <button id="sound">Sound off</button>
   </div>
   <div id="crumbs" class="panel"></div>

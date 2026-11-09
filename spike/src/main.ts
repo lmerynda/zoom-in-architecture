@@ -40,7 +40,7 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 async function main() {
   const t0 = performance.now()
-  renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'), view)
+  renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view)
   const model = await loadModel()
   // The current model version; live updates replace all four.
   let tree = new Tree(model)
@@ -231,7 +231,7 @@ async function main() {
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
-  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), modelName, new URLSearchParams(location.search).get('n'), view))
+  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view))
 
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)
