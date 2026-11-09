@@ -188,4 +188,9 @@ describe('buildGraph', () => {
     const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
     expect(m.files.find(f => f.path.endsWith('OrderRepository.java')).hints.map(h => `${h.line} ${h.kind}`)).toEqual(['3 store'])
   })
+
+  it('reads Spring Security paths as rules for incoming requests, not calls', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
+    expect(m.files.find(f => f.path.endsWith('SecurityConfig.java')).hints).toEqual([])
+  })
 })
