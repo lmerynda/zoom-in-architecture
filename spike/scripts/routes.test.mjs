@@ -95,7 +95,8 @@ describe('buildRequests', () => {
 
   it('lays an endpoint out as its request path: numbered steps, then the response', () => {
     const ep = r.elements.find(e => e.parent === 'web.cart' && e.title === 'GET /cart/items')
-    expect(kids(ep.id)).toEqual(['1 · CartController.items', '2 · OrderRepository', '3 · list', '4 · Response'])
+    expect(kids(ep.id)).toEqual(['1 · items()', '2 · OrderRepository', '3 · list', '4 · Response'])
+    expect(el(`${ep.id}.s1`).technology).toBe('CartController')
     expect(el(`${ep.id}.response`).description).toBe('Renders list.')
     // The handler's card marks its route line, so its code opens at the endpoint.
     expect(el(`${ep.id}.s1`).metadata.marks.split(' ')[0]).toBe('15:route')

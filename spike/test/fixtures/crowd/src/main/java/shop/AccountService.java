@@ -12,7 +12,13 @@ class AccountService {
 	}
 
 	void addCard(String number) {
+		if (this.cards.findCard(number)) return;
 		this.cards.save(number);
+	}
+
+	// Same name as the repository's method: addCard calling cards.findCard does not run this.
+	boolean findCard(String number) {
+		return this.audit.seen(number);
 	}
 
 	void close() {

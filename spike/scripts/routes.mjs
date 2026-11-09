@@ -13,6 +13,9 @@ const DEPTH = 3
 
 const strings = s => [...s.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map(m => m[2])
 const words = s => new Set(s.match(/[A-Za-z_]\w*/g) ?? [])
+/** Whether a body calls its own `name`: bare, or on this/self, not a same-named method of something else. */
+const ownCall = (text, name) => new RegExp(`(?:^|[^\\w.$]|\\b(?:this|self)\\.)${name}\\s*\\(`, 'm').test(text)
+const stemOf = p => p.slice(p.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
 const join2 = (...parts) => {
   const p = `/${parts.filter(Boolean).join('/')}`.replace(/\/{2,}/g, '/')
   return p.length > 1 ? p.replace(/\/$/, '') : p
@@ -216,23 +219,34 @@ export function endpoints(graph) {
     contexts.set(p, ctx)
     return ctx
   }
-  // A body's text, with the bodies of the same file's helpers it calls.
+  // A body's text, with the bodies of the same file's helpers it calls itself (name( or this.name(),
+  // not a method of the same name on something else (repository.getKingdomByName().
   const withHelpers = (c, text, skip) => {
     let t = text
     for (const w of words(text)) {
-      if (skip.includes(w) || !c.declared.has(w) || !new RegExp(`\\b${w}\\s*\\(`).test(text)) continue
+      if (skip.includes(w) || !c.declared.has(w) || !ownCall(text, w)) continue
       const b = bodyOf(c.lines, c.declared.get(w), c.lang)
       t += `\n${c.lines.slice(b.start, b.end + 1).join('\n')}`
     }
     return t
   }
-  /** The part of file `p` a caller's text uses: the bodies of the methods it calls there, or null when it calls none `p` declares. */
-  const partOf = (p, callerText) => {
-    const c = context(p)
-    const calls = [...new Set([...callerText.matchAll(/\b(\w+)\s*\(/g)].map(m => m[1]))].filter(n => c.declared.has(n))
-    if (!calls.length) return null
-    const bodies = calls.map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
-    return withHelpers(c, bodies, calls).replace(/\/\*[\s\S]*?\*\//g, ' ')
+  /**
+   * The part of file `p` a caller's text uses: the bodies of the methods it calls there, or null
+   * when it calls none `p` declares. A call on a receiver counts when the caller's field or variable
+   * of that name has `p`'s type, or a type the caller does not say (a module alias, a local).
+   */
+  const partOf = (p, callerText, caller) => {
+    const c = context(p), typeOf = context(caller).typeOf, own = stemOf(p)
+    const calls = new Set()
+    for (const m of callerText.matchAll(/(?:\b(\w+)\s*\??\.\s*)?\b(\w+)\s*\(/g)) {
+      const [, recv, name] = m
+      if (!c.declared.has(name) || recv === 'this' || recv === 'self') continue
+      const type = recv ? typeOf.get(recv) : null
+      if (!type || type === own) calls.add(name)
+    }
+    if (!calls.size) return null
+    const bodies = [...calls].map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
+    return withHelpers(c, bodies, [...calls]).replace(/\/\*[\s\S]*?\*\//g, ' ')
   }
   /** Whether an edge out of `p` is one `part` of it uses: a name it imports, or the type of a field it reads. */
   const usedBy = (p, part) => {
@@ -277,7 +291,7 @@ export function endpoints(graph) {
       // A handler's helper functions in the same file count as part of its body.
       let text = hc.lines.slice(body.start, body.end + 1).join('\n')
       for (const w of words(text)) {
-        if (w === name || !hc.declared.has(w) || !new RegExp(`\\b${w}\\s*\\(`).test(text)) continue
+        if (w === name || !hc.declared.has(w) || !ownCall(text, w)) continue
         const helper = bodyOf(hc.lines, hc.declared.get(w), hc.lang)
         text += `\n${hc.lines.slice(helper.start, helper.end + 1).join('\n')}`
       }
@@ -320,16 +334,16 @@ export function endpoints(graph) {
       // Below the handler a file takes part through the methods its caller calls on it, so only
       // what those methods use goes on; a file whose called methods are not its own (an inherited
       // or generated API) is followed whole.
-      const queue = lead.filter(e => !own(e.to)).map(e => [e.to, 1, text])
+      const queue = lead.filter(e => !own(e.to)).map(e => [e.to, 1, text, hp])
       while (queue.length) {
-        const [p, d, callerText] = queue.shift()
+        const [p, d, callerText, caller] = queue.shift()
         if (d >= DEPTH) continue
-        const part = partOf(p, callerText)
+        const part = partOf(p, callerText, caller)
         const uses = part == null ? () => true : usedBy(p, part)
         for (const e of out.get(p) ?? []) {
           if (steps.includes(e.to) || byPath.get(e.to)?.lang === 'view' || !uses(e) || !leads(e.to, d + 1, new Set())) continue
           steps.push(e.to)
-          if (!own(e.to)) queue.push([e.to, d + 1, part ?? context(p).whole])
+          if (!own(e.to)) queue.push([e.to, d + 1, part ?? context(p).whole, p])
         }
       }
       for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)

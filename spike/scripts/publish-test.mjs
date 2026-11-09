@@ -171,7 +171,7 @@ try {
     const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
-  check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · OrderController.all' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
+  check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · all()' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
   await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.api-orders.e1')) })
   await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})
   await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })

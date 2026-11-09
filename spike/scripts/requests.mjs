@@ -166,10 +166,13 @@ export function buildRequests(graph, map, model) {
           sid.set(p, id)
           // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
           const twin = steps.some(q => q !== p && stem(q) === stem(p))
-          const title = `${k + 1} · ${k === 0 ? handler : twin ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)}`
+          // The handler leads with its method, the one thing that differs between endpoints of one
+          // controller; its class is the line below, so a cut title never loses the method.
+          const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : twin ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)}`
+          const technology = k === 0 && e.name ? stem(p) : base.technology
           // The handler's card marks its route line, so its code opens at the endpoint.
           const marks = k === 0 ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
-          elements.push({ ...copy(base), id, parent: eid, title, ...CODE, metadata: { ...base.metadata, marks } })
+          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks } })
         })
         const rid = `${eid}.response`
         elements.push({ id: rid, parent: eid, title: `${steps.length + 1} · Response`, kind: 'component', description: `${answer(e)[0].toUpperCase()}${answer(e).slice(1)}.`, technology: '', tags: [], features: [], ...RESPONSE, metadata: {} })
