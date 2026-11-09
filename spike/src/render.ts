@@ -33,6 +33,8 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
+/** Titles up to this width (in em, about 20 characters) show whole at their card's size. */
+const TITLE_EM = 11
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -67,6 +69,8 @@ interface NodeView {
   icon?: Sprite
   /** Width per px of the full sub line, measured once, so cutting it never re-measures. */
   subEm?: number
+  /** The same for the full title. */
+  titleEm?: number
 }
 
 interface Chip { bg: NineSliceSprite; text: BitmapText }
@@ -494,10 +498,15 @@ export class Renderer {
       if (hh < 28) { header.height = hh; header.visible = false; sq.position.set(x, y); sq.height = hh }
 
       const pad = PAD * w
-      const title = (v.title ??= this.text(this.tree.els[i].title, texts))
+      const full = this.tree.els[i].title
+      const title = (v.title ??= this.text(full, texts))
+      v.titleEm ??= em(title)
       const lead = glyph ? ICON + ICON_GAP : 0
-      const px = Math.min(hh * 0.6, 26, (w * 0.62) / (em(title) + lead))
+      // As on closed cards: one size for siblings, a long name cut short instead of shrunk.
+      const px = Math.min(hh * 0.6, 26, (w * 0.62) / (Math.min(v.titleEm, TITLE_EM) + lead))
       if (px >= 6) {
+        const shown = fitText(full, v.titleEm, w * 0.62 - lead * px, px)
+        if (title.text !== shown) title.text = shown
         title.visible = true
         title.scale.set(px / FONT_PX)
         const tw = title.width + lead * px
@@ -522,10 +531,16 @@ export class Renderer {
     const pad = 0.07 * w
     const inner = w - 2 * pad
     const el = this.tree.els[i]
-    const title = (v.title ??= this.text(el.title.length > 60 ? el.title.slice(0, 59) + '…' : el.title, texts))
+    const full = el.title.length > 60 ? el.title.slice(0, 59) + '…' : el.title
+    const title = (v.title ??= this.text(full, texts))
+    v.titleEm ??= em(title)
     const lead = glyph ? ICON + ICON_GAP : 0
-    const px = Math.min(h * 0.15, 24, inner / (em(title) + lead))
+    // Siblings are the same size, so their titles are too: sized for a title of TITLE_EM, and a
+    // longer one is cut short with an ellipsis rather than shrunk below its neighbours.
+    const px = Math.min(h * 0.15, 24, inner / (Math.min(v.titleEm, TITLE_EM) + lead))
     if (px < 6) return
+    const shownTitle = fitText(full, v.titleEm, inner - lead * px, px)
+    if (title.text !== shownTitle) title.text = shownTitle
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - px * 6))
@@ -537,7 +552,10 @@ export class Renderer {
     st.texts++
     let cy = by + px * 1.3
 
-    const subText = [el.kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
+    // A file says how big it is and in what, not just that it is code.
+    const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
+    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : el.kind
+    const subText = [kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(px * 0.62, 14)
     if (spx >= 6 && subText) {
       const sub = (v.sub ??= this.text(subText, texts))

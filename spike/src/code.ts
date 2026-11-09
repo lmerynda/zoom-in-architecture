@@ -12,8 +12,11 @@ const LINE_PX = LINE * BASE_PX
 const CHAR_PX = CHAR * BASE_PX
 /** Wider lines are clipped: the shape of the code matters more than its far right. */
 const MAX_COLS = 120
-/** Below this on-screen font size the code is noise, not a minimap. */
-const MIN_PX = 1.2
+/**
+ * Below this on-screen font size there is no minimap. Down to it a long file still shows its shape
+ * (blocks, indentation, cited lines), so a large controller never looks emptier than a small DTO.
+ */
+const MIN_PX = 0.35
 /** From this on-screen font size the code is text; below it, a drawn minimap of the same layout. */
 const TEXT_PX = 6
 /** Lines prepared, or drawn, per slice of work between frames. */
