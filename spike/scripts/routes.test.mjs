@@ -101,6 +101,22 @@ describe('buildRequests', () => {
     expect(rel('buyer', ep.id).title).toBe('shops')
   })
 
+  it('splits a crowded group by its next path segment, then by the object words its routes share', () => {
+    const g = fixture('crowd')
+    const m = { nodes: [{ id: 'web', kind: 'app', title: 'Shop', files: ['src/**'] }], links: [] }
+    const c = buildRequests(g, m, buildModel(g, m, { name: 'shop' }).model)
+    const under = id => c.elements.filter(e => e.parent === id).map(e => e.title)
+    // Verbs (add, remove, redeem) never group; the things they act on do, nouns-first names included.
+    expect(under('web.account')).toEqual([
+      'GET /account', 'POST /account/close', 'GET /account/details',
+      '/account/messages', '/account · address', '/account · card', '/account · loyalty points',
+    ])
+    expect(under('web.account.card')).toEqual(['POST /account/add-card', 'POST /account/remove-card'])
+    expect(under('web.account.address')).toEqual(['POST /account/add-address', 'GET /account/address-book', 'POST /account/remove-address'])
+    expect(under('web.account.loyalty-points')).toEqual(['GET …/loyalty-points-balance', 'POST …/redeem-loyalty-points'])
+    expect(c.elements.find(e => e.id === 'web.account.card').description).toBe('2 endpoints, handled in AccountApi')
+  })
+
   it('has no Requests view for code without endpoints', () => {
     const g = fixture('polyglot')
     expect(buildRequests({ ...g, files: g.files.map(f => ({ ...f, hints: f.hints.filter(h => h.kind !== 'route') })) }, { nodes: [], links: [] }, { name: 'x', title: 'X', elements: [], relations: [] })).toBe(null)

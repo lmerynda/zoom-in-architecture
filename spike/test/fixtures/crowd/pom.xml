@@ -1,0 +1,5 @@
+<project>
+  <artifactId>shop</artifactId>
+  <parent><artifactId>spring-boot-starter-parent</artifactId></parent>
+  <dependencies><dependency><artifactId>spring-boot-starter-thymeleaf</artifactId></dependency></dependencies>
+</project>

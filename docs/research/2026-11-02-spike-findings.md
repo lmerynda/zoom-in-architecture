@@ -257,7 +257,7 @@ On the cold runs, PetClinic came out as one app with feature parts, each holding
 
 The map shows how the code is grouped. It does not show what happens when a request arrives. A second view, built from code at publish time, does that. No mapping work is needed for it.
 - **The landscape is the edge:** who calls the backend, the backend, and the stores its requests reach.
-- **The backend holds its route groups** by path (`/owners`, `/api/v1/items`). A group of more than 9 endpoints splits by the next segment, as `/owners/{ownerId}` did in PetClinic.
+- **The backend holds its route groups** by path (`/owners`, `/api/v1/items`). A group of more than 9 endpoints splits by the next segment, as `/owners/{ownerId}` did in PetClinic. Flat action routes (`/kingdom/send-attack`, `/kingdom/withdraw-attack`, ...) share no segment, so a game's 18-endpoint group stayed one crowded card. What is still crowded after the segment split now groups by object words: a word that follows the action in at least one route name ("attack", "land" in `buy-land` and `land-quote`) gathers its endpoints, and words held by the same endpoints read as one label ("special building"). That took the game's group from 19 cards to 13: five object groups, its notifications, and seven single actions (`train`, `fire`, `pass-turn`) that share nothing. Rules over the route names, not a model, because `publish --watch` rebuilds on every save and has to be quick and repeatable.
 - **An endpoint holds its request's path as numbered steps,** like a sequence diagram laid out as cards:
   - the handler method;
   - the files its body uses;

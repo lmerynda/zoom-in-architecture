@@ -22,6 +22,49 @@ function answer(ep) {
 }
 
 /**
+ * Groups of endpoints that act on the same thing, read from the words of their route names at
+ * `depth`: send-attack and withdraw-attack share "attack", buy-land and land-quote share "land".
+ * A word that only ever leads a name (send, add, build) is the action, so it never groups. Words
+ * held by the same endpoints read as one label ("special building"). Larger groups take their
+ * endpoints first; a group needs two endpoints and fewer than all of them.
+ */
+export function objectWords(list, depth) {
+  const wordsOf = e => {
+    const s = e.path.split('/').filter(Boolean)[depth]
+    if (!s || /^[{:]/.test(s)) return []
+    return s.split(/[-_.]|(?<=[a-z0-9])(?=[A-Z])/).map(w => w.toLowerCase()).filter(Boolean)
+  }
+  const names = new Map(list.map(e => [e, wordsOf(e)]))
+  const holders = new Map()
+  for (const [e, ws] of names) ws.forEach((w, i) => {
+    const h = holders.get(w) ?? { eps: new Set(), object: false, at: holders.size }
+    h.eps.add(e)
+    h.object ||= i > 0
+    holders.set(w, h)
+  })
+  // Words held by exactly the same endpoints form one label, in the order a name spells them.
+  const labels = new Map()
+  for (const [w, h] of holders) {
+    if (!h.object || h.eps.size < 2 || h.eps.size >= list.length) continue
+    const key = list.filter(e => h.eps.has(e)).map(e => list.indexOf(e)).join(',')
+    labels.set(key, { words: [...(labels.get(key)?.words ?? []), w], eps: [...h.eps], at: Math.min(labels.get(key)?.at ?? Infinity, h.at) })
+  }
+  const order = [...labels.values()].map(l => {
+    const name = names.get(l.eps[0])
+    return { ...l, label: [...l.words].sort((a, b) => name.indexOf(a) - name.indexOf(b)).join(' ') }
+  }).sort((a, b) => b.eps.length - a.eps.length || a.at - b.at)
+  const used = new Set(), out = []
+  for (const l of order) {
+    const free = list.filter(e => l.eps.includes(e) && !used.has(e))
+    if (free.length < 2) continue
+    free.forEach(e => used.add(e))
+    out.push([l.label, free])
+  }
+  // Read in the order the routes first name them.
+  return out.sort((a, b) => list.indexOf(a[1][0]) - list.indexOf(b[1][0]))
+}
+
+/**
  * The Requests model for `model` (built by map.mjs from `graph` and `map`), or null when the code
  * declares no endpoints.
  */
@@ -75,22 +118,33 @@ export function buildRequests(graph, map, model) {
       const handlers = [...new Set(list.map(e => stem(e.file)))]
       elements.push({ id: gid, parent, title: key, kind: 'component', description: `${list.length} endpoint${list.length > 1 ? 's' : ''}, handled in ${handlers.join(', ')}`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
     }
-    // A group of more than 9 endpoints splits by the next path segment, so no card crowds.
+    // A group of more than 9 endpoints splits by the next path segment, so no card crowds; what is
+    // still crowded then groups by the things its routes act on (objectWords).
     const place = (parent, prefix, depth, list) => {
-      const subs = []
+      const subs = [], words = []
       if (list.length > 9) {
         const by = new Map()
         for (const e of list) { const s = e.path.split('/').filter(Boolean)[depth]; if (s !== undefined) by.set(s, [...(by.get(s) ?? []), e]) }
         for (const [s, sub] of by) if (sub.length >= 3 && sub.length < list.length) subs.push([s, sub])
+        const rest = list.filter(e => !subs.some(([, sub]) => sub.includes(e)))
+        if (rest.length > 9) words.push(...objectWords(rest, depth))
       }
       // The group's own endpoints first, then its sub-groups.
-      const own = list.filter(e => !subs.some(([, sub]) => sub.includes(e)))
+      const taken = [...subs, ...words].flatMap(([, sub]) => sub)
+      const own = list.filter(e => !taken.includes(e))
       const short = own.some(e => `${e.method} ${e.path}`.length > 30)
       own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent, prefix, short))
       for (const [s, sub] of subs) {
         const key = `${prefix === '/' ? '' : prefix}/${s}`, gid = `${parent}.${slug(s)}`
         group(gid, parent, key, sub)
         place(gid, key, depth + 1, sub)
+      }
+      // A word group keeps its parent's path, so its endpoints read as siblings of the parent's own.
+      for (const [label, sub] of words) {
+        let gid = `${parent}.${slug(label)}`
+        while (elements.some(x => x.id === gid)) gid += '-words'
+        group(gid, parent, `${prefix} · ${label}`, sub)
+        place(gid, prefix, depth, sub)
       }
     }
     // An endpoint's title is short enough to read on its card: when any in its group passes 30 characters,
