@@ -15,6 +15,7 @@ describe('endpoints', () => {
       'GET / welcome: OrderController.java | welcome.html',
       'GET /api/orders all: OrderApi.java > OrderRepository.java',
       'POST /api/orders/{id}/pay pay: OrderApi.java',
+      'POST /api/orders/{id}/refund-to-card refund: OrderApi.java',
       'POST /cart add: CartController.java',
       // The handler reaches the repository through the field it calls, and names its view by a constant.
       'GET /cart/items items: CartController.java > OrderRepository.java | list.html',
@@ -22,7 +23,7 @@ describe('endpoints', () => {
     ])
     expect(eps.find(e => e.path === '/cart').response).toEqual({ redirect: '/cart/items' })
     // A REST handler's answer is the type inside ResponseEntity and Optional; a wildcard says nothing.
-    expect(eps.filter(e => e.path.startsWith('/api')).map(e => e.response)).toEqual([{ model: 'List<Order>', json: true }, {}])
+    expect(eps.filter(e => e.path.startsWith('/api')).map(e => e.response)).toEqual([{ model: 'List<Order>', json: true }, {}, {}])
   })
 
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
@@ -79,6 +80,11 @@ describe('buildRequests', () => {
     expect(built.errors).toEqual([])
     expect(r.elements.filter(e => !e.parent).map(e => e.title)).toEqual(['Buyer', 'Shop', 'Orders DB'])
     expect(kids('web')).toEqual(['/api', '/cart', '/', '/orders'])
+  })
+
+  it('titles the endpoints of a group alike: below the group once one of them is too long for its card', () => {
+    expect(kids('web.api')).toEqual(['GET …/orders', 'POST …/orders/{id}/pay', 'POST …/orders/{id}/refund-to-card'])
+    expect(kids('web.cart')).toEqual(['POST /cart', 'GET /cart/items'])
   })
 
   it('lays an endpoint out as its request path: numbered steps, then the response', () => {

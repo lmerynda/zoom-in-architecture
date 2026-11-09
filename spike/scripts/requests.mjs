@@ -84,21 +84,24 @@ export function buildRequests(graph, map, model) {
         for (const [s, sub] of by) if (sub.length >= 3 && sub.length < list.length) subs.push([s, sub])
       }
       // The group's own endpoints first, then its sub-groups.
-      list.filter(e => !subs.some(([, sub]) => sub.includes(e))).forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent, prefix))
+      const own = list.filter(e => !subs.some(([, sub]) => sub.includes(e)))
+      const short = own.some(e => `${e.method} ${e.path}`.length > 30)
+      own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent, prefix, short))
       for (const [s, sub] of subs) {
         const key = `${prefix === '/' ? '' : prefix}/${s}`, gid = `${parent}.${slug(s)}`
         group(gid, parent, key, sub)
         place(gid, key, depth + 1, sub)
       }
     }
-    // An endpoint's title is short enough to read on its card: past 30 characters, its path below the group.
-    const titleOf = (e, prefix) => {
-      const full = `${e.method} ${e.path}`, rel = prefix !== '/' && e.path.startsWith(`${prefix}/`) ? e.path.slice(prefix.length) : ''
-      return full.length <= 30 || !rel ? full : `${e.method} …${rel}`
+    // An endpoint's title is short enough to read on its card: when any in its group passes 30 characters,
+    // each shows its path below the group, so siblings read alike.
+    const titleOf = (e, prefix, short) => {
+      const rel = prefix !== '/' && e.path.startsWith(`${prefix}/`) ? e.path.slice(prefix.length) : ''
+      return short && rel ? `${e.method} …${rel}` : `${e.method} ${e.path}`
     }
-    const endpoint = (e, eid, gid, prefix) => {
+    const endpoint = (e, eid, gid, prefix, short) => {
         const handler = `${stem(e.file)}${e.name ? `.${e.name}` : ''}`
-        elements.push({ id: eid, parent: gid, title: titleOf(e, prefix), kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
+        elements.push({ id: eid, parent: gid, title: titleOf(e, prefix, short), kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
         // The request's path, in order: handler, the files it uses, the views it renders.
         const steps = [...e.steps, ...e.views]
         const sid = new Map()

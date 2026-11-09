@@ -19,4 +19,9 @@ class OrderApi {
 	ResponseEntity<?> pay() {
 		return ResponseEntity.ok().build();
 	}
+
+	@PostMapping("/{id}/refund-to-card")
+	ResponseEntity<?> refund() {
+		return ResponseEntity.ok().build();
+	}
 }
