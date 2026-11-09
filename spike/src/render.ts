@@ -33,8 +33,17 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
-/** Titles up to this width (in em, about 20 characters) show whole at their card's size. */
-const TITLE_EM = 11
+/** How far a long title may shrink below its level's size before it is cut with an ellipsis. */
+const TITLE_SHRINK = 0.6
+
+/**
+ * A title's size: its level's size (`level`, the same for siblings), shrunk to fit `room` for a
+ * title `em` wide, but never below TITLE_SHRINK of the level, so siblings stay close in size and a
+ * name is cut only when shrinking would not save it.
+ */
+export function titlePx(level: number, room: number, em: number): number {
+  return Math.min(level, Math.max(room / em, level * TITLE_SHRINK))
+}
 
 const PALETTE: Record<string, number> = {
   primary: 0x3b82f6, blue: 0x3b82f6, secondary: 0x0ea5e9, sky: 0x0ea5e9, muted: 0x64748b,
@@ -370,11 +379,12 @@ export class Renderer {
         if (w > 160) { this.pulses.push({ node: i, t0: this.time }); this.onOpen() }
       } else if (t < 0.3) this.wasOpen[i] = 0
     }
-    // Children are always drawn once they are a few px wide, as a faint preview; they brighten
-    // and gain labels as the container opens, so detail grows in place instead of popping. The
-    // reveal runs as a wave outward from the zoom focus.
+    // Children appear as the container starts to open, faint at first; they brighten and gain
+    // labels as it opens, so detail grows in place instead of popping. Before that the container
+    // is a closed card with a readable name, not a box of unlabelled tiles. The reveal runs as a
+    // wave outward from the zoom focus.
     const childW = CARD_W * this.world.content[i * 3 + 2] * this.cam.z
-    if (childW < 1.5) return
+    if (childW < 1.5 || (i > 0 && t <= 0)) return
     const diag = Math.hypot(this.cam.w, this.cam.h)
     for (const c of kids) {
       let r = t
@@ -479,7 +489,9 @@ export class Renderer {
       }
     }
 
-    if (isContainer) {
+    // A container shows its header and contents once it starts to open; before, it is drawn as a
+    // closed card below, its name as large as any card of its size.
+    if (isContainer && this.open(i) > 0) {
       const hh = HEADER * h
       const header = (v.header ??= this.nine(this.round, cards))
       const sq = (v.headerSq ??= (() => { const s = new Sprite(Texture.WHITE); cards.addChild(s); return s })())
@@ -497,10 +509,13 @@ export class Renderer {
       const title = (v.title ??= this.text(full, texts))
       v.titleEm ??= em(title)
       const lead = glyph ? ICON + ICON_GAP : 0
-      // As on closed cards: one size for siblings, a long name cut short instead of shrunk.
-      const px = Math.min(hh * 0.6, 26, (w * 0.62) / (Math.min(v.titleEm, TITLE_EM) + lead))
+      // As on closed cards: a name shrinks a little before it is cut. It may use the width the
+      // kind and count on the right would take; they give way to it.
+      const level = Math.min(hh * 0.6, 26), room = w - 2 * pad
+      const px = titlePx(level, room, v.titleEm + lead)
+      const roomy = (v.titleEm + lead) * px <= w * 0.62
       if (px >= 6) {
-        const shown = fitText(full, v.titleEm, w * 0.62 - lead * px, px)
+        const shown = fitText(full, v.titleEm, room - lead * px, px)
         if (title.text !== shown) title.text = shown
         title.visible = true
         title.scale.set(px / FONT_PX)
@@ -512,8 +527,8 @@ export class Renderer {
         st.texts++
       }
       const meta = (v.sub ??= this.text(`${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
-      const mpx = px * 0.62
-      if (mpx >= 6 && w > 160) {
+      const mpx = level * 0.62
+      if (mpx >= 6 && w > 160 && roomy) {
         meta.visible = true
         meta.scale.set(mpx / FONT_PX)
         meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
@@ -530,9 +545,7 @@ export class Renderer {
     const title = (v.title ??= this.text(full, texts))
     v.titleEm ??= em(title)
     const lead = glyph ? ICON + ICON_GAP : 0
-    // Siblings are the same size, so their titles are too: sized for a title of TITLE_EM, and a
-    // longer one is cut short with an ellipsis rather than shrunk below its neighbours.
-    const px = Math.min(h * 0.15, 24, inner / (Math.min(v.titleEm, TITLE_EM) + lead))
+    const px = titlePx(Math.min(h * 0.15, 24), inner, v.titleEm + lead)
     if (px < 6) return
     const shownTitle = fitText(full, v.titleEm, inner - lead * px, px)
     if (title.text !== shownTitle) title.text = shownTitle
@@ -549,7 +562,8 @@ export class Renderer {
 
     // A file says how big it is and in what, not just that it is code.
     const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
-    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : el.kind
+    const inside = this.tree.children[i].length
+    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${el.kind} · ${inside} inside` : el.kind
     const subText = [kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(px * 0.62, 14)
     if (spx >= 6 && subText) {
