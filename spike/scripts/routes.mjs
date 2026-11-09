@@ -241,6 +241,8 @@ export function endpoints(graph) {
     for (const m of callerText.matchAll(/(?:\b(\w+)\s*\??\.\s*)?\b(\w+)\s*\(/g)) {
       const [, recv, name] = m
       if (!c.declared.has(name) || recv === 'this' || recv === 'self') continue
+      // A chained call (notFound().build()) is on whatever the chain returned, never a bare call.
+      if (!recv && /\.\s*$/.test(callerText.slice(Math.max(0, m.index - 4), m.index))) continue
       const type = recv ? typeOf.get(recv) : null
       if (!type || type === own) calls.add(name)
     }

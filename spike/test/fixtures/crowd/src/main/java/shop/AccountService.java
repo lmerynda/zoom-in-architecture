@@ -21,6 +21,11 @@ class AccountService {
 		return this.audit.seen(number);
 	}
 
+	// Same name as ResponseEntity's builder: the handler's ok().build() does not run this.
+	void build() {
+		this.audit.record("built");
+	}
+
 	void close() {
 		this.audit.record("closed");
 		this.cards.purge();
