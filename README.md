@@ -4,7 +4,7 @@ A zoomable map of a software system. Scroll in from the whole landscape to a sin
 
 It maps the application's architecture, not its folders. The work is split in two:
 - **Code supplies the facts.** It finds the application's files from its entry points, so tests, build configs and tooling drop out, and resolves every reference between them in JS/TS, C#, Java, Rust, Go and Python.
-- **An AI agent supplies the structure.** Following the [map-repo skill](.claude/skills/map-repo/SKILL.md), it groups files into the apps and components that do the work, names them, and adds the calls between processes, each with `file:line` evidence. The viewer shows the cited lines beside each link, so anyone can check a link without opening the code. It never invents a relation between files.
+- **An AI agent supplies the structure.** Following the [map-repo skill](skills/map-repo/SKILL.md), it groups files into the apps and components that do the work, names them, and adds the calls between processes, each with `file:line` evidence. The viewer shows the cited lines beside each link, so anyone can check a link without opening the code. It never invents a relation between files.
 
 The map publishes into the viewer, and source edits update the open map in place. The viewer also browses hand-written [LikeC4](https://likec4.dev) models.
 
@@ -12,9 +12,10 @@ The map publishes into the viewer, and source edits update the open map in place
 cd spike
 npm install
 npm run dev        # http://localhost:5180
+node scripts/zoom.mjs install-skill   # once: the map-repo skill, for Claude Code and Codex
 ```
 
-Then, in Claude Code in this repository: `/map-repo <path of a local repository>`.
+Then, in a Claude Code or Codex session in the project to map: `/map-repo .`. The project uploads its map to the viewer; the viewer never reads the project's folder.
 
 This is a spike: a prototype for finding out what works.
 - [spike/README.md](spike/README.md): running it, mapping a repository, the controls and the measuring scripts.

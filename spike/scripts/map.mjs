@@ -1,5 +1,5 @@
 // Turns a codebase's file graph (scripts/graph.mjs) and a map into a viewer model.
-// The map is written by an agent (see .claude/skills/map-repo): it names the architecture,
+// The map is written by an agent (see skills/map-repo): it names the architecture,
 // which is nodes (apps, components, actors, stores) and the files each one holds, plus the links
 // code references cannot show (HTTP calls, the database), each with file:line evidence.
 // Relations between files come only from the graph, never from the map.

@@ -65,7 +65,7 @@ The importer is now split along what each side is good at:
   - **Which files are the application.** JS/TS is what an entry point reaches through imports. C#, Rust and Java are what a non-test project compiles. Entry points are `index.html` scripts, package entries, `node <file>` npm scripts and `main` methods. Tests, build configs and dead code drop out with no ignore list.
   - **Every reference between those files.**
   - **The lines where processes meet:** routes, outbound calls, stores, schedules, sockets, process launches and file handoffs.
-- **An agent supplies the meaning** (the [map-repo skill](../../.claude/skills/map-repo/SKILL.md)):
+- **An agent supplies the meaning** (the [map-repo skill](../../skills/map-repo/SKILL.md)):
   - It groups files into processes and components by responsibility, and names and describes them.
   - It links what code references cannot see, such as browser API client → controller, or repository → database.
   - `check` holds it to the facts. Every application file must be placed. Every link needs `file:line` evidence that exists, and evidence that misses a marked line is quoted back. Relations between files come only from the graph.

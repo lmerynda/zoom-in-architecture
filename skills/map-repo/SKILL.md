@@ -13,7 +13,7 @@ You turn a repository into a map that people explore by zooming: the apps that r
 - **Your job:** group files into nodes, name and describe them, list the product's features, and add the links that code references cannot show (HTTP calls, the database, queues), each with `file:line` evidence.
 - **Never invent a relation between files.** The tool draws those from the graph.
 
-The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is this repository's checkout. Run them from anywhere, usually from the project being mapped. `<repo>` is the path of the repository to map. The viewer is a separate service (`npm run dev` in `<zoom>/spike`, at http://localhost:5180 unless `--to` or `ZOOM_URL` says otherwise). The project only uploads to it: the viewer never reads, watches or depends on the project's folder.
+The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the zoom-in-architecture checkout. Run them from the project being mapped; `<repo>` is its path (`.` from its root). The viewer is a separate service at http://localhost:5180 (or `--to`, or `ZOOM_URL`). When nothing answers there, start it in the background with `npm run dev` in `<zoom>/spike`. The project only uploads to it: the viewer never reads, watches or depends on the project's folder.
 
 ## What the viewer shows
 

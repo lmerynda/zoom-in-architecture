@@ -1,5 +1,7 @@
-// Small commands for mapping a codebase, meant to be called by an agent (see .claude/skills/map-repo).
+// Small commands for mapping a codebase, meant to be called by an agent (see skills/map-repo).
 // usage:
+//   node scripts/zoom.mjs install-skill                  install the map-repo skill for Claude Code and Codex, so a
+//                                                         session in any project can map and upload it
 //   node scripts/zoom.mjs graph <repo> [--folders|--under <dir>|--json]   the application's file graph
 //                                                         (--folders: an overview by folder; --under: one part)
 //   node scripts/zoom.mjs check <repo> <map.json> [--uncited]   what is wrong or missing in a map (--uncited: marked lines no link cites)
@@ -11,15 +13,39 @@
 //   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
-import { readFileSync, watch } from 'node:fs'
-import { posix } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { cpSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, posix } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { auditPlacement, buildModel, bundle, compareMaps, toName } from './map.mjs'
 
 /** Files whose change can change the map: code, project manifests and server-side views. */
 const SOURCE = /\.(cs|rs|java|kt|go|py|tsx?|mts|cts|jsx?|mjs|cjs|vue|svelte|csproj|html|cshtml|razor|jinja2?|j2)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?|go\.mod|pyproject\.toml|setup\.py)$/
 const IGNORED = /(^|[/\\])(node_modules|bin|obj|target|dist|build|out|\.git|\.venv|venv|__pycache__)[/\\]/
+
+/** This checkout of zoom-in-architecture, with forward slashes, as installed skills name it. */
+const ZOOM = fileURLToPath(new URL('../../', import.meta.url)).replace(/\\/g, '/').replace(/\/$/, '')
+
+/**
+ * Installs the repository's skills (`skills/<name>/`) for Claude Code and Codex under `home`, so a
+ * session in any project can map it and upload the map. `<zoom>` in a skill becomes `zoom`, and the
+ * installed copy says where its source is. Returns the folders written.
+ */
+export function installSkills(home, zoom = ZOOM) {
+  const written = []
+  for (const name of readdirSync(join(zoom, 'skills'))) {
+    for (const dest of [join(home, '.claude', 'skills', name), join(home, '.codex', 'skills', name)]) {
+      rmSync(dest, { recursive: true, force: true })
+      cpSync(join(zoom, 'skills', name), dest, { recursive: true })
+      const file = join(dest, 'SKILL.md')
+      const note = `<!-- Installed by \`node ${zoom}/spike/scripts/zoom.mjs install-skill\` from ${zoom}/skills/${name}: edit it there and install again. -->`
+      writeFileSync(file, readFileSync(file, 'utf8').replaceAll('<zoom>', zoom).replace(/^(---\r?\n[\s\S]*?\r?\n---\r?\n)/, `$1\n${note}\n`))
+      written.push(dest)
+    }
+  }
+  return written
+}
 
 /** Sends a bundle to the viewer service, which stores it and serves only from it. */
 export async function upload(b, service) {
@@ -187,6 +213,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       try { res = await fetch(new URL(`/maps/${encodeURIComponent(a)}.json`, service)) } catch { throw new Error(`no viewer answers at ${service}`) }
       if (!res.ok) throw new Error(`the viewer at ${service} has no import "${a}"`)
       process.stdout.write(await res.text())
+    } else if (cmd === 'install-skill') {
+      for (const d of installSkills(homedir())) console.log(`installed ${d}`)
     } else {
       console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1).filter((l, i, all) => all.slice(0, i + 1).every(x => x.startsWith('//'))).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
