@@ -3,13 +3,15 @@
   "nodes": [
     { "id": "developer", "kind": "actor", "title": "Developer", "description": "Browses architecture maps, from the landscape down to a single file." },
     { "id": "agent", "kind": "actor", "title": "Mapping agent", "description": "An AI agent following the map-repo skill: reads the graph and the code, writes the map." },
-    { "id": "repo", "kind": "external", "title": "Mapped repository", "description": "The codebase being mapped; only ever read." },
+    { "id": "repo", "kind": "external", "title": "Mapped repository", "description": "The codebase being mapped; only ever read, on the project's side." },
 
-    { "id": "mapper", "kind": "app", "title": "Mapper", "technology": "Node.js", "description": "Commands that turn a repository into a viewer model: the file graph from code, the map from the agent." },
+    { "id": "mapper", "kind": "app", "title": "Mapper", "technology": "Node.js", "description": "Runs beside the mapped project: turns it into a bundle (the file graph from code, the map from the agent) and uploads it to the viewer service." },
     { "id": "mapper.graph", "kind": "component", "title": "File graph", "description": "Application files reached from entry points, and the references between them, in JS/TS, C#, Rust and Java.", "files": ["spike/scripts/graph.mjs"] },
-    { "id": "mapper.publish", "kind": "component", "title": "Map publishing", "description": "Checks a map against the graph, builds the viewer model, and publishes it; also extracts the LikeC4 samples.", "files": ["spike/scripts/map.mjs", "spike/scripts/extract-likec4.mjs"] },
+    { "id": "mapper.publish", "kind": "component", "title": "Map bundling", "description": "Checks a map against the graph and builds the bundle: the viewer model and every shown file's source; also extracts the LikeC4 samples.", "files": ["spike/scripts/map.mjs", "spike/scripts/extract-likec4.mjs"] },
     { "id": "mapper.requests", "kind": "component", "title": "Request flows", "description": "Reads each backend endpoint and the path its requests take, and builds the Requests view from them.", "files": ["spike/scripts/routes.mjs", "spike/scripts/requests.mjs"] },
-    { "id": "mapper.cli", "kind": "component", "title": "Agent commands", "description": "graph, check, publish and republish: small commands for agents.", "files": ["spike/scripts/zoom.mjs"] },
+    { "id": "mapper.cli", "kind": "component", "title": "Agent commands", "description": "graph, check, audit, publish (with --watch for live) and pull: small commands for agents.", "files": ["spike/scripts/zoom.mjs"] },
+
+    { "id": "service", "kind": "app", "title": "Viewer service", "technology": "Node.js · Vite dev server", "description": "Takes uploaded bundles, keeps them, and serves the models and sources the viewer opens; it never reads a mapped project.", "files": ["spike/scripts/store.mjs"] },
 
     { "id": "viewer", "kind": "webapp", "title": "Viewer", "technology": "TypeScript · PixiJS · Vite", "description": "The zoomable map: fly from the whole landscape into any element, with relations, routes and lenses." },
     { "id": "viewer.shell", "kind": "component", "title": "App shell", "description": "Loads a model, runs the frame loop, swaps live updates in, and shows the HUD, details panel and model tabs.", "files": ["spike/src/main.ts", "spike/src/models.ts", "spike/src/details.ts", "spike/src/hud.ts"] },
@@ -28,7 +30,7 @@
     { "title": "Read the code in place", "nodes": ["viewer.code"] },
     { "title": "Travel, routes and pins", "nodes": ["viewer.controls"] },
     { "title": "Lenses: size, coupling, churn", "nodes": ["viewer.rendering"] },
-    { "title": "Live updates", "nodes": ["viewer.model", "mapper.cli"] },
+    { "title": "Live updates", "nodes": ["viewer.model", "mapper.cli", "service"] },
     { "title": "Video recording", "nodes": ["viewer.recorder"] }
   ],
   "links": [
@@ -36,11 +38,15 @@
     { "from": "agent", "to": "mapper.cli", "title": "runs graph, check, publish" },
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
       "evidence": ["spike/scripts/graph.mjs:47"] },
-    { "from": "spike/scripts/map.mjs", "to": "spike/src/main.ts", "title": "publishes models/<name>.json",
-      "evidence": ["spike/scripts/map.mjs:246", "spike/src/main.ts:30"] },
-    { "from": "spike/scripts/map.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/map.mjs:246", "spike/src/models.ts:7"] },
+    { "from": "spike/scripts/zoom.mjs", "to": "spike/scripts/store.mjs", "title": "uploads bundles, pulls maps (/upload, /maps)",
+      "evidence": ["spike/scripts/zoom.mjs:28", "spike/scripts/zoom.mjs:187", "spike/vite.config.ts:55", "spike/vite.config.ts:73"] },
+    { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
+      "evidence": ["spike/scripts/store.mjs:16", "spike/src/main.ts:30"] },
+    { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
+      "evidence": ["spike/scripts/store.mjs:16", "spike/src/models.ts:7"] },
+    { "from": "spike/src/code.ts", "to": "spike/scripts/store.mjs", "title": "reads a file's uploaded source (/source)",
+      "evidence": ["spike/src/code.ts:226", "spike/vite.config.ts:91"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/map.mjs:246", "spike/src/main.ts:30"] }
+      "evidence": ["spike/scripts/store.mjs:16", "spike/src/main.ts:30"] }
   ]
 }

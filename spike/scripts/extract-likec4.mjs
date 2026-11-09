@@ -4,7 +4,7 @@
 import { LikeC4 } from 'likec4'
 import { mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { writeAtomic, writeIndex } from './map.mjs'
+import { writeAtomic, writeIndex } from './store.mjs'
 
 const out = 'public/models'
 mkdirSync(out, { recursive: true })

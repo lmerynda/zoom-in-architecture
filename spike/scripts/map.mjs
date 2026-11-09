@@ -3,10 +3,11 @@
 // which is nodes (apps, components, actors, stores) and the files each one holds, plus the links
 // code references cannot show (HTTP calls, the database), each with file:line evidence.
 // Relations between files come only from the graph, never from the map.
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
 import { buildRequests } from './requests.mjs'
+import { isName } from './store.mjs'
 
 /** Node kinds a map may use, and how the viewer draws them. */
 export const KINDS = {
@@ -231,45 +232,32 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   }
 }
 
-/** Every model the viewer can open: the samples extracted from model/ and the imports. */
-export function writeIndex() {
-  const list = root => (existsSync(root) ? readdirSync(root).filter(n => statSync(join(root, n)).isDirectory()) : [])
-  const title = name => { try { return JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')).title } catch { return humanize(name) } }
-  const entries = [
-    ...list('imports').filter(n => existsSync(join('public/models', `${n}.json`))).map(n => ({ name: n, title: title(n), source: 'import', ...(existsSync(join('public/models', `${n}.requests.json`)) ? { views: ['requests'] } : {}) })),
-    ...list('model').filter(n => existsSync(join('public/models', `${n}.json`))).map(n => ({ name: n, title: n, source: 'sample' })),
-  ]
-  writeAtomic(join('public/models', 'index.json'), JSON.stringify(entries))
-}
-
-// The dev server watches public/models; a half-written file must never be read, and one cut off by a crash must never replace a good one.
-export const writeAtomic = (file, text) => { const fd = openSync(`${file}.tmp`, 'w'); try { writeSync(fd, text); fsyncSync(fd) } finally { closeSync(fd) } renameSync(`${file}.tmp`, file) }
+/** Larger files are generated or data, not code worth reading on a card; the code view goes without them. */
+export const MAX_SOURCE = 1_000_000
 
 /**
- * Publishes a map of `repo` as model `name`: imports/<name>/ keeps the map and where it came
- * from (for live re-imports), public/models/<name>.json is what the viewer opens.
+ * What a mapped project uploads to the viewer service as model `name`: the map, the model, the
+ * Requests view when the code has endpoints, and the source of every file the model shows, so
+ * the service never needs the repository. `bundle` is null when the map has errors.
  */
-export function publish(repo, map, { name = toName(repo), loose = false } = {}) {
+export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
   // The viewer serves models/<name>.json only for plain names.
-  if (!/^[\w.-]+$/.test(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)
-  if (existsSync(join('model', name))) throw new Error(`"${name}" is a sample model's name; pass --name`)
+  if (!isName(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)
   const t0 = Date.now()
   const graph = buildGraph(repo)
   const built = buildModel(graph, map, { name, loose })
-  if (built.errors.length) return { name, ...built, published: false }
-  const dir = join('imports', name)
-  mkdirSync(dir, { recursive: true })
-  mkdirSync('public/models', { recursive: true })
-  // The dev server watches imports/ too, and reads these as soon as they change.
-  writeAtomic(join(dir, 'map.json'), `${JSON.stringify(map, null, 2)}\n`)
-  writeAtomic(join(dir, 'source.json'), `${JSON.stringify({ repo: graph.repo, title: built.model.title }, null, 2)}\n`)
-  writeAtomic(join('public/models', `${name}.json`), JSON.stringify({ ...built.model, buildMs: Date.now() - t0 }))
-  // The Requests view: the backend's endpoints and each request's path, when the code has endpoints.
+  if (built.errors.length) return { name, ...built, bundle: null }
+  const sources = {}
+  for (const p of built.model.elements.map(e => e.metadata?.path).filter(Boolean)) {
+    const file = join(graph.repo, p)
+    if (statSync(file).size <= MAX_SOURCE) sources[p] = readFileSync(file, 'utf8')
+  }
   const requests = buildRequests(graph, map, built.model)
-  if (requests) writeAtomic(join('public/models', `${name}.requests.json`), JSON.stringify({ ...requests, buildMs: Date.now() - t0 }))
-  else rmSync(join('public/models', `${name}.requests.json`), { force: true })
-  writeIndex()
-  return { name, ...built, published: true, ms: Date.now() - t0 }
+  const ms = Date.now() - t0
+  return {
+    name, ...built, ms,
+    bundle: { name, map, model: { ...built.model, buildMs: ms }, requests: requests && { ...requests, buildMs: ms }, sources },
+  }
 }
 
 /**

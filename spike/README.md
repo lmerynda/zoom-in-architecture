@@ -25,7 +25,7 @@ A map shows a codebase's architecture: the processes that run, the components in
   - The skill describes what the viewer can show, and the agent chooses the levels that suit the repo. There is no fixed depth. The defaults: the product's apps on top and development tooling in a group of its own; inside an app, the repo's own split, by feature or by layer (controllers, models, views); the individual files at the bottom, with the graph's arrows between them.
   - Each feature in the map names the nodes that carry it, or the files, when a layered app spreads a feature across layers. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
   - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
-  - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`.
+  - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`, which uploads it to the running viewer (below).
 - **The Requests view, from code:** publishing also writes `<name>.requests.json` for any app with endpoints, and an Architecture / Requests switch appears beside the model's tab.
   - The landscape is the edge: the callers, the backend, and the stores and services its requests reach.
   - Inside the backend sit its route groups, by path, split again past 9 endpoints. Inside a group sit its endpoints, with their full path, read from:
@@ -64,7 +64,15 @@ It warns when:
 
 The map format is in the skill. [maps/zoom-in-architecture.json](maps/zoom-in-architecture.json) is this repository's map, and the tours and recordings use it.
 
-Nothing is written into the mapped repository. Published maps live in `imports/<name>/` (`map.json` and `source.json`), which is not committed, and open at `?model=<name>`.
+## Projects upload; the viewer never reads them
+
+The viewer (`npm run dev`) is a service that mapped projects upload to. It never reads, watches or depends on a project's folder.
+- **Upload:** `publish` checks the map, then sends one bundle to `POST /upload`: the map, the model, the Requests view and the source of every file the model shows. It goes to http://localhost:5180 unless `--to <url>` or `ZOOM_URL` names another viewer. The commands run from anywhere, usually from the project itself: `node <this checkout>/spike/scripts/zoom.mjs publish . map.json`.
+- **Storage:** the viewer keeps each bundle in `imports/<name>/` (`map.json`, `import.json` with its title, and `sources/`), which is not committed. The code view reads only those uploaded sources, and only for files the model shows.
+- **Re-mapping:** `pull <name>` prints the map an import was last published with, to start from.
+- **Live:** `publish … --watch` stays running on the project's side and uploads again whenever its code or the map changes.
+
+Nothing is written into the mapped repository.
 
 ## Live mode
 
@@ -76,12 +84,12 @@ With `npm run dev` running, any model rewritten under `public/models/` updates t
 
 Models are rewritten when:
 - a `.c4` sample under `model/` is saved;
-- an agent publishes a map;
-- a mapped repository's source changes. The dev server then re-publishes it from its stored map. New files go beside the files they reference, and a link whose evidence moved stays drawn, with a warning.
+- a project uploads a map;
+- a project running `publish --watch` changes its code. New files go beside the files they reference, and a link whose evidence moved stays drawn, with a warning.
 
 Two scripts check this end to end:
 - `node scripts/live-test.mjs` edits `model/acme/model.c4` while the map is open, checks the update, then restores the file.
-- `node scripts/publish-test.mjs` publishes a map of a copy of `test/fixtures/polyglot` the way an agent does. It checks that the open viewer gets the tab without reloading, then edits the source and checks that the map follows. Afterwards it removes the copy.
+- `node scripts/publish-test.mjs` uploads a map of a copy of `test/fixtures/polyglot` from that copy's side, the way a project's agent does. It checks that the open viewer gets the tab without reloading, then edits the source under `publish --watch` and checks that the map follows. Finally it deletes the copy and checks that the viewer still serves its code and map.
 
 ## Controls
 
@@ -129,10 +137,10 @@ node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s in
 - `src/render.ts` — per-frame traversal in screen space: culling, detail tiers, labels, edges, focus highlighting, off-screen chips.
 - `src/details.ts` — the selection panel.
 - `src/icons.ts` — which icon each element gets, and the icons themselves.
-- `src/code.ts` — the code view: a file card's source, flowed into columns and scaled with the card, served by the dev server's `/source` endpoint.
+- `src/code.ts` — the code view: a file card's source, flowed into columns and scaled with the card, served by the dev server's `/source` endpoint from the uploaded sources.
 - `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
 - `src/controls/` — game-style controls: palette, history, target cycling, wheel, routes, pins, tooltips.
 - `model/acme/` — the realistic sample model.
-- `scripts/graph.mjs` — the application file graph; `scripts/map.mjs` — map checks, the viewer model, publishing and `index.json`; `scripts/zoom.mjs` — the agent's commands; `scripts/self-import.mjs` — this repo from its map, for tours.
+- `scripts/graph.mjs` — the application file graph; `scripts/map.mjs` — map checks, the viewer model and the upload bundle; `scripts/store.mjs` — the viewer service's side: storing bundles, `index.json`, serving stored maps and sources; `scripts/zoom.mjs` — the agent's commands, including the upload; `scripts/self-import.mjs` — this repo from its map, for tours.
 - `src/models.ts` — the model tabs.
 - `src/synthetic.ts` — deterministic five-level landscapes for scale tests.

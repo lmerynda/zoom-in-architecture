@@ -13,7 +13,7 @@ You turn a repository into a map that people explore by zooming: the apps that r
 - **Your job:** group files into nodes, name and describe them, list the product's features, and add the links that code references cannot show (HTTP calls, the database, queues), each with `file:line` evidence.
 - **Never invent a relation between files.** The tool draws those from the graph.
 
-All commands run from `spike/` in this repository. `<repo>` is the absolute path of the repository to map.
+The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is this repository's checkout. Run them from anywhere, usually from the project being mapped. `<repo>` is the path of the repository to map. The viewer is a separate service (`npm run dev` in `<zoom>/spike`, at http://localhost:5180 unless `--to` or `ZOOM_URL` says otherwise). The project only uploads to it: the viewer never reads, watches or depends on the project's folder.
 
 ## What the viewer shows
 
@@ -41,7 +41,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
   - inside each endpoint, the request's path as numbered steps: the handler, the files its body uses, the repository that reaches the store, the view it renders, and the response.
 
   You write nothing for it. It reads your map for which app holds each file and for the links out to stores and services, so link each store from the files that touch it.
-- **Live.** A published map re-imports when the code changes. Nodes whose ids stay the same keep their places.
+- **Live.** `publish --watch` uploads the map again whenever the project's code changes, and open viewers morph to it. Nodes whose ids stay the same keep their places.
 - **What reads well:**
   - about 3 to 9 cards inside one card;
   - around 25 files in one card gets crowded;
@@ -60,7 +60,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
 
 ## Steps
 
-1. **Read the graph:** `node scripts/zoom.mjs graph <repo>`. Read all of it. It lists:
+1. **Read the graph:** `graph <repo>`. Read all of it. It lists:
    - the projects (hints for the deployables) and the entry points, including `main` methods;
    - the config and deploy files;
    - every file with what it uses and what uses it. Named imports through a barrel (an `index.ts` that re-exports) point at the file that defines the name. Type-only imports are listed apart as `types →`: the map does not draw them, and they should not decide where a file goes;
@@ -69,7 +69,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    `--json` gives the same graph as data, with complete "used by" lists (the text caps long ones).
 
    Over about 300 files, start with `graph <repo> --folders`. It shows each folder with its size, its hints and the folders it references. Then read the files part by part with `graph <repo> --under <folder>`.
-2. **Start from the previous map** if `imports/<name>/map.json` exists. `<name>` is the repository folder in kebab case, such as `knights-of-darkness`. Keep its ids, so the viewer morphs instead of rebuilding, and change only what the code changed:
+2. **Start from the previous map** if the viewer has one: `pull <name> > map.json` prints the map the import was last published with, and fails when there is none. `<name>` is the repository folder in kebab case, such as `my-shop`. Keep its ids, so the viewer morphs instead of rebuilding, and change only what the code changed:
    - `check <repo> <old map>` lists application files the old map does not place; the tree marks where neighbour votes put them;
    - `check <repo> <old map> --uncited` lists marked lines no link cites: new calls, stores and messages to link, or to leave out on purpose;
    - `audit <repo> <map>` lists files used mostly from a sibling node that use nothing in their own node: placement to review;
@@ -101,7 +101,7 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    - What does each app divide into?
    - Where do the files sit?
 
-   Then check the sketch against "What makes a good map". `node scripts/zoom.mjs why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node. Use it to see what a grouping does to the arrows. The defaults below settle the common cases.
+   Then check the sketch against "What makes a good map". `why <repo> <map.json> <file>` shows which node holds a file, and its users and uses grouped by node. Use it to see what a grouping does to the arrows. The defaults below settle the common cases.
 6. **Add the links**, one per pair of files that talk across a process boundary. Point each from the side that starts the exchange: caller to handler, client to server, writer to reader.
    - **An actor** to the app they use. Evidence is optional. Route lines that no app in the map calls are the pages people open, or an API that outside callers use. `check --uncited` lists them apart from the lines still to link; leave them. Outside callers become an actor or an `external` node only when the docs name them (partner systems, a mobile app in another repository).
    - **Calls:** from the calling file to the handling file, for example from the browser's API client to the backend controller.
@@ -121,11 +121,11 @@ All commands run from `spike/` in this repository. `<repo>` is the absolute path
    - **Navigation** (`window.open`, a link to another site) is a link only when a feature depends on that site, such as exporting to a companion service. Plain links to social pages or docs are not.
    - **Timers inside the process** (`@Scheduled`, `setInterval`, BackgroundService) are not links. They belong to the node they drive, which you can say in its description. Only an outside scheduler (cron, a cloud scheduler) becomes a node with a link.
 7. **Write the map**, with its `features`, to a scratch file.
-   - **Check it:** `node scripts/zoom.mjs check <repo> <map.json>`, then `audit <repo> <map.json>` to review placement. `check` prints every node with its file count. Fix every error, and read every warning.
+   - **Check it:** `check <repo> <map.json>`, then `audit <repo> <map.json>` to review placement. `check` prints every node with its file count. Fix every error, and read every warning.
    - **Evidence warnings:**
      - Evidence in an application file should sit at one end of the link, or in a file that directly calls or is called by an end (such as the line that builds the URL a helper fetches); `check` warns otherwise. Config files can back any link.
      - A warning that evidence "is not a line the graph recognised" quotes that line, so you can see whether it is the wrong line. When the real call is a line the graph does not mark (a wrapper function, a library it does not know), cite that line anyway and leave the warning. Never move evidence to a marked line that is not the call.
-   - **Publish it:** `node scripts/zoom.mjs publish <repo> <map.json>`. The viewer opens it at `?model=<name>`, and an open viewer adds its tab live.
+   - **Publish it:** `publish <repo> <map.json>`. It checks the map again, then uploads one bundle: the map, the models and the source of every file the map shows. The viewer opens it at `?model=<name>`, and an open viewer adds its tab live. Keep the map with the project's own work (not in the viewer's folders); for live updates while the code changes, run `publish <repo> <map.json> --watch`.
 8. **Report:**
    - what the product is, in your two sentences;
    - the levels you chose, and why they suit this repository;

@@ -283,6 +283,12 @@ Tested on three RealWorld backends, which implement one API of 19 endpoints unde
 
 Found while building it: the same file now shows on many cards, but a file's minimap is one canvas element. Each extra card showing it in the same frame now gets a copy.
 
+## Projects upload; the viewer never reads them
+
+The viewer used to keep each import's repo path. It rebuilt every import from that path on start, watched the folder, and read source from it. When a project had two clones on one machine, the viewer showed the stale one, and the viewer's work got tangled with the project's git.
+
+Now a project uploads one bundle: the map, the models and the source of every file shown. The viewer stores the bundle and serves only from it. Live updates come from the project's side (`publish --watch`), and `pull` hands back the last map for a re-map. The end-to-end test deletes the project copy after uploading and checks that the viewer still serves its code. The 11 existing imports were rebuilt once from their repos into bundles.
+
 ## Fixed rough edges
 
 - **A crash mid-publish:** a publish cut off by a shutdown once left a file of NUL bytes under its real name, and that import stopped republishing. Writes now flush to disk before the rename that puts them in place.

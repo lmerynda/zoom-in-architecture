@@ -1,14 +1,15 @@
-// End-to-end check of publishing a map the way an agent does: a copy of the fixture repo is
-// published with `zoom.mjs publish` while a viewer is open, its tab appears without a reload, it
-// opens as its own model, and an edit to its source re-publishes it live.
+// End-to-end check of publishing a map the way a mapped project's agent does: a copy of the
+// fixture repo is uploaded with `zoom.mjs publish` while a viewer is open, its tab appears without
+// a reload, it opens as its own model, `publish --watch` uploads it again when its source changes,
+// and once the copy is gone the viewer still shows its code: it never reads the project.
 // Removes the copy and its import afterwards.
 // usage: node scripts/publish-test.mjs [outDir]   (dev server running)
 import puppeteer from 'puppeteer-core'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeIndex } from './map.mjs'
+import { writeIndex } from './store.mjs'
 
 const outDir = process.argv[2] ?? 'shots/publish'
 const base = process.env.SPIKE_URL ?? 'http://localhost:5180/'
@@ -16,9 +17,12 @@ mkdirSync(outDir, { recursive: true })
 const repo = join(mkdtempSync(join(tmpdir(), 'zoom-')), 'shop')
 cpSync('test/fixtures/polyglot', repo, { recursive: true })
 const scratch = join(repo, '..', 'map.json')
+// The commands run from the project's side: their own folder, the viewer only as a URL.
+const cli = join(import.meta.dirname, 'zoom.mjs')
 const zoom = (...args) => {
-  try { return { code: 0, out: execFileSync(process.execPath, ['scripts/zoom.mjs', ...args], { encoding: 'utf8' }) } } catch (e) { return { code: e.status, out: e.stdout } }
+  try { return { code: 0, out: execFileSync(process.execPath, [cli, ...args, '--to', base], { encoding: 'utf8', cwd: join(repo, '..') }) } } catch (e) { return { code: e.status, out: `${e.stdout}${e.stderr}` } }
 }
+let watcher
 
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -125,13 +129,16 @@ try {
   await page.keyboard.press('Escape')
   check('the controls screen says cited lines open their code', help.includes('Click a cited line'), help.slice(0, 80))
 
-  // A new file in the repo is published live, beside the files it talks to.
+  // Live, from the project's side: publish --watch uploads again when the code changes, and a new
+  // file goes beside the files it talks to.
+  watcher = spawn(process.execPath, [cli, 'publish', repo, scratch, '--name', 'shop', '--watch', '--to', base], { cwd: join(repo, '..'), stdio: ['ignore', 'pipe', 'inherit'] })
+  await new Promise((ok, fail) => { watcher.stdout.on('data', d => { if (String(d).includes('watching')) ok() }); watcher.on('exit', fail) })
   writeFileSync(join(repo, 'web/src/ui/checkout.ts'), "import { cart } from './cart'\nexport const checkout = () => cart()\n")
   writeFileSync(join(repo, 'web/src/main.ts'), `${readFileSync(join(repo, 'web/src/main.ts'), 'utf8')}import { checkout } from './ui/checkout'\ncheckout()\n`)
   const t1 = Date.now()
   await page.waitForFunction(() => window.__spike.liveVersion > 0 && window.__spike.tree.byId.has('web.shopping.checkout'), { timeout: 30000 })
   await page.waitForFunction(() => !window.__spike.morphing)
-  check('source edits re-publish it live', true, `${Date.now() - t1} ms · ${await page.$eval('.toast', e => e.textContent)}`)
+  check('source edits are uploaded again, live', true, `${Date.now() - t1} ms · ${await page.$eval('.toast', e => e.textContent)}`)
   await sleep(400)
   await shot('03-source-edit')
 
@@ -148,8 +155,20 @@ try {
   await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
   await sleep(1500)
   await shot('04-request-path')
+
+  // The viewer keeps what was uploaded: with the project gone, its code and its map are still served.
+  // Windows keeps a folder while a process watches it or runs in it: wait for the watcher to end.
+  await new Promise(ok => { watcher.once('exit', ok); watcher.kill() })
+  rmSync(join(repo, '..'), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  const kept = await page.evaluate(async () => {
+    const src = await fetch('/source/shop?path=web%2Fsrc%2Fui%2Fcheckout.ts').then(r => (r.ok ? r.text() : null))
+    const map = await fetch('/maps/shop.json').then(r => (r.ok ? r.json() : null))
+    return { src, nodes: map?.nodes?.length ?? 0 }
+  })
+  check('it needs nothing from the project once uploaded', !!kept.src?.includes('checkout') && kept.nodes > 0, JSON.stringify(kept).slice(0, 120))
 } finally {
   console.log(JSON.stringify({ results, errors }, null, 1))
+  watcher?.kill()
   await browser.close()
   rmSync(join(repo, '..'), { recursive: true, force: true })
   rmSync('imports/shop', { recursive: true, force: true })

@@ -4,15 +4,33 @@
 //                                                         (--folders: an overview by folder; --under: one part)
 //   node scripts/zoom.mjs check <repo> <map.json> [--uncited]   what is wrong or missing in a map (--uncited: marked lines no link cites)
 //   node scripts/zoom.mjs audit <repo> <map.json>         files whose users sit mostly in a sibling node
-//   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>]   check, then publish to the viewer
-//   node scripts/zoom.mjs republish <name>                rebuild an import from its stored map (live mode)
+//   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>] [--to <url>] [--watch]
+//                                                         check, then upload the map, its models and the shown files'
+//                                                         source to the viewer (default http://localhost:5180, or ZOOM_URL);
+//                                                         --watch uploads again whenever the repo's code changes
+//   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
-import { readFileSync } from 'node:fs'
-import { join, posix } from 'node:path'
+import { readFileSync, watch } from 'node:fs'
+import { posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, compareMaps, publish, toName } from './map.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, toName } from './map.mjs'
+
+/** Files whose change can change the map: code, project manifests and server-side views. */
+const SOURCE = /\.(cs|rs|java|kt|go|py|tsx?|mts|cts|jsx?|mjs|cjs|vue|svelte|csproj|html|cshtml|razor|jinja2?|j2)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?|go\.mod|pyproject\.toml|setup\.py)$/
+const IGNORED = /(^|[/\\])(node_modules|bin|obj|target|dist|build|out|\.git|\.venv|venv|__pycache__)[/\\]/
+
+/** Sends a bundle to the viewer service, which stores it and serves only from it. */
+export async function upload(b, service) {
+  let res
+  try {
+    res = await fetch(new URL('/upload', service), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })
+  } catch {
+    throw new Error(`no viewer answers at ${service}: start it with \`npm run dev\` in the viewer's spike/ folder, or pass --to`)
+  }
+  if (!res.ok) throw new Error(`the viewer at ${service} refused the upload: ${await res.text()}`)
+}
 
 /** The graph's header: what was left out, the projects, entry points and config files. */
 function header(g) {
@@ -86,7 +104,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); Object.assign(args, { name, under, json, folders, uncited }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); Object.assign(args, { name, under, to, json, folders, uncited, watching }); return args })()
+  const service = args.to ?? process.env.ZOOM_URL ?? 'http://localhost:5180'
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
     if (cmd === 'graph' && a) {
@@ -105,10 +124,33 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       } else if (open.length) console.log(`${open.length} marked lines no link cites (--uncited lists them)`)
       if (r.errors.length) process.exitCode = 1
     } else if (cmd === 'publish' && a && b) {
-      const r = publish(a, readMap(b), { name: args.name ?? toName(a) })
+      const name = args.name ?? toName(a)
+      const r = bundle(a, readMap(b), { name })
       report(r)
-      console.log(r.published ? `published "${r.name}" in ${r.ms} ms; open ?model=${r.name}` : 'not published: fix the errors above')
-      if (!r.published) process.exitCode = 1
+      if (!r.bundle) { console.log('not published: fix the errors above'); process.exitCode = 1 }
+      else {
+        await upload(r.bundle, service)
+        console.log(`published "${name}" in ${r.ms} ms: ${Object.keys(r.bundle.sources).length} files' source uploaded to ${service}; open ?model=${name}`)
+      }
+      // Live: the project re-uploads when its code changes. The map is re-read each time, and files
+      // it does not place yet go beside the files they reference, as a re-map would start.
+      if (r.bundle && args.watching) {
+        let timer, running = false, again = false
+        const send = async () => {
+          if (running) { again = true; return }
+          running = true
+          try {
+            const next = bundle(a, readMap(b), { name, loose: true })
+            if (!next.bundle) console.log(`not uploaded: ${next.errors[0]}`)
+            else { await upload(next.bundle, service); console.log(`${new Date().toLocaleTimeString()} uploaded "${name}" again (${next.stats.files} files${next.warnings.length ? `, ${next.warnings.length} warnings` : ''})`) }
+          } catch (e) { console.log(`not uploaded: ${e.message}`) }
+          running = false
+          if (again) { again = false; send() }
+        }
+        watch(a, { recursive: true }, (_ev, f) => { if (f && SOURCE.test(f) && !IGNORED.test(f)) { clearTimeout(timer); timer = setTimeout(send, 400) } })
+        watch(b, () => { clearTimeout(timer); timer = setTimeout(send, 400) })
+        console.log(`watching ${a}; Ctrl+C stops`)
+      }
     } else if (cmd === 'audit' && a && b) {
       const found = auditPlacement(buildGraph(a), readMap(b))
       console.log(`${found.length} files used mostly from a sibling node (a feature's own interfaces can stay; the rest may move):`)
@@ -140,13 +182,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       for (const l of c.processLinks.onlyA) console.log(`  only A: ${l}`)
       for (const l of c.processLinks.onlyB) console.log(`  only B: ${l}`)
       console.log(`File-to-file links: ${c.fileLinks.shared} shared of ${c.fileLinks.a} in A and ${c.fileLinks.b} in B`)
-    } else if (cmd === 'republish' && a) {
-      const { repo } = JSON.parse(readFileSync(join('imports', a, 'source.json'), 'utf8'))
-      const r = publish(repo, readMap(join('imports', a, 'map.json')), { name: a, loose: true })
-      report(r)
-      if (!r.published) process.exitCode = 1
+    } else if (cmd === 'pull' && a) {
+      let res
+      try { res = await fetch(new URL(`/maps/${encodeURIComponent(a)}.json`, service)) } catch { throw new Error(`no viewer answers at ${service}`) }
+      if (!res.ok) throw new Error(`the viewer at ${service} has no import "${a}"`)
+      process.stdout.write(await res.text())
     } else {
-      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1, 10).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+      console.error(readFileSync(new URL(import.meta.url), 'utf8').split('\n').slice(1).filter((l, i, all) => all.slice(0, i + 1).every(x => x.startsWith('//'))).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
       process.exitCode = 2
     }
   } catch (e) {

@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, compareMaps, publish, toName, writeAtomic } from './map.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, toName } from './map.mjs'
+import { refusals, storeBundle, storedMap, storedSource, writeAtomic } from './store.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -213,8 +214,47 @@ describe('buildModel', () => {
     expect(toName('/src/my_shop')).toBe('my-shop')
   })
 
-  it('refuses a model name the viewer could not serve, before writing anything', () => {
-    expect(() => publish(graph.repo, map, { name: 'shop/' })).toThrow('is not a model name')
+  it('refuses a model name the viewer could not serve, before reading the repo', () => {
+    expect(() => bundle(graph.repo, map, { name: 'shop/' })).toThrow('is not a model name')
+  })
+})
+
+describe('bundle and store', () => {
+  const repo = join(import.meta.dirname, '../test/fixtures/polyglot')
+  const { bundle: b } = bundle(repo, map, { name: 'shop' })
+  const shown = b.model.elements.map(e => e.metadata?.path).filter(Boolean)
+
+  it('carries everything the viewer shows: the map, the models and every shown file\'s source', () => {
+    expect(Object.keys(b.sources).sort()).toEqual([...shown].sort())
+    expect(b.sources['web/src/api.ts']).toBe(readFileSync(join(repo, 'web/src/api.ts'), 'utf8'))
+    expect(b.requests.elements.length).toBeGreaterThan(0)
+    // Nothing in it says where the project lives.
+    expect(JSON.stringify(b)).not.toContain(JSON.stringify(graph.repo).slice(1, -1))
+  })
+
+  it('is stored and served on its own, with no way back to the repository', () => {
+    const root = mkdtempSync(join(tmpdir(), 'zoom-store-'))
+    try {
+      storeBundle(b, root)
+      expect(readdirSync(join(root, 'imports/shop')).sort()).toEqual(['import.json', 'map.json', 'sources'])
+      expect(JSON.parse(readFileSync(join(root, 'imports/shop/import.json'), 'utf8'))).toEqual({ title: b.model.title })
+      expect(String(storedSource('shop', 'web/src/api.ts', root))).toBe(b.sources['web/src/api.ts'])
+      // Only files the model shows, never a path out of the store.
+      expect(storedSource('shop', 'package.json', root)).toBe(null)
+      expect(storedSource('shop', '../import.json', root)).toBe(null)
+      expect(JSON.parse(storedMap('shop', root))).toEqual(map)
+      expect(JSON.parse(readFileSync(join(root, 'public/models/index.json'), 'utf8'))).toEqual([{ name: 'shop', title: b.model.title, source: 'import', views: ['requests'] }])
+      // A later upload replaces the sources whole: a file the model no longer shows is gone.
+      const smaller = structuredClone(b)
+      delete smaller.sources['web/src/api.ts']
+      storeBundle(smaller, root)
+      expect(existsSync(join(root, 'imports/shop/sources/web/src/api.ts'))).toBe(false)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('refuses sources the model does not show, and paths out of the store', () => {
+    expect(refusals({ ...b, sources: { '../../etc/passwd': 'x' } })).toEqual(['source "../../etc/passwd" is not a file the model shows'])
+    expect(refusals({ ...b, name: '../x' })[0]).toContain('is not a model name')
   })
 })
 

@@ -1,23 +1,20 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, watch, type FSWatcher } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, watch, type FSWatcher } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
+// @ts-expect-error: plain JS module, shared with the CLI
+import { storeBundle, storedMap, storedSource } from './scripts/store.mjs'
 
 /** Runs a script with node; resolves with its exit code. */
 const run = (args: string[]) => new Promise<number>(resolve => {
   spawn(process.execPath, args, { stdio: ['ignore', 'inherit', 'inherit'] }).on('exit', code => resolve(code ?? 1))
 })
 
-const SOURCE = /\.(cs|rs|java|tsx?|mts|cts|jsx?|mjs|cjs|csproj|html)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?)$/
-/** Larger files are generated or data, not code worth reading on a card. */
-const MAX_SOURCE = 1_000_000
-const IGNORED = /(^|[/\\])(node_modules|bin|obj|target|dist|build|\.git)[/\\]/
-
 /**
  * Live models: whenever public/models/<name>.json is rewritten, the open viewers swap that model
  * in place, and a new entry in index.json adds its tab. Writers are the sample extractor (on a
- * .c4 save under model/) and scripts/zoom.mjs: an agent publishing a map, or this server
- * re-publishing an import from its stored map when that repository's source changes.
+ * .c4 save under model/) and uploads: a mapped project sends its bundle to POST /upload, once
+ * or on every change (zoom.mjs publish --watch). This server never reads a mapped project.
  */
 function liveModels(): Plugin {
   return {
@@ -41,9 +38,6 @@ function liveModels(): Plugin {
       // module graph, and it ignores public/models so updates do not reload the page.
       mkdirSync('imports', { recursive: true })
       mkdirSync('public/models', { recursive: true })
-      const sources = new Map<string, FSWatcher>()
-      const unfollow = (name: string) => { sources.get(name)?.close(); sources.delete(name) }
-      const republish = (name: string) => later(`import:${name}`, 400, async () => { await run(['scripts/zoom.mjs', 'republish', name]) })
       const watchers: FSWatcher[] = [
         watch('model', { recursive: true }, (_ev, f) => {
           const m = f?.replace(/\\/g, '/').match(/^([^/]+)\/[^/]+\.c4$/)
@@ -55,31 +49,35 @@ function liveModels(): Plugin {
           if (m[1] === 'index') later('index', 100, () => { server.ws.send({ type: 'custom', event: 'models:index', data: {} }) })
           else later(`update:${m[1]}`, 100, () => { server.ws.send({ type: 'custom', event: 'model:update', data: { name: m[1] } }) })
         }),
-        // A published import is followed from then on; a deleted one stops being followed.
-        watch('imports', { recursive: true }, (_ev, f) => {
-          const name = f?.replace(/\\/g, '/').split('/')[0]
-          if (!name) return
-          const known = existsSync(join('imports', name, 'source.json')) && existsSync(join('imports', name, 'map.json'))
-          if (known && !sources.has(name)) follow(name)
-          else if (!known && sources.has(name)) unfollow(name)
-        }),
       ]
 
-      // Each import remembers its repository; edits there re-publish it from its stored map.
-      const follow = (name: string) => {
-        unfollow(name)
-        // A source.json being written by another process can be read half-done; the next change retries.
-        let repo: string
-        try { repo = (JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')) as { repo: string }).repo } catch { return }
-        if (!existsSync(repo)) return
-        const w = watch(repo, { recursive: true }, (_ev, f) => { if (f && SOURCE.test(f) && !IGNORED.test(f)) republish(name) })
-        // The repository can disappear under the watcher; that must not take the server down.
-        w.on('error', () => unfollow(name))
-        sources.set(name, w)
-        log(`following ${name} at ${repo}`)
-      }
-      // On start, every import is rebuilt against its repository as it is now.
-      for (const name of readdirSync('imports')) if (existsSync(join('imports', name, 'map.json'))) { follow(name); republish(name) }
+      // An upload from a mapped project: the bundle is all the server keeps of it.
+      server.middlewares.use('/upload', (req, res, next) => {
+        if (req.method !== 'POST') return next()
+        const chunks: Buffer[] = []
+        req.on('data', (c: Buffer) => chunks.push(c))
+        req.on('end', () => {
+          try {
+            const b = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            storeBundle(b)
+            log(`stored ${b.name}: ${Object.keys(b.sources ?? {}).length} files' source`)
+            res.setHeader('content-type', 'application/json')
+            res.end(JSON.stringify({ stored: b.name }))
+          } catch (e) {
+            res.statusCode = 400
+            res.end(e instanceof Error ? e.message : String(e))
+          }
+        })
+      })
+      // The map an import was published with, for an agent starting a re-map.
+      server.middlewares.use('/maps', (req, res, next) => {
+        const name = decodeURIComponent((req.url ?? '').split('?')[0]).replace(/^\//, '').replace(/\.json$/, '')
+        const map = storedMap(name)
+        if (map === null) return next()
+        res.setHeader('content-type', 'application/json')
+        res.setHeader('cache-control', 'no-store')
+        res.end(map)
+      })
 
       // Vite only serves public files it saw at startup; models published since need serving here.
       server.middlewares.use('/models', (req, res, next) => {
@@ -89,25 +87,16 @@ function liveModels(): Plugin {
         res.setHeader('cache-control', 'no-store')
         res.end(readFileSync(file))
       })
-      // A file's source for the code view: only a file the published model contains, read from its repository.
-      server.middlewares.use('/source', (req, res, next) => {
+      // A file's source for the code view: only a file the stored model shows, as it was uploaded.
+      server.middlewares.use('/source', (req, res) => {
         const url = new URL(req.url ?? '', 'http://local')
-        const name = decodeURIComponent(url.pathname.slice(1)), path = url.searchParams.get('path') ?? ''
-        if (!/^[\w.-]+$/.test(name)) return next()
-        const refuse = (code: number) => { res.statusCode = code; res.end() }
-        try {
-          const model = JSON.parse(readFileSync(join('public/models', `${name}.json`), 'utf8')) as { elements: { metadata?: { path?: string } }[] }
-          if (!model.elements.some(e => e.metadata?.path === path)) return refuse(404)
-          const { repo } = JSON.parse(readFileSync(join('imports', name, 'source.json'), 'utf8')) as { repo: string }
-          const file = resolve(repo, path)
-          if (!file.startsWith(resolve(repo) + sep)) return refuse(404)
-          if (statSync(file).size > MAX_SOURCE) return refuse(413)
-          res.setHeader('content-type', 'text/plain; charset=utf-8')
-          res.setHeader('cache-control', 'no-store')
-          res.end(readFileSync(file))
-        } catch { refuse(404) }
+        const text = storedSource(decodeURIComponent(url.pathname.slice(1)), url.searchParams.get('path') ?? '')
+        if (text === null) { res.statusCode = 404; res.end(); return }
+        res.setHeader('content-type', 'text/plain; charset=utf-8')
+        res.setHeader('cache-control', 'no-store')
+        res.end(text)
       })
-      server.httpServer?.on('close', () => { watchers.forEach(w => w.close()); sources.forEach(w => w.close()) })
+      server.httpServer?.on('close', () => { watchers.forEach(w => w.close()) })
     },
   }
 }
