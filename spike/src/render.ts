@@ -240,12 +240,12 @@ export class Renderer {
   open(i: number): number {
     if (i === 0) return 1
     if (this.openStamp[i] === this.frameNo) return this.openMemo[i]
-    const s = this.world.content[i * 3 + 2]
-    const v = this.tree.children[i].length ? smooth(OPEN_A, OPEN_B, CARD_W * s * this.cam.z) : 0
+    const v = this.tree.children[i].length ? smooth(OPEN_A, OPEN_B, CARD_W * this.world.content[i * 3 + 2] * this.cam.z) : 0
     this.openMemo[i] = v
     this.openStamp[i] = this.frameNo
     return v
   }
+
 
   private screenRect(i: number): [number, number, number, number] {
     const r = this.world.rect, z = this.cam.z
@@ -653,7 +653,7 @@ export class Renderer {
     g.clear(); hg.clear()
     const W = this.cam.w, H = this.cam.h
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
-    const labelSpots: { x: number; y: number; s: string; kind: Kind }[] = []
+    const labelSpots: { x: number; y: number; s: string; kind: Kind; weight: number }[] = []
     const paths: number[][][] = [[], [], [], [], []]
     const heads: number[][] = [[], [], [], [], []]
     const sel = this.selected > 0
@@ -671,7 +671,6 @@ export class Renderer {
       const pts = world ? this.toScreen(world) : straight(sr, tr)
       drawn.push({ e, kind, pts, sOn, tOn })
     }
-    const quiet = drawn.length > 24
     // Inside a file the screen is its code: chips naming off-screen ends would sit on it, so only
     // the focused card's chips stay.
     const crumb = this.breadcrumb(), here = crumb[crumb.length - 1] ?? 0
@@ -699,10 +698,13 @@ export class Renderer {
       const n = pts.length
       if (tOn) heads[kind].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
       if (sOn && e.both) heads[kind].push(pts[2], pts[3], pts[0], pts[1])
-      if (sOn && tOn && (hot || !quiet)) {
-        const m = longestMid(pts)
+      // Every edge with room says what it carries, on its own last stretch beside the card it
+      // reaches: the middle of a route is often a trunk many edges share, where a count could
+      // belong to any of them. Busier edges claim the space first (drawLabels).
+      if (sOn && tOn) {
+        const m = endStretch(pts)
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
-        if (m[2] > 70) labelSpots.push({ x: m[0], y: m[1], s: n > 1 ? `${n} relations` : this.tree.relTitles[rel], kind })
+        if (m) labelSpots.push({ x: m[0], y: m[1], s: n > 1 ? `${n} relations` : this.tree.relTitles[rel], kind, weight: n })
       }
     }
 
@@ -912,11 +914,11 @@ export class Renderer {
     return k
   }
 
-  private drawLabels(spots: { x: number; y: number; s: string; kind: Kind }[]) {
+  private drawLabels(spots: { x: number; y: number; s: string; kind: Kind; weight: number }[]) {
     let k = 0
     const placed: number[][] = []
-    // Highlighted edges claim label space first.
-    spots.sort((a, b) => b.kind - a.kind)
+    // Highlighted edges claim label space first, then the busiest.
+    spots.sort((a, b) => b.kind - a.kind || b.weight - a.weight)
     for (const sp of spots) {
       if (k >= 60 || !sp.s) continue
       const lab = (this.labels[k] ??= this.makeChip())
@@ -1025,13 +1027,16 @@ function borderPoint(r: number[], tx: number, ty: number): [number, number] {
 }
 
 /** Midpoint of the longest segment and its length: labels sit in gutters, not on cards. */
-function longestMid(pts: number[]): [number, number, number] {
-  let best = 0, bx = pts[0], by = pts[1]
-  for (let k = 2; k < pts.length; k += 2) {
+/**
+ * Where an edge's label goes: the middle of the last stretch long enough to hold it, counting back
+ * from the card it reaches, or null when the edge has none.
+ */
+function endStretch(pts: number[]): [number, number] | null {
+  for (let k = pts.length - 2; k >= 2; k -= 2) {
     const l = Math.hypot(pts[k] - pts[k - 2], pts[k + 1] - pts[k - 1])
-    if (l > best) { best = l; bx = (pts[k] + pts[k - 2]) / 2; by = (pts[k + 1] + pts[k - 1]) / 2 }
+    if (l >= 56) return [(pts[k] + pts[k - 2]) / 2, (pts[k + 1] + pts[k - 1]) / 2]
   }
-  return [bx, by, best]
+  return null
 }
 
 function arrowHeads(g: Graphics, segs: number[], color: number, alpha: number, L: number) {
