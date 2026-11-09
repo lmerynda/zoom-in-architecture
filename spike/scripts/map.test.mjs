@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, bundle, compareMaps, toName } from './map.mjs'
-import { refusals, storeBundle, storedMap, storedSource, writeAtomic } from './store.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, revision, toName } from './map.mjs'
+import { refusals, storeBundle, storedMap, storedPublished, storedSource, writeAtomic } from './store.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -232,12 +232,22 @@ describe('bundle and store', () => {
     expect(JSON.stringify(b)).not.toContain(JSON.stringify(graph.repo).slice(1, -1))
   })
 
+  it('records the commit it was built from, so a re-map can list what changed since', () => {
+    const head = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    expect(b.published).toMatchObject({ commit: head, dirty: expect.any(Boolean) })
+    expect(Date.now() - Date.parse(b.published.at)).toBeLessThan(60_000)
+    // Outside git there is no commit to name, only the time.
+    const plain = mkdtempSync(join(tmpdir(), 'zoom-nogit-'))
+    try { expect(revision(plain)).toBe(null) } finally { rmSync(plain, { recursive: true, force: true }) }
+  })
+
   it('is stored and served on its own, with no way back to the repository', () => {
     const root = mkdtempSync(join(tmpdir(), 'zoom-store-'))
     try {
       storeBundle(b, root)
       expect(readdirSync(join(root, 'imports/shop')).sort()).toEqual(['import.json', 'map.json', 'sources'])
-      expect(JSON.parse(readFileSync(join(root, 'imports/shop/import.json'), 'utf8'))).toEqual({ title: b.model.title })
+      expect(JSON.parse(readFileSync(join(root, 'imports/shop/import.json'), 'utf8'))).toEqual({ title: b.model.title, published: b.published })
+      expect(storedPublished('shop', root)).toEqual(b.published)
       expect(String(storedSource('shop', 'web/src/api.ts', root))).toBe(b.sources['web/src/api.ts'])
       // Only files the model shows, never a path out of the store.
       expect(storedSource('shop', 'package.json', root)).toBe(null)

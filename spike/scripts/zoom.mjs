@@ -10,7 +10,8 @@
 //                                                         check, then upload the map, its models and the shown files'
 //                                                         source to the viewer (default http://localhost:5180, or ZOOM_URL);
 //                                                         --watch uploads again whenever the repo's code changes
-//   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from
+//   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from;
+//                                                         on stderr, the commit it was built from
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
 import { cpSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
@@ -213,6 +214,11 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       try { res = await fetch(new URL(`/maps/${encodeURIComponent(a)}.json`, service)) } catch { throw new Error(`no viewer answers at ${service}`) }
       if (!res.ok) throw new Error(`the viewer at ${service} has no import "${a}"`)
       process.stdout.write(await res.text())
+      // On stderr, so the map on stdout stays a clean file: what the upload was built from.
+      const p = await fetch(new URL(`/published/${encodeURIComponent(a)}.json`, service)).then(r => (r.ok ? r.json() : null)).catch(() => null)
+      console.error(p?.commit
+        ? `published ${p.at} from commit ${p.commit}${p.dirty ? ' plus uncommitted changes' : ''}; what changed since: git log --oneline ${p.commit}..HEAD`
+        : `published ${p?.at ?? 'at an unknown time'}, from no recorded commit`)
     } else if (cmd === 'install-skill') {
       for (const d of installSkills(homedir())) console.log(`installed ${d}`)
     } else {

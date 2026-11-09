@@ -69,7 +69,7 @@ The map format is in the skill. [maps/zoom-in-architecture.json](maps/zoom-in-ar
 The viewer (`npm run dev`) is a service that mapped projects upload to. It never reads, watches or depends on a project's folder.
 - **Upload:** `publish` checks the map, then sends one bundle to `POST /upload`: the map, the model, the Requests view and the source of every file the model shows. It goes to http://localhost:5180 unless `--to <url>` or `ZOOM_URL` names another viewer. The commands run from anywhere, usually from the project itself: `node <this checkout>/spike/scripts/zoom.mjs publish . map.json`.
 - **Storage:** the viewer keeps each bundle in `imports/<name>/` (`map.json`, `import.json` with its title, and `sources/`), which is not committed. The code view reads only those uploaded sources, and only for files the model shows.
-- **Re-mapping:** `pull <name>` prints the map an import was last published with, to start from.
+- **Re-mapping:** the map lives with the project, at `docs/architecture/map.json` by default. `pull <name>` prints the map an import was last published with, and on stderr the commit that upload was built from, so `git log <commit>..HEAD` lists what changed since.
 - **Live:** `publish … --watch` stays running on the project's side and uploads again whenever its code or the map changes.
 
 Nothing is written into the mapped repository.

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, watch, type FSWatcher } from 'node
 import { join } from 'node:path'
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 // @ts-expect-error: plain JS module, shared with the CLI
-import { storeBundle, storedMap, storedSource } from './scripts/store.mjs'
+import { storeBundle, storedMap, storedPublished, storedSource } from './scripts/store.mjs'
 
 /** Runs a script with node; resolves with its exit code. */
 const run = (args: string[]) => new Promise<number>(resolve => {
@@ -77,6 +77,14 @@ function liveModels(): Plugin {
         res.setHeader('content-type', 'application/json')
         res.setHeader('cache-control', 'no-store')
         res.end(map)
+      })
+      // What that map's upload was built from: the project's commit, for listing what changed since.
+      server.middlewares.use('/published', (req, res, next) => {
+        const name = decodeURIComponent((req.url ?? '').split('?')[0]).replace(/^\//, '').replace(/\.json$/, '')
+        if (storedMap(name) === null) return next()
+        res.setHeader('content-type', 'application/json')
+        res.setHeader('cache-control', 'no-store')
+        res.end(JSON.stringify(storedPublished(name)))
       })
 
       // Vite only serves public files it saw at startup; models published since need serving here.

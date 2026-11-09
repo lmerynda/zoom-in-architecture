@@ -3,6 +3,7 @@
 // which is nodes (apps, components, actors, stores) and the files each one holds, plus the links
 // code references cannot show (HTTP calls, the database), each with file:line evidence.
 // Relations between files come only from the graph, never from the map.
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
@@ -240,6 +241,15 @@ export const MAX_SOURCE = 1_000_000
  * Requests view when the code has endpoints, and the source of every file the model shows, so
  * the service never needs the repository. `bundle` is null when the map has errors.
  */
+/**
+ * The commit a project is at, and whether its working tree has changes beyond it, so a later
+ * re-map can list what changed since this upload; null outside git.
+ */
+export function revision(repo) {
+  const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  try { return { commit: git('rev-parse', 'HEAD'), dirty: git('status', '--porcelain') !== '' } } catch { return null }
+}
+
 export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
   // The viewer serves models/<name>.json only for plain names.
   if (!isName(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)
@@ -256,7 +266,7 @@ export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
   const ms = Date.now() - t0
   return {
     name, ...built, ms,
-    bundle: { name, map, model: { ...built.model, buildMs: ms }, requests: requests && { ...requests, buildMs: ms }, sources },
+    bundle: { name, map, model: { ...built.model, buildMs: ms }, requests: requests && { ...requests, buildMs: ms }, sources, published: { ...revision(graph.repo), at: new Date().toISOString() } },
   }
 }
 

@@ -287,7 +287,7 @@ Found while building it: the same file now shows on many cards, but a file's min
 
 The viewer used to keep each import's repo path. It rebuilt every import from that path on start, watched the folder, and read source from it. When a project had two clones on one machine, the viewer showed the stale one, and the viewer's work got tangled with the project's git.
 
-Now a project uploads one bundle: the map, the models and the source of every file shown. The viewer stores the bundle and serves only from it. Live updates come from the project's side (`publish --watch`), and `pull` hands back the last map for a re-map. The end-to-end test deletes the project copy after uploading and checks that the viewer still serves its code. The 11 existing imports were rebuilt once from their repos into bundles.
+Now a project uploads one bundle: the map, the models and the source of every file shown. The viewer stores the bundle and serves only from it. Live updates come from the project's side (`publish --watch`), and `pull` hands back the last map for a re-map. The first re-map run from a project's own session kept its map at `docs/architecture/map.json`, now the skill's default, and spent its time working out what had changed since the last upload. So each upload now records the project's commit, and `pull` names it. The end-to-end test deletes the project copy after uploading and checks that the viewer still serves its code. The 11 existing imports were rebuilt once from their repos into bundles.
 
 ## Fixed rough edges
 

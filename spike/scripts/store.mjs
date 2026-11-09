@@ -71,7 +71,7 @@ export function storeBundle(bundle, root = ROOT) {
   renameSync(fresh, at(dir, 'sources'))
   rmSync(old, { recursive: true, force: true })
   writeAtomic(at(dir, 'map.json'), `${JSON.stringify(bundle.map, null, 2)}\n`)
-  writeAtomic(at(dir, 'import.json'), `${JSON.stringify({ title: bundle.model.title ?? humanize(name) }, null, 2)}\n`)
+  writeAtomic(at(dir, 'import.json'), `${JSON.stringify({ title: bundle.model.title ?? humanize(name), ...(bundle.published ? { published: bundle.published } : {}) }, null, 2)}\n`)
   mkdirSync(at(root, 'public/models'), { recursive: true })
   writeAtomic(at(root, 'public/models', `${name}.json`), JSON.stringify(bundle.model))
   if (bundle.requests) writeAtomic(at(root, 'public/models', `${name}.requests.json`), JSON.stringify(bundle.requests))
@@ -93,4 +93,10 @@ export function storedSource(name, path, root = ROOT) {
 export function storedMap(name, root = ROOT) {
   if (!isName(name)) return null
   try { return readFileSync(at(root, 'imports', name, 'map.json'), 'utf8') } catch { return null }
+}
+
+/** What an import's last upload was built from ({commit, dirty, at}), or null when it does not say. */
+export function storedPublished(name, root = ROOT) {
+  if (!isName(name)) return null
+  try { return JSON.parse(readFileSync(at(root, 'imports', name, 'import.json'), 'utf8')).published ?? null } catch { return null }
 }

@@ -69,11 +69,13 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
    `--json` gives the same graph as data, with complete "used by" lists (the text caps long ones).
 
    Over about 300 files, start with `graph <repo> --folders`. It shows each folder with its size, its hints and the folders it references. Then read the files part by part with `graph <repo> --under <folder>`.
-2. **Start from the previous map** if the viewer has one: `pull <name> > map.json` prints the map the import was last published with, and fails when there is none. `<name>` is the repository folder in kebab case, such as `my-shop`. Keep its ids, so the viewer morphs instead of rebuilding, and change only what the code changed:
-   - `check <repo> <old map>` lists application files the old map does not place; the tree marks where neighbour votes put them;
-   - `check <repo> <old map> --uncited` lists marked lines no link cites: new calls, stores and messages to link, or to leave out on purpose;
-   - `audit <repo> <map>` lists files used mostly from a sibling node that use nothing in their own node: placement to review;
-   - re-read the docs (step 3) for features added since. Files the old map does not place are often a new feature in a folder of its own. Give that feature a node of its own, rather than leaving its files wherever the neighbour votes put them.
+2. **Start from the previous map** if there is one. The map lives with the project, at `docs/architecture/map.json` unless the project keeps it elsewhere. When the project has none yet, `pull <name> > docs/architecture/map.json` writes the map the viewer last got, and fails when there is none. `<name>` is the repository folder in kebab case, such as `my-shop`.
+   - **What changed since:** `pull <name>` also names, on stderr, the commit the last upload was built from (and whether it had uncommitted changes on top). `git log --oneline <commit>..HEAD` and `git diff --stat <commit>` list what to look at. Send the pulled map to a scratch file when you only want that line.
+   - **Keep the map's ids,** so the viewer morphs instead of rebuilding, and change only what the code changed:
+     - `check <repo> <old map>` lists application files the old map does not place; the tree marks where neighbour votes put them;
+     - `check <repo> <old map> --uncited` lists marked lines no link cites: new calls, stores and messages to link, or to leave out on purpose;
+     - `audit <repo> <map>` lists files used mostly from a sibling node that use nothing in their own node: placement to review;
+     - re-read the docs (step 3) for features added since. Files the old map does not place are often a new feature in a folder of its own. Give that feature a node of its own, rather than leaving its files wherever the neighbour votes put them.
 3. **Find what the product is for, before you group any file.** Read:
    - the README;
    - product and design docs (feature lists, roadmaps, "what's implemented" sections, the changelog);
@@ -120,12 +122,12 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
    - **Queues, sockets, pipes, external APIs, launched processes and file handoffs:** the same way, from the file to the node or file on the other side. Read the code to confirm the peer: a `socket` line can be a health probe or a free-port pick, and many `file` lines are reports, not handoffs.
    - **Navigation** (`window.open`, a link to another site) is a link only when a feature depends on that site, such as exporting to a companion service. Plain links to social pages or docs are not.
    - **Timers inside the process** (`@Scheduled`, `setInterval`, BackgroundService) are not links. They belong to the node they drive, which you can say in its description. Only an outside scheduler (cron, a cloud scheduler) becomes a node with a link.
-7. **Write the map**, with its `features`, to a scratch file.
+7. **Write the map**, with its `features`, to `docs/architecture/map.json` (or where the project already keeps it), and commit it with the project's work under the project's own rules.
    - **Check it:** `check <repo> <map.json>`, then `audit <repo> <map.json>` to review placement. `check` prints every node with its file count. Fix every error, and read every warning.
    - **Evidence warnings:**
      - Evidence in an application file should sit at one end of the link, or in a file that directly calls or is called by an end (such as the line that builds the URL a helper fetches); `check` warns otherwise. Config files can back any link.
      - A warning that evidence "is not a line the graph recognised" quotes that line, so you can see whether it is the wrong line. When the real call is a line the graph does not mark (a wrapper function, a library it does not know), cite that line anyway and leave the warning. Never move evidence to a marked line that is not the call.
-   - **Publish it:** `publish <repo> <map.json>`. It checks the map again, then uploads one bundle: the map, the models and the source of every file the map shows. The viewer opens it at `?model=<name>`, and an open viewer adds its tab live. Keep the map with the project's own work (not in the viewer's folders); for live updates while the code changes, run `publish <repo> <map.json> --watch`.
+   - **Publish it:** `publish <repo> <map.json>`. It checks the map again, then uploads one bundle: the map, the models and the source of every file the map shows. It records the commit the project is at, for the next re-map. The viewer opens it at `?model=<name>`, and an open viewer adds its tab live. For live updates while the code changes, run `publish <repo> <map.json> --watch`.
 8. **Report:**
    - what the product is, in your two sentences;
    - the levels you chose, and why they suit this repository;
