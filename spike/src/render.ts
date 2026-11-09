@@ -711,7 +711,9 @@ export class Renderer {
       if (sOn && tOn) {
         const m = endStretch(pts)
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
-        if (m) labelSpots.push({ x: m[0], y: m[1], s: n > 1 ? `${n} relations` : this.tree.relTitles[rel], kind, weight: n })
+        // One import named after the card it reaches says nothing the arrow does not.
+        const s = n > 1 ? `${n} relations` : this.tree.relTitles[rel]
+        if (m && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ x: m[0], y: m[1], s, kind, weight: n })
       }
     }
 
@@ -941,6 +943,12 @@ export class Renderer {
       // A label cut by the screen edge or under the HUD reads as noise ("2 re"): it waits for room.
       if (x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) continue
       if (this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch)) continue
+      // Labels live in the gutters: never on a card someone is reading (a closed card or a file).
+      if (this.shown.some(c => {
+        if (this.tree.children[c].length && this.open(c) > 0) return false
+        const [cx, cy, cw2, ch2] = this.screenRect(c)
+        return x < cx + cw2 && cx < x + cw && y < cy + ch2 && cy < y + ch
+      })) continue
       if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
       placed.push([x, y, cw, ch])
       lab.bg.position.set(x, y)
