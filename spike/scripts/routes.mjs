@@ -76,6 +76,8 @@ function declarations(lines, lang) {
       : lang === 'go' ? l.match(/^func\s+(?:\([^)]*\)\s*)?(\w+)\s*\(/)
       : lang === 'js' ? l.match(/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)|^\s*(?:export\s+)?(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>/)
       : l.match(/^\s*(?:(?:public|private|protected|internal|static|final|async|override|virtual)\s+)+[\w<>[\],.?\s]*?\b(\w+)\s*\([^;]*$/)
+        // A package-private method (Java's default): a return type, then the name.
+        ?? l.match(/^\s*(?!(?:return|new|else|throw|if|for|while|switch|catch|case|await|yield)\b)[A-Za-z_][\w<>[\],.?]*\s+(\w+)\s*\([^;]*$/)
     const name = m && (m[1] ?? m[2])
     if (name && !declared.has(name)) declared.set(name, j)
   })
@@ -214,6 +216,31 @@ export function endpoints(graph) {
     contexts.set(p, ctx)
     return ctx
   }
+  // A body's text, with the bodies of the same file's helpers it calls.
+  const withHelpers = (c, text, skip) => {
+    let t = text
+    for (const w of words(text)) {
+      if (skip.includes(w) || !c.declared.has(w) || !new RegExp(`\\b${w}\\s*\\(`).test(text)) continue
+      const b = bodyOf(c.lines, c.declared.get(w), c.lang)
+      t += `\n${c.lines.slice(b.start, b.end + 1).join('\n')}`
+    }
+    return t
+  }
+  /** The part of file `p` a caller's text uses: the bodies of the methods it calls there, or null when it calls none `p` declares. */
+  const partOf = (p, callerText) => {
+    const c = context(p)
+    const calls = [...new Set([...callerText.matchAll(/\b(\w+)\s*\(/g)].map(m => m[1]))].filter(n => c.declared.has(n))
+    if (!calls.length) return null
+    const bodies = calls.map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
+    return withHelpers(c, bodies, calls).replace(/\/\*[\s\S]*?\*\//g, ' ')
+  }
+  /** Whether an edge out of `p` is one `part` of it uses: a name it imports, or the type of a field it reads. */
+  const usedBy = (p, part) => {
+    const c = context(p), used = words(part)
+    for (const w of [...used]) if (c.typeOf.has(w)) used.add(c.typeOf.get(w))
+    const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
+    return e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].some(n => used.has(n))
+  }
   const dir = p => p.slice(0, p.lastIndexOf('/') + 1)
   const ROUTE_CALL = /([\w$]+)\s*\.\s*(?:get|post|put|delete|patch|all|route|HandleFunc|Handle)\s*\(/i
 
@@ -272,8 +299,6 @@ export function endpoints(graph) {
         } else if (namesOf(e).some(n => used.has(n))) direct.push(e)
       }
       direct.sort((a, b) => at(a) - at(b))
-      // Below those, only files on the way to a store or another service.
-      const steps = [hp, ...direct.map(e => e.to)]
       const reaches = new Map()
       const leads = (p, d, seen) => {
         if (reaches.has(p)) return reaches.get(p)
@@ -288,16 +313,26 @@ export function endpoints(graph) {
       // A file that reaches the outside itself is where the path ends: what else it imports
       // (a seeding helper next to the engine) is not part of this request.
       const own = p => byPath.get(p)?.hints.some(h => BOUNDARY.has(h.kind)) ?? false
-      const queue = direct.filter(e => !own(e.to)).map(e => [e.to, 1])
+      // The steps in call order: the handler, the files it calls that lead somewhere, what those
+      // call in turn, and last the files it only names (request and response types).
+      const lead = direct.filter(e => leads(e.to, 1, new Set())), data = direct.filter(e => !lead.includes(e))
+      const steps = [hp, ...lead.map(e => e.to)]
+      // Below the handler a file takes part through the methods its caller calls on it, so only
+      // what those methods use goes on; a file whose called methods are not its own (an inherited
+      // or generated API) is followed whole.
+      const queue = lead.filter(e => !own(e.to)).map(e => [e.to, 1, text])
       while (queue.length) {
-        const [p, d] = queue.shift()
+        const [p, d, callerText] = queue.shift()
         if (d >= DEPTH) continue
+        const part = partOf(p, callerText)
+        const uses = part == null ? () => true : usedBy(p, part)
         for (const e of out.get(p) ?? []) {
-          if (steps.includes(e.to) || byPath.get(e.to)?.lang === 'view' || !leads(e.to, d + 1, new Set())) continue
+          if (steps.includes(e.to) || byPath.get(e.to)?.lang === 'view' || !uses(e) || !leads(e.to, d + 1, new Set())) continue
           steps.push(e.to)
-          if (!own(e.to)) queue.push([e.to, d + 1])
+          if (!own(e.to)) queue.push([e.to, d + 1, part ?? context(p).whole])
         }
       }
+      for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)
       const redirect = said.find(s => s.startsWith('redirect:'))
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).

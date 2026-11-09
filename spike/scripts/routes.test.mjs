@@ -26,11 +26,17 @@ describe('endpoints', () => {
     expect(eps.filter(e => e.path.startsWith('/api')).map(e => e.response)).toEqual([{ model: 'List<Order>', json: true }, {}, {}])
   })
 
+  it('follows a service only through the method the handler calls on it', () => {
+    const add = endpoints(fixture('crowd')).find(e => e.path === '/account/add-card')
+    // AccountService also writes the audit log, but not in addCard: that store is not on this path.
+    expect(brief([add])).toEqual(['POST /account/add-card addCard: AccountApi.java > AccountService.java > CardRepository.java'])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([
-      // Below the files the handler names, the path follows only what leads to the store, and stops there.
-      'GET /api/v1/items/{id} read_item: items.py > models.py > crud.py > db.py',
+      // The calls in order down to the store, where the path stops; then the types the handler only names.
+      'GET /api/v1/items/{id} read_item: items.py > crud.py > db.py > models.py',
       'GET /api/v1/items/health health: items.py',
     ])
     expect(eps[0].response).toEqual({ model: 'Item', json: true })
@@ -98,7 +104,9 @@ describe('buildRequests', () => {
     expect(rel(`${ep.id}.s3`, `${ep.id}.response`).title).toBe('HTML page')
     // Out to the store with the map's own evidence, and in from the caller.
     expect(rel(`${ep.id}.s2`, 'db').evidence.map(e => e.at)).toEqual(['src/main/java/shop/OrderRepository.java:3'])
-    expect(rel('buyer', ep.id).title).toBe('shops')
+    // The buyer's link names the app, not an endpoint: it reaches the app once, not every endpoint.
+    expect(rel('buyer', 'web').title).toBe('shops')
+    expect(r.relations.filter(x => x.source === 'buyer')).toHaveLength(1)
   })
 
   it('splits a crowded group by its next path segment, then by the object words its routes share', () => {

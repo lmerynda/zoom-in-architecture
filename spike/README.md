@@ -37,12 +37,14 @@ A map shows a codebase's architecture: the processes that run, the components in
 
     A prefix added by a custom framework convention, such as an ASP.NET `IControllerModelConvention`, is not read.
   - A route that names its handler (`router.POST("/login", UsersLogin)`) starts its path at that function, in the same file, its Go package, or the JS module it was imported from.
-  - Inside an endpoint is the request's path as numbered steps:
+  - Inside an endpoint is the request's path as numbered steps, in call order:
     - the handler method;
-    - the files its body uses (fields lead to their types, constants to the view names they hold, helper methods in the same file count);
-    - below those, only the files on the way to a store or another service, stopping at the first that reaches it;
-    - the views it renders, and a Response card that says what comes back.
+    - the files its body calls that lead to a store or another service (fields lead to their types, helper methods in the same file count);
+    - below those, what the called methods use, method by method: a service's other methods, and the stores only they reach, are not on this path. A file whose called methods it does not declare itself (an inherited or generated API) is followed whole. The path stops at the first file that reaches a store or service;
+    - the types the handler only names (request and response objects), after the calls;
+    - the views it renders (constants lead to the view names they hold), and a Response card that says what comes back.
   - Arrows between steps come from the graph. Arrows out to stores carry the map's own evidence.
+  - A caller the map links to the app as a whole reaches the app once; one linked to a file or a component reaches the endpoints in it.
 
 `check` refuses:
 - a map that leaves an application file out, or lists a file that isn't one;

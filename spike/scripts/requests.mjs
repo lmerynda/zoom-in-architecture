@@ -185,14 +185,20 @@ export function buildRequests(graph, map, model) {
           const built = proven.get(`${fileEl.get(p).id}>${fileEl.has(l.to) ? fileEl.get(l.to).id : l.to}`)
           relations.push({ source: sid.get(p), target: to, title: l.title ?? '', ...(built ? { evidence: built.evidence } : {}) })
         }
-        // In from the callers: a link that lands on this handler's file, or on the app itself.
-        for (const c of callers) if (c.app === app && (c.link.to === e.file || !fileEl.has(c.link.to))) relations.push({ source: c.from, target: fileEl.has(c.link.to) ? sid.get(e.file) : eid, title: c.link.title ?? '' })
+        // In from the callers: a link that lands on this handler's file, or on a part of the app that
+        // holds it. A link to the app as a whole names no endpoint, so it reaches the app once (below).
+        for (const c of callers) {
+          if (c.app !== app || c.link.to === app) continue
+          const to = c.link.to, under = fileEl.get(e.file)?.parent ?? ''
+          if (fileEl.has(to) ? to === e.file : under === to || under.startsWith(`${to}.`)) relations.push({ source: c.from, target: fileEl.has(to) ? sid.get(e.file) : eid, title: c.link.title ?? '' })
+        }
     }
     for (const [key, list] of [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
       const gid = `${app}.${slug(key)}`
       group(gid, app, key, list)
       place(gid, key, common + 1, list)
     }
+    for (const c of callers) if (c.app === app && c.link.to === app) relations.push({ source: c.from, target: app, title: c.link.title ?? '' })
   }
   // Callers, then the backends, then the stores they reach: the request's direction, left to right.
   const rank = id => { const e = els.get(id); return callers.some(c => c.from === id) ? 0 : apps.includes(id) ? 1 : ['database', 'queue', 'external'].includes(e?.kind) ? 2 : 3 }

@@ -4,6 +4,12 @@ package shop;
 @RequestMapping("/account")
 class AccountApi {
 
+	private final AccountService accounts;
+
+	AccountApi(AccountService accounts) {
+		this.accounts = accounts;
+	}
+
 	@GetMapping
 	ResponseEntity<?> show() { return ResponseEntity.ok().build(); }
 
@@ -14,7 +20,7 @@ class AccountApi {
 	ResponseEntity<?> close() { return ResponseEntity.ok().build(); }
 
 	@PostMapping("/add-card")
-	ResponseEntity<?> addCard() { return ResponseEntity.ok().build(); }
+	ResponseEntity<?> addCard() { this.accounts.addCard("4242"); return ResponseEntity.ok().build(); }
 
 	@PostMapping("/remove-card")
 	ResponseEntity<?> removeCard() { return ResponseEntity.ok().build(); }
