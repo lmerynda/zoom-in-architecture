@@ -106,13 +106,6 @@
     .lens-legend[hidden] { display: none; }
     .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
     /* Altimeter: depth gauge on the left edge. */
-    .alt { position: fixed; left: 22px; top: 50%; transform: translateY(-50%); height: 46vh; width: 44px; pointer-events: none; font: 600 9px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.12em; color: #475569; }
-    .alt-title { position: absolute; top: -26px; left: 0; color: #64748b; }
-    .alt-rail { position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: linear-gradient(#1e293b, #334155, #1e293b); border-radius: 1px; }
-    .alt-tick { position: absolute; left: -4px; width: 10px; height: 1px; background: #334155; padding-left: 18px; line-height: 0; white-space: nowrap; transition: color 0.3s; }
-    .alt-tick.on { color: #94a3b8; background: #64748b; }
-    .alt-marker { position: absolute; left: -7px; width: 16px; height: 16px; margin-top: -8px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: 0 0 12px rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.15); }
-    .alt-readout { position: absolute; bottom: -28px; left: 0; color: var(--accent); font-size: 11px; }
     /* Region title card. */
     kbd { font: 600 10px ui-monospace, Consolas, monospace; color: #94a3b8; border: 1px solid #334155; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: rgba(15, 23, 42, 0.8); }
     #travel { width: 240px; white-space: nowrap; overflow: hidden; gap: 10px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
@@ -139,7 +132,8 @@
     .radial.open .item { opacity: 1; transform: translate(-50%, -50%) translate(var(--x), var(--y)) scale(1); }
     .radial .item.hot, .radial .item:hover { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
     .radial .item.hot kbd, .radial .item:hover kbd { color: #0b0f17; border-color: rgba(11, 15, 23, 0.35); background: none; }
-    .radial .item.off { opacity: 0.35 !important; cursor: default; }
+    /* A greyed item is dim while the wheel is open, and gone with it when it closes. */
+    .radial.open .item.off { opacity: 0.35; cursor: default; }
     /* Tooltips */
     .tip { position: fixed; z-index: 20; width: 300px; background: rgba(9, 12, 20, 0.96); border: 1px solid #334155; border-radius: 10px; padding: 11px 13px 13px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); font-size: 12px; animation: tipin 0.12s ease; }
     .tip.locked { border-color: rgba(251, 191, 36, 0.55); }

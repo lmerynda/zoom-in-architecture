@@ -133,6 +133,18 @@ try {
     window.__spike.setLens('structure')
     return { before, after }
   })
+  // The wheel never strands the reader: over empty space it stops, and out it stops near the landscape.
+  await page.evaluate(() => { const s = window.__spike; s.unhover(); s.fit(0) })
+  await sleep(1200)
+  const vh = await page.evaluate(() => innerHeight)
+  await page.mouse.move(6, vh / 2)
+  for (let k = 0; k < 40; k++) { await page.mouse.wheel({ deltaY: -400 }); await sleep(15) }
+  await sleep(1200)
+  const deep = await page.evaluate(() => { const s = window.__spike; return { z: s.cam.z, fit: Math.min(s.cam.w * 0.92 / s.world.rect[2], s.cam.h * 0.92 / s.world.rect[3]) } })
+  for (let k = 0; k < 60; k++) { await page.mouse.wheel({ deltaY: 400 }); await sleep(15) }
+  await sleep(1200)
+  const far = await page.evaluate(() => window.__spike.cam.z)
+  check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 2.5 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, far: far / deep.fit }))
   check('a lens does not reflow the top bar', bar.before === bar.after && bar.after < 60, JSON.stringify(bar))
   await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
   await sleep(300)

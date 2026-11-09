@@ -302,11 +302,6 @@ export class Renderer {
     return focus > 0 && (n === focus || this.tree.isAncestor(focus, n) || this.tree.isAncestor(n, focus))
   }
 
-  /** Depth under the screen centre as a continuous level: labelled levels plus how far the next has opened. */
-  altitude(path = this.breadcrumb()): number {
-    return path.length + (path.length ? this.open(path[path.length - 1]) : 0)
-  }
-
   frame(now = performance.now()): FrameStats {
     const t0 = performance.now()
     this.dt = Math.min(100, Math.max(1, now - this.time))

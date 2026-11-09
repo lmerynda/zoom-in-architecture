@@ -3,7 +3,7 @@ import { Camera } from './camera'
 import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
-import { Altimeter, LensBar, ago } from './hud'
+import { LensBar, ago } from './hud'
 import { layoutJobs, placeWorld, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
@@ -69,7 +69,6 @@ async function main() {
   let renderer = new Renderer(app, tree, world, cam)
   app.stage.addChild(renderer.stage)
   const minimap = new Minimap($<HTMLCanvasElement>('minimap'), tree, world)
-  const altimeter = new Altimeter(tree)
   const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
   renderer.onOpen = () => sound.chime()
@@ -78,7 +77,7 @@ async function main() {
   let manual = false, simNow = performance.now()
   const now = () => (manual ? simNow : performance.now())
 
-  const fit = (i: number) => {
+  const fit = (i = 0) => {
     const r = world.rect
     // With the details panel open, frame the target in the space left of it.
     const panel = document.getElementById('details')
@@ -90,7 +89,7 @@ async function main() {
   }
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
-    renderer.hud = ['stats', 'minimap', 'help', 'alt'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e?.getBoundingClientRect(); return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
+    renderer.hud = ['stats', 'minimap', 'help'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e?.getBoundingClientRect(); return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
   {
     cam.resize(app.screen.width, app.screen.height)
@@ -106,15 +105,21 @@ async function main() {
   const details = $('details')
   let controls: ReturnType<typeof installControls>
   /**
-   * How far the wheel may zoom in at a screen point. A container always has more inside it; a
-   * file stops once its code reads comfortably, or (with no code to show) at a screen and a half.
+   * How far the wheel may zoom in at a screen point: a file until its code reads comfortably (or,
+   * with no code to show, to a screen and a half); empty space in a card until that card is a
+   * screen and a half wide, so a wheel on a gutter never dives into nothing. Pointing at a card
+   * inside goes on.
    */
   const zoomLimit = (sx: number, sy: number) => {
     const i = renderer.pick(sx, sy)
-    if (i <= 0 || tree.children[i].length) return Infinity
-    const font = code.fontOf(i)
-    return font ? (cam.z * MAX_READ_PX) / font : (cam.w * 1.5) / world.rect[i * 4 + 2]
+    if (i > 0 && !tree.children[i].length) {
+      const font = code.fontOf(i)
+      if (font) return (cam.z * MAX_READ_PX) / font
+    }
+    return (cam.w * 1.5) / world.rect[Math.max(0, i) * 4 + 2]
   }
+  /** How far the wheel may zoom out: a little past the whole landscape. */
+  const zoomFloor = () => 0.5 * Math.min((cam.w * 0.92) / world.rect[2], (cam.h * 0.92) / world.rect[3])
   /** Opens a file at a line: flies there with the line readable, beside the panel, and selects the file. */
   const openCode = async (path: string, line: number) => {
     const i = tree.els.findIndex(e => e.metadata?.path === path)
@@ -146,7 +151,7 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor })
   resize()
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
@@ -203,7 +208,6 @@ async function main() {
     lenses.splice(0, lenses.length, ...buildLenses(next))
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
     minimap.tree = next; minimap.world = live
-    altimeter.setTree(next)
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
     renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
@@ -256,7 +260,6 @@ async function main() {
     last = renderer.frame(t)
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
-    altimeter.update(path, renderer.altitude(path), cam.z / ((cam.w * 0.92) / world.rect[2]))
     const key = path.join('/')
     if (key !== lastCrumb) {
       lastCrumb = key

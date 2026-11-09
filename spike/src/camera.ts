@@ -47,7 +47,7 @@ export class Camera {
    * stops at `maxZ` (what is under the cursor has nothing further to show); a lower ceiling than
    * the current target never pulls the camera back.
    */
-  zoomAt(sx: number, sy: number, factor: number, maxZ = Infinity) {
+  zoomAt(sx: number, sy: number, factor: number, maxZ = Infinity, minZ = 0) {
     this.fly = null
     this.vx = this.vy = 0
     if (!this.anchor || this.anchor.sx !== sx || this.anchor.sy !== sy) {
@@ -56,7 +56,8 @@ export class Camera {
     }
     this.focusX = sx; this.focusY = sy
     const next = this.targetLogZ + Math.log(factor)
-    this.targetLogZ = factor > 1 ? Math.min(next, Math.max(Math.log(maxZ), this.targetLogZ)) : next
+    // Past a limit the wheel stops, and never pulls back what a flight already reached.
+    this.targetLogZ = factor > 1 ? Math.min(next, Math.max(Math.log(maxZ), this.targetLogZ)) : Math.max(next, Math.min(Math.log(minZ), this.targetLogZ))
   }
 
   /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */

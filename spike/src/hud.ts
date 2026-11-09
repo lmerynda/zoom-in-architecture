@@ -1,5 +1,4 @@
 import { heatColor, type Lens, type LensName } from './lens'
-import type { Tree } from './model'
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
@@ -7,47 +6,6 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') 
   e.className = cls
   e.textContent = text
   return e
-}
-
-/**
- * Flight-sim altimeter on the left edge: one tick per level of the tree, labelled with the
- * kinds along the path under the screen centre, and a marker that glides with the zoom.
- */
-export class Altimeter {
-  private root = el('div', 'alt')
-  private rail = el('div', 'alt-rail')
-  private marker = el('div', 'alt-marker')
-  private readout = el('div', 'alt-readout')
-  private ticks: HTMLElement[] = []
-
-  constructor(private tree: Tree) {
-    this.root.append(el('div', 'alt-title', 'DEPTH'), this.rail, this.readout)
-    document.body.append(this.root)
-    this.setTree(tree)
-  }
-
-  /** One tick per level: rebuilt when a new model version has a different depth. */
-  setTree(tree: Tree) {
-    this.tree = tree
-    if (!this.marker.parentNode) this.rail.append(this.marker)
-    for (const t of this.ticks) t.remove()
-    this.ticks = []
-    for (let d = 0; d <= tree.maxDepth; d++) {
-      const t = el('div', 'alt-tick')
-      t.style.top = `${(d / tree.maxDepth) * 100}%`
-      this.rail.insertBefore(t, this.marker)
-      this.ticks.push(t)
-    }
-  }
-
-  update(path: number[], altitude: number, zoom: number) {
-    const max = this.tree.maxDepth
-    // Ticks only: the breadcrumb names the levels, and labels here would sit on cards and code.
-    this.ticks.forEach((t, d) => t.classList.toggle('on', d <= Math.floor(altitude + 1e-6)))
-    this.root.title = path.length ? `Level ${path.length} of ${max}` : 'Landscape'
-    this.marker.style.top = `${(Math.min(max, altitude) / max) * 100}%`
-    this.readout.textContent = `×${zoom < 1000 ? zoom.toFixed(zoom < 10 ? 1 : 0) : zoom.toExponential(1)}`
-  }
 }
 
 /** Lens picker and legend. */

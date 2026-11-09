@@ -25,6 +25,7 @@ export interface Ctx {
   fit: (i: number) => void
   /** How far the wheel may zoom in at a screen point: past it, what is under the cursor has nothing more to show. */
   zoomLimit: (sx: number, sy: number) => number
+  zoomFloor: () => number
   now: () => number
 }
 
@@ -159,7 +160,7 @@ export function installControls(c: Ctx) {
     // A tooltip is about the card under a still cursor; zooming moves on from it.
     tooltips.closeAll()
     const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
-    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022), c.zoomLimit(e.offsetX, e.offsetY))
+    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
   }, { passive: false })
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
   let rightHold: { x: number; y: number; t: number } | null = null
@@ -261,7 +262,7 @@ export function installControls(c: Ctx) {
     const az = (held.has('+') || held.has('=') ? 1 : 0) - (held.has('-') ? 1 : 0)
     thrust = ax || ay || az ? Math.min(1, thrust + dt / 350) : 0
     if (ax || ay) cam.panBy(-ax * 900 * thrust * dt / 1000, -ay * 900 * thrust * dt / 1000)
-    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000), c.zoomLimit(cam.w / 2, cam.h / 2))
+    if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000), c.zoomLimit(cam.w / 2, cam.h / 2), c.zoomFloor())
   }
 
   return {
