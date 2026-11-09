@@ -8,7 +8,7 @@ export interface ModelEntry { name: string; title: string; source: 'sample' | 'i
  * view switch in `views`, beside the lenses: like a lens, it is a way of looking at the open
  * model, not another model.
  */
-export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, current: string, n: string | null, view: string | null = null) {
+export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, current: string, n: string | null, view: string | null = null): Promise<ModelEntry | undefined> {
   let entries: ModelEntry[] = []
   try { entries = await (await fetch(`${import.meta.env.BASE_URL}models/index.json?v=${Date.now()}`)).json() } catch { /* none extracted yet */ }
   const tab = (href: string, label: string, on: boolean, cls = '') => {
@@ -43,6 +43,7 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
   button.title = 'Open another model'
   button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden }
   nav.replaceChildren(button, menu)
+  return open
 }
 
 // One listener for the page: a click elsewhere or Esc closes the model menu.

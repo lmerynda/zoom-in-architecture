@@ -20,7 +20,8 @@ const OPEN_B = 120
 const PIP = 30
 const DESC_WRAP = 500
 /** Screen insets the HUD covers; sticky labels and edge chips stay inside them. */
-const SAFE = { top: 64, left: 12, right: 12, bottom: 14 }
+// Below the top bar and the breadcrumb, so sticky titles and chips never sit under them.
+const SAFE = { top: 104, left: 12, right: 12, bottom: 14 }
 const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
@@ -547,6 +548,12 @@ export class Renderer {
     const lead = glyph ? ICON + ICON_GAP : 0
     const px = titlePx(Math.min(h * 0.15, 24), inner, v.titleEm + lead)
     if (px < 6) return
+    // Reading a file: its code reaches up under the top bar, and the breadcrumb names it. A title
+    // held on screen there would sit on the code, so the card's text scrolls away with its top.
+    if (el.metadata?.path && w >= CODE_W && codeBox(x, y, w, h).y < SAFE.top) {
+      this.codeSlots.push({ i, ...codeBox(x, y, w, h), alpha: la })
+      return
+    }
     const shownTitle = fitText(full, v.titleEm, inner - lead * px, px)
     if (title.text !== shownTitle) title.text = shownTitle
     // Sticky: when the card is bigger than the screen, its text block stays in view.
@@ -892,13 +899,15 @@ export class Renderer {
       const cw = chip.text.width + 16, ch = px * 1.9
       let x = Math.min(Math.max(c.x - cw / 2, SAFE.left), W - cw - SAFE.right)
       let y = Math.min(Math.max(c.y - ch / 2, SAFE.top), H - ch - SAFE.bottom)
-      // Keep chips off the HUD: lift them above the panels along the bottom (stats, minimap),
-      // and step them past the ones along the side (the depth gauge).
+      // Keep chips off the HUD: lift them above the panels along the bottom (the minimap), and
+      // step them past any along the side; then back inside the screen.
       for (const [hx, hy, hw, hh] of this.hud) {
-        if (!(x < hx + hw && hx < x + cw && y + ch > hy && y < hy + hh)) continue
+        if (!hw || !(x < hx + hw && hx < x + cw && y + ch > hy && y < hy + hh)) continue
         if (hy > H / 2) y = hy - ch - 4
         else x = hx < W / 2 ? hx + hw + 4 : hx - cw - 4
       }
+      x = Math.min(Math.max(x, SAFE.left), W - cw - SAFE.right)
+      y = Math.min(Math.max(y, SAFE.top), H - ch - SAFE.bottom)
       if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
       placed.push([x, y, cw, ch])
       chip.bg.position.set(x, y)
@@ -929,6 +938,9 @@ export class Renderer {
       lab.text.scale.set(px / FONT_PX)
       const cw = lab.text.width + 12, ch = px * 1.8
       const x = sp.x - cw / 2, y = sp.y - ch / 2
+      // A label cut by the screen edge or under the HUD reads as noise ("2 re"): it waits for room.
+      if (x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) continue
+      if (this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch)) continue
       if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
       placed.push([x, y, cw, ch])
       lab.bg.position.set(x, y)

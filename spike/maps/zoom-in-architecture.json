@@ -41,12 +41,12 @@
     { "from": "spike/scripts/zoom.mjs", "to": "spike/scripts/store.mjs", "title": "uploads bundles, pulls maps (/upload, /maps)",
       "evidence": ["spike/scripts/zoom.mjs:55", "spike/scripts/zoom.mjs:214", "spike/scripts/zoom.mjs:218", "spike/vite.config.ts:55", "spike/vite.config.ts:80", "spike/vite.config.ts:89"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:40"] },
+      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:46"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
       "evidence": ["spike/scripts/store.mjs:25", "spike/src/models.ts:13"] },
     { "from": "spike/src/code.ts", "to": "spike/scripts/store.mjs", "title": "reads a file's uploaded source (/source)",
       "evidence": ["spike/src/code.ts:227", "spike/vite.config.ts:106"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:40"] }
+      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:46"] }
   ]
 }

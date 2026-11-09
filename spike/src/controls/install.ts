@@ -193,6 +193,8 @@ export function installControls(c: Ctx) {
       const hit = renderer.pick(e.offsetX, e.offsetY)
       clearTarget()
       // Clicking the selection keeps it (it is usually what travel just brought you to); Esc or empty space clears.
+      // The details panel now says what the tooltip said; it goes.
+      tooltips.closeAll()
       c.select(hit)
     } else if (performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
@@ -274,7 +276,9 @@ export function installControls(c: Ctx) {
       const p = renderer.pointer
       // A tooltip sums a card up from outside; once you are inside one (it fills most of the screen) it only covers it.
       const inside = renderer.hover > 0 && world.rect[renderer.hover * 4 + 2] * cam.z > cam.w * 0.8
-      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside)
+      // The selected card has the details panel; a tooltip on it would only repeat it.
+      const selected = renderer.hover > 0 && renderer.hover === renderer.selected
+      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside || selected)
     },
     go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, palette, radial, help, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Backspace returns. */

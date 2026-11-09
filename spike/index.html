@@ -11,7 +11,7 @@
     html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
     #stage, #stage canvas { position: fixed; inset: 0; display: block; }
     .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); }
-    #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; }
+    #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; z-index: 20; }
     #top > * { pointer-events: auto; }
     #brand { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: var(--accent); padding: 8px 12px; }
     /* One button names the open model; its menu lists the others, so the bar stays one line. */
@@ -19,7 +19,7 @@
     .model-current { background: none; border: 0; color: var(--text); font: inherit; font-weight: 600; padding: 5px 10px; border-radius: 7px; cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .model-current::after { content: ' ▾'; color: var(--dim); font-weight: 400; }
     .model-current:hover { background: rgba(148, 163, 184, 0.12); }
-    .model-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 70vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; z-index: 30; }
+    .model-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 70vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; z-index: 30; background: #0b1220; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     .model-menu[hidden] { display: none; }
     .model-menu .menu-head { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #64748b; padding: 8px 9px 4px; }
     .model-menu a { color: var(--dim); text-decoration: none; padding: 6px 9px; border-radius: 7px; white-space: nowrap; }

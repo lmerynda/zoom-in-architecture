@@ -26,10 +26,16 @@ const READ_PX = 15
 const MAX_READ_PX = 28
 
 /** After the breadcrumb, what an uploaded map was built from, so an old map does not pass for a current one. */
-function provenance(p: ModelJson['published']): HTMLElement[] {
-  if (!p) return []
+function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[] {
   const s = document.createElement('span')
   s.className = 'provenance'
+  // An upload from before uploads recorded their commit says so, rather than passing for a current one.
+  if (!p) {
+    if (!uploaded) return []
+    s.textContent = 'age unknown'
+    s.title = 'Uploaded before uploads recorded their commit; publishing it again shows when and from what it was built'
+    return [s]
+  }
   s.textContent = [p.commit ? `${p.commit.slice(0, 7)}${p.dirty ? '+' : ''}` : 'no commit', ago(p.at)].filter(Boolean).join(' · ')
   s.title = `Uploaded ${new Date(p.at).toLocaleString()} from ${p.commit ? `commit ${p.commit}${p.dirty ? ' plus uncommitted changes' : ''}` : 'a folder outside git'}`
   return [s]
@@ -50,7 +56,10 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 async function main() {
   const t0 = performance.now()
-  renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view)
+  // Whether the open model is a project's upload (not a sample), for its provenance in the breadcrumb.
+  let uploaded = false, crumbsStale = false
+  void renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view)
+    .then(entry => { uploaded = entry?.source === 'import'; crumbsStale = true })
   const model = await loadModel()
   // The current model version; live updates replace all four.
   let tree = new Tree(model)
@@ -261,7 +270,8 @@ async function main() {
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
     const key = path.join('/')
-    if (key !== lastCrumb) {
+    if (key !== lastCrumb || crumbsStale) {
+      crumbsStale = false
       lastCrumb = key
       crumbs.replaceChildren(...[0, ...path].map((i, k) => {
         const b = document.createElement('button')
@@ -269,7 +279,7 @@ async function main() {
         b.onclick = () => controls.go(i)
         if (k === path.length) b.className = 'here'
         return b
-      }), ...provenance(published))
+      }), ...provenance(published, uploaded))
     }
     push(cpu, performance.now() - start)
     push(delta, dt)
