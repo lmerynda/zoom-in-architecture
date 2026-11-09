@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, bundle, compareMaps, revision, toName } from './map.mjs'
-import { refusals, storeBundle, storedMap, storedPublished, storedSource, writeAtomic } from './store.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, redact, revision, toName } from './map.mjs'
+import { maxUpload, refusals, storeBundle, storedMap, storedPublished, storedSource, unauthorised, writeAtomic } from './store.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
 const map = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
@@ -219,6 +219,17 @@ describe('buildModel', () => {
   })
 })
 
+describe('redact', () => {
+  it('masks secrets on cited lines, since evidence is uploaded and shown', () => {
+    expect(redact('    password: ${DB_PASSWORD:password}')).toBe('    password: ${DB_PASSWORD:••••}')
+    expect(redact('spring.datasource.password=hunter2')).toBe('spring.datasource.password=••••')
+    expect(redact('  "apiKey": "sk-123"')).toBe('  "apiKey": ••••')
+    expect(redact('const token = process.env.TOKEN')).toBe('const token = ••••')
+    // A line with no secret on it reads as it is.
+    expect(redact('    url: jdbc:postgresql://db:5432/kod')).toBe('    url: jdbc:postgresql://db:5432/kod')
+  })
+})
+
 describe('bundle and store', () => {
   const repo = join(import.meta.dirname, '../test/fixtures/polyglot')
   const { bundle: b } = bundle(repo, map, { name: 'shop' })
@@ -260,6 +271,15 @@ describe('bundle and store', () => {
       storeBundle(smaller, root)
       expect(existsSync(join(root, 'imports/shop/sources/web/src/api.ts'))).toBe(false)
     } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('takes uploads up to a size, and with the token when the service has one', () => {
+    expect(maxUpload({})).toBe(64 * 1024 * 1024)
+    expect(maxUpload({ ZOOM_MAX_UPLOAD_MB: '8' })).toBe(8 * 1024 * 1024)
+    expect(unauthorised(undefined, {})).toBe(false)
+    expect(unauthorised(undefined, { ZOOM_TOKEN: 't0k' })).toBe(true)
+    expect(unauthorised('Bearer nope', { ZOOM_TOKEN: 't0k' })).toBe(true)
+    expect(unauthorised('Bearer t0k', { ZOOM_TOKEN: 't0k' })).toBe(false)
   })
 
   it('refuses sources the model does not show, and paths out of the store', () => {

@@ -120,6 +120,9 @@ try {
   const idle = await page.evaluate(() => window.__spike.last())
   // At the landscape you are nowhere deeper, whatever card sits under the screen centre.
   check('the landscape is where the breadcrumb says you are', await page.evaluate(() => window.__spike.renderer.breadcrumb().length === 0))
+  // The copy is not a git checkout: the map says it has no commit, and how old it is.
+  const stamp = await page.evaluate(() => document.querySelector('#crumbs .provenance')?.textContent ?? null)
+  check('the breadcrumb says when and from what the map was built', stamp === 'no commit · just now', String(stamp))
   // Picking a lens shows its legend below the bar; the bar itself keeps one line.
   const bar = await page.evaluate(async () => {
     const h = () => document.getElementById('top').getBoundingClientRect().height

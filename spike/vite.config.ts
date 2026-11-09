@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, watch, type FSWatcher } from 'node
 import { join } from 'node:path'
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 // @ts-expect-error: plain JS module, shared with the CLI
-import { storeBundle, storedMap, storedPublished, storedSource } from './scripts/store.mjs'
+import { maxUpload, storeBundle, storedMap, storedPublished, storedSource, unauthorised } from './scripts/store.mjs'
 
 /** Runs a script with node; resolves with its exit code. */
 const run = (args: string[]) => new Promise<number>(resolve => {
@@ -54,9 +54,16 @@ function liveModels(): Plugin {
       // An upload from a mapped project: the bundle is all the server keeps of it.
       server.middlewares.use('/upload', (req, res, next) => {
         if (req.method !== 'POST') return next()
-        const chunks: Buffer[] = []
-        req.on('data', (c: Buffer) => chunks.push(c))
+        if (unauthorised(req.headers.authorization)) { res.statusCode = 401; return res.end('this viewer takes uploads with its ZOOM_TOKEN only') }
+        const chunks: Buffer[] = [], max = maxUpload()
+        let size = 0
+        req.on('data', (c: Buffer) => {
+          size += c.length
+          if (size > max) { res.statusCode = 413; res.end(`the upload is over ${max / 1024 / 1024} MB (ZOOM_MAX_UPLOAD_MB)`); req.destroy() }
+          else chunks.push(c)
+        })
         req.on('end', () => {
+          if (size > max) return
           try {
             const b = JSON.parse(Buffer.concat(chunks).toString('utf8'))
             storeBundle(b)

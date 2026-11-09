@@ -33,8 +33,20 @@ const humanize = s => s.replace(/[-_.]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$
 const SNIPPET_LINES = 8, SNIPPET_WIDTH = 160
 /** A feature should be findable without digging: its node sits in the top three levels. */
 const FEATURE_DEPTH = 3
+/**
+ * A cited line with the value of any password, secret, token or key masked: evidence often cites
+ * config (a datasource block), and it is uploaded and shown to anyone who opens the map. A
+ * `${VAR:default}` placeholder keeps its variable name and loses its default.
+ */
+export function redact(line) {
+  return line.replace(/\b(\w*(?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?)\w*["']?\s*[:=]\s*)(.+)$/i, (_, key, value) => {
+    const env = value.match(/^(["']?\$\{\w+)(?::[^}]*)?\}/)
+    return `${key}${env ? `${env[1]}:••••}` : '••••'}`
+  })
+}
+
 const snippet = lines => {
-  const ls = lines.map(s => s.replace(/\r$/, '').replace(/\t/g, '  ').trimEnd())
+  const ls = lines.map(s => redact(s.replace(/\r$/, '').replace(/\t/g, '  ').trimEnd()))
   const pad = Math.min(...ls.filter(Boolean).map(s => s.match(/^ */)[0].length))
   const cut = ls.slice(0, SNIPPET_LINES).map(s => s.slice(Number.isFinite(pad) ? pad : 0)).map(s => (s.length > SNIPPET_WIDTH ? `${s.slice(0, SNIPPET_WIDTH - 1)}…` : s))
   if (ls.length > SNIPPET_LINES) cut.push(`… ${ls.length - SNIPPET_LINES} more lines`)

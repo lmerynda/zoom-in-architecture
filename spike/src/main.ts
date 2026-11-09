@@ -3,7 +3,7 @@ import { Camera } from './camera'
 import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
-import { Altimeter, LensBar } from './hud'
+import { Altimeter, LensBar, ago } from './hud'
 import { layoutJobs, placeWorld, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
@@ -25,6 +25,16 @@ const modelFile = view ? `${modelName}.${view}` : modelName
 const READ_PX = 15
 const MAX_READ_PX = 28
 
+/** After the breadcrumb, what an uploaded map was built from, so an old map does not pass for a current one. */
+function provenance(p: ModelJson['published']): HTMLElement[] {
+  if (!p) return []
+  const s = document.createElement('span')
+  s.className = 'provenance'
+  s.textContent = [p.commit ? `${p.commit.slice(0, 7)}${p.dirty ? '+' : ''}` : 'no commit', ago(p.at)].filter(Boolean).join(' · ')
+  s.title = `Uploaded ${new Date(p.at).toLocaleString()} from ${p.commit ? `commit ${p.commit}${p.dirty ? ' plus uncommitted changes' : ''}` : 'a folder outside git'}`
+  return [s]
+}
+
 async function loadModel(): Promise<ModelJson> {
   if (modelName === 'synthetic') return synthetic(Number(new URLSearchParams(location.search).get('n') ?? 1000))
   const res = await fetch(`${import.meta.env.BASE_URL}models/${modelFile}.json`)
@@ -44,6 +54,7 @@ async function main() {
   const model = await loadModel()
   // The current model version; live updates replace all four.
   let tree = new Tree(model)
+  let published = model.published
   let jobs = layoutJobs(tree)
   const tLayout = performance.now()
   let local = await runLayout(jobs)
@@ -223,7 +234,7 @@ async function main() {
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
-      if (res.ok) { const json = await res.json(); await swapModel(json, json.buildMs ?? 0) }
+      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(json, json.buildMs ?? 0) }
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
@@ -234,6 +245,8 @@ async function main() {
   let last = renderer.frame(now())
   const crumbs = $('crumbs'), stats = $('stats')
   let lastCrumb: string | null = null
+  // The age in the breadcrumb is read again each minute.
+  setInterval(() => { lastCrumb = null }, 60_000)
   const tick = (dt: number) => {
     const start = performance.now()
     const t = now()
@@ -253,7 +266,7 @@ async function main() {
         b.onclick = () => controls.go(i)
         if (k === path.length) b.className = 'here'
         return b
-      }))
+      }), ...provenance(published))
     }
     push(cpu, performance.now() - start)
     push(delta, dt)

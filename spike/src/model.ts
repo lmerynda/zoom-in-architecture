@@ -35,6 +35,8 @@ export interface ModelJson {
   title?: string
   elements: ElementJson[]
   relations: RelationJson[]
+  /** What an uploaded map was built from: the project's commit, whether it had uncommitted changes, and when. */
+  published?: { commit?: string; dirty?: boolean; at: string }
 }
 
 /** A sibling-level edge: relations between descendants of two children of one container, rolled up. */

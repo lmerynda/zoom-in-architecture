@@ -81,3 +81,11 @@ export class LensBar {
     }
   }
 }
+
+/** How long ago, in the largest whole unit: "4 min ago", "2 h ago", "3 days ago". */
+export function ago(at: string, now = Date.now()): string {
+  const s = Math.max(0, (now - Date.parse(at)) / 1000)
+  if (!Number.isFinite(s)) return ''
+  const [n, unit] = s < 60 ? [0, 'just now'] : s < 3600 ? [Math.floor(s / 60), 'min'] : s < 86400 ? [Math.floor(s / 3600), 'h'] : [Math.floor(s / 86400), 'day']
+  return n === 0 ? 'just now' : `${n} ${unit === 'day' && n > 1 ? 'days' : unit} ago`
+}

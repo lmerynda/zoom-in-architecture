@@ -52,7 +52,7 @@ export function installSkills(home, zoom = ZOOM) {
 export async function upload(b, service) {
   let res
   try {
-    res = await fetch(new URL('/upload', service), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) })
+    res = await fetch(new URL('/upload', service), { method: 'POST', headers: { 'content-type': 'application/json', ...(process.env.ZOOM_TOKEN ? { authorization: `Bearer ${process.env.ZOOM_TOKEN}` } : {}) }, body: JSON.stringify(b) })
   } catch {
     throw new Error(`no viewer answers at ${service}: start it with \`npm run dev\` in the viewer's spike/ folder, or pass --to`)
   }

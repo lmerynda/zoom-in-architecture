@@ -7,6 +7,15 @@ import { dirname, join, posix } from 'node:path'
 export const ROOT = join(import.meta.dirname, '..')
 const at = (root, ...p) => join(root, ...p)
 
+/** The largest upload the service takes, in bytes: ZOOM_MAX_UPLOAD_MB, or 64 MB. */
+export const maxUpload = (env = process.env) => (Number(env.ZOOM_MAX_UPLOAD_MB) || 64) * 1024 * 1024
+
+/**
+ * Whether an upload lacks the service's token. The service listens on this machine only unless it
+ * is started with --host; a shared one sets ZOOM_TOKEN, and every upload must carry it.
+ */
+export const unauthorised = (authorization, env = process.env) => !!env.ZOOM_TOKEN && authorization !== `Bearer ${env.ZOOM_TOKEN}`
+
 /** Plain model names only: the viewer serves models/<name>.json and nothing else. */
 export const isName = name => typeof name === 'string' && /^[\w.-]+$/.test(name) && !/^\.+$/.test(name)
 
@@ -73,8 +82,10 @@ export function storeBundle(bundle, root = ROOT) {
   writeAtomic(at(dir, 'map.json'), `${JSON.stringify(bundle.map, null, 2)}\n`)
   writeAtomic(at(dir, 'import.json'), `${JSON.stringify({ title: bundle.model.title ?? humanize(name), ...(bundle.published ? { published: bundle.published } : {}) }, null, 2)}\n`)
   mkdirSync(at(root, 'public/models'), { recursive: true })
-  writeAtomic(at(root, 'public/models', `${name}.json`), JSON.stringify(bundle.model))
-  if (bundle.requests) writeAtomic(at(root, 'public/models', `${name}.requests.json`), JSON.stringify(bundle.requests))
+  // Each model says what it was built from, so a reader can tell a current map from an old one.
+  const stamp = m => JSON.stringify(bundle.published ? { ...m, published: bundle.published } : m)
+  writeAtomic(at(root, 'public/models', `${name}.json`), stamp(bundle.model))
+  if (bundle.requests) writeAtomic(at(root, 'public/models', `${name}.requests.json`), stamp(bundle.requests))
   else rmSync(at(root, 'public/models', `${name}.requests.json`), { force: true })
   writeIndex(root)
 }
