@@ -70,7 +70,7 @@ describe('buildModel', () => {
     }))
     expect(bad.errors).toEqual([
       'link web.orders → db needs evidence: file:line where the code makes the call',
-      'link web.orders → db: evidence "web/src/api.ts:99" is past the end of the file (2 lines)',
+      'link web.orders → db: evidence "web/src/api.ts:99" is past the end of the file (4 lines)',
       'link web.orders → web/eslint.config.mjs: web/eslint.config.mjs is neither a node id nor an application file',
     ])
   })
@@ -86,7 +86,7 @@ describe('buildModel', () => {
   })
 
   it('lists marked lines that no link cites, leaving out timers', () => {
-    expect(r.uncited.map(u => `${u.path}:${u.line} ${u.kind}`)).toEqual(['game/www/hud.js:3 message', 'goapp/cmd/server/main.go:13 route', 'goapp/cmd/server/main.go:15 route', 'goapp/internal/store/store.go:10 store', 'goapp/web/assets/app.js:2 call', 'py/src/shopkit/api.py:7 route', 'py/src/shopkit/api.py:9 store', 'py/src/shopkit/api.py:13 route', 'py/src/shopkit/models.py:3 store', 'py/src/shopkit/orders.py:10 call', 'src/Api/wwwroot/app.js:3 call', 'web/src/ui/cart.ts:3 store'])
+    expect(r.uncited.map(u => `${u.path}:${u.line} ${u.kind}`)).toEqual(['game/www/hud.js:3 message', 'goapp/cmd/server/main.go:13 route', 'goapp/cmd/server/main.go:15 route', 'goapp/internal/store/store.go:10 store', 'goapp/web/assets/app.js:2 call', 'py/src/shopkit/api.py:7 route', 'py/src/shopkit/api.py:9 store', 'py/src/shopkit/api.py:13 route', 'py/src/shopkit/models.py:3 store', 'py/src/shopkit/orders.py:10 call', 'src/Api/wwwroot/app.js:3 call', 'web/src/api.ts:2 call', 'web/src/ui/cart.ts:3 store'])
   })
 
   it('accepts evidence from a direct caller of a file end', () => {

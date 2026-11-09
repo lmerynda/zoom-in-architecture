@@ -303,13 +303,23 @@ export function endpoints(graph) {
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
       const sig = hc.lines.slice(body.start, Math.min(body.start + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
       const typed = sig.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
-        ?? (hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.whole}`) ? sig.match(/([A-Z]\w*)(?:<[^>]*>)?\s+\w+\s*\(/)?.[1] : null)
+      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.whole}`) ? javaReturn(sig) : null
       // A framework's result type (IActionResult, ObjectResult) says how, not what: it is not the model.
-      const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void|ResponseEntity)$/.test(typed) ? typed : null)
+      const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
       const response = { ...(redirect ? { redirect: redirect.slice('redirect:'.length) || '/' } : {}), ...(model ? { model } : {}), ...(json ? { json } : {}) }
       result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, views, response })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
+}
+
+/**
+ * The type a Java handler returns, out of the wrappers that only say how it comes back:
+ * `ResponseEntity<Optional<List<Order>>> all(` gives List<Order>; a wildcard or a plain String gives null.
+ */
+function javaReturn(sig) {
+  let t = sig.match(/(?:^|\s)([A-Z][\w.]*(?:<[^()]*>)?(?:\[\])?)\s+\w+\s*\(/)?.[1]
+  while (t && /^(ResponseEntity|HttpEntity|Optional|CompletableFuture|CompletionStage|Mono|Callable|DeferredResult)<.*>$/.test(t)) t = t.slice(t.indexOf('<') + 1, -1).trim()
+  return t && !/^(\?|String|Object|Void|ResponseEntity|HttpEntity)$/.test(t) ? t : null
 }

@@ -100,7 +100,8 @@ describe('buildGraph', () => {
     const hints = p => g.files.find(f => f.path === p).hints.map(h => `:${h.line} ${h.kind} ${h.text}`)
     expect(hints('server/src/main/java/com/shop/orders/OrderController.java')).toEqual([':11 route @GetMapping("/api/orders")'])
     expect(hints('server/src/main/java/com/shop/orders/OrderRepository.java')).toEqual([':5 store extends JpaRepository<Order, Long> {}'])
-    expect(hints('web/src/api.ts')).toEqual([":1 call fetch('/api/orders')).json()"])
+    // A helper called with a type argument is still a call.
+    expect(hints('web/src/api.ts')).toEqual([":1 call fetch('/api/orders')).json()", ':2 call post<{ paid: boolean }>(`/api/orders/${id}/pay`, {})'])
     // url: in a type literal is a type, not a call.
     expect(hints('web/src/ui/types.ts')).toEqual([])
     expect(hints('web/src/ui/cart.ts')).toEqual([":3 store localStorage.setItem('cart', JSON.stringify(items)))"])
