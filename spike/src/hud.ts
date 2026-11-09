@@ -42,11 +42,9 @@ export class Altimeter {
 
   update(path: number[], altitude: number, zoom: number) {
     const max = this.tree.maxDepth
-    this.ticks.forEach((t, d) => {
-      const label = d === 0 ? 'LANDSCAPE' : path[d - 1] != null ? this.tree.els[path[d - 1]].kind.toUpperCase() : ''
-      if (t.dataset.label !== label) { t.dataset.label = label; t.textContent = label }
-      t.classList.toggle('on', d <= Math.floor(altitude + 1e-6))
-    })
+    // Ticks only: the breadcrumb names the levels, and labels here would sit on cards and code.
+    this.ticks.forEach((t, d) => t.classList.toggle('on', d <= Math.floor(altitude + 1e-6)))
+    this.root.title = path.length ? `Level ${path.length} of ${max}` : 'Landscape'
     this.marker.style.top = `${(Math.min(max, altitude) / max) * 100}%`
     this.readout.textContent = `×${zoom < 1000 ? zoom.toFixed(zoom < 10 ? 1 : 0) : zoom.toExponential(1)}`
   }

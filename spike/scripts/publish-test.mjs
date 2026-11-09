@@ -118,6 +118,19 @@ try {
   await page.evaluate(() => { const s = window.__spike; s.select(-1); s.unhover(); s.fit(0) })
   await sleep(1500)
   const idle = await page.evaluate(() => window.__spike.last())
+  // At the landscape you are nowhere deeper, whatever card sits under the screen centre.
+  check('the landscape is where the breadcrumb says you are', await page.evaluate(() => window.__spike.renderer.breadcrumb().length === 0))
+  // Picking a lens shows its legend below the bar; the bar itself keeps one line.
+  const bar = await page.evaluate(async () => {
+    const h = () => document.getElementById('top').getBoundingClientRect().height
+    const before = h()
+    window.__spike.setLens('size')
+    await new Promise(r => setTimeout(r, 100))
+    const after = h()
+    window.__spike.setLens('structure')
+    return { before, after }
+  })
+  check('a lens does not reflow the top bar', bar.before === bar.after && bar.after < 60, JSON.stringify(bar))
   await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
   await sleep(300)
   const focused = await page.evaluate(() => window.__spike.last())

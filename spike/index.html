@@ -14,14 +14,22 @@
     #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; }
     #top > * { pointer-events: auto; }
     #brand { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: var(--accent); padding: 8px 12px; }
-    #models { display: flex; gap: 2px; padding: 3px; max-width: 46vw; overflow-x: auto; scrollbar-width: none; }
-    #models a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; flex: none; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
-    #models a.on { color: var(--text); background: rgba(148, 163, 184, 0.14); }
-    #models a.imported { color: #fde68a; }
+    /* One button names the open model; its menu lists the others, so the bar stays one line. */
+    #models { position: relative; padding: 3px; min-width: 0; }
+    .model-current { background: none; border: 0; color: var(--text); font: inherit; font-weight: 600; padding: 5px 10px; border-radius: 7px; cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-current::after { content: ' ▾'; color: var(--dim); font-weight: 400; }
+    .model-current:hover { background: rgba(148, 163, 184, 0.12); }
+    .model-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 70vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; z-index: 30; }
+    .model-menu[hidden] { display: none; }
+    .model-menu .menu-head { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #64748b; padding: 8px 9px 4px; }
+    .model-menu a { color: var(--dim); text-decoration: none; padding: 6px 9px; border-radius: 7px; white-space: nowrap; }
+    .model-menu a:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
+    .model-menu a.on { color: var(--text); background: rgba(148, 163, 184, 0.16); }
+    .model-menu a.imported { color: #fde68a; }
     /* The open model's views sit with the lenses on the right: ways of looking at it, not other models. */
-    /* In a narrow window the model tabs scroll; the controls around them keep their size. */
-    #brand, #sound, #views, .lensbar { flex: none; white-space: nowrap; }
-    #models { min-width: 0; }
+    /* In a narrow window the travel box gives way; the controls around it keep their size. */
+    #brand, #views, .lensbar { flex: none; white-space: nowrap; }
+    #travel { min-width: 0; }
     #views { display: flex; gap: 2px; padding: 3px; margin-left: auto; }
     #views[hidden] { display: none; }
     #views:not([hidden]) + .lensbar { margin-left: 0; }
@@ -89,16 +97,15 @@
     .d-ev button.more { display: inline-block; align-self: flex-start; font-size: 11px; padding: 1px 6px; }
     .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
     #help { right: 12px; bottom: 12px; color: var(--dim); font-size: 11px; position: fixed; }
-    #sound { background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; }
-    #sound.on { color: var(--accent); border-color: rgba(251, 191, 36, 0.4); }
-    .lensbar { position: static; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
+    .lensbar { position: relative; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
     .lensbar button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
     .lensbar button.on { color: #0b0f17; background: var(--accent); font-weight: 600; }
-    .lens-legend { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; color: var(--dim); font-size: 11px; }
+    /* The legend hangs below the lens bar, so picking a lens never reflows the top bar. */
+    .lens-legend { position: absolute; top: calc(100% + 6px); right: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
     .lens-legend[hidden] { display: none; }
     .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
     /* Altimeter: depth gauge on the left edge. */
-    .alt { position: fixed; left: 22px; top: 50%; transform: translateY(-50%); height: 46vh; width: 120px; pointer-events: none; font: 600 9px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.12em; color: #475569; }
+    .alt { position: fixed; left: 22px; top: 50%; transform: translateY(-50%); height: 46vh; width: 44px; pointer-events: none; font: 600 9px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.12em; color: #475569; }
     .alt-title { position: absolute; top: -26px; left: 0; color: #64748b; }
     .alt-rail { position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: linear-gradient(#1e293b, #334155, #1e293b); border-radius: 1px; }
     .alt-tick { position: absolute; left: -4px; width: 10px; height: 1px; background: #334155; padding-left: 18px; line-height: 0; white-space: nowrap; transition: color 0.3s; }
@@ -107,7 +114,7 @@
     .alt-readout { position: absolute; bottom: -28px; left: 0; color: var(--accent); font-size: 11px; }
     /* Region title card. */
     kbd { font: 600 10px ui-monospace, Consolas, monospace; color: #94a3b8; border: 1px solid #334155; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: rgba(15, 23, 42, 0.8); }
-    #travel { width: 240px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    #travel { width: 240px; white-space: nowrap; overflow: hidden; gap: 10px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
     #travel:hover { color: var(--text); border-color: rgba(251, 191, 36, 0.4); }
     /* Toast */
     .toast { position: fixed; left: 50%; bottom: 96px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 22, 0.92); border: 1px solid rgba(251, 191, 36, 0.35); color: #e2e8f0; padding: 9px 14px; border-radius: 10px; font-size: 13px; transition: opacity 0.18s, transform 0.18s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
@@ -176,7 +183,6 @@
     <nav id="models" class="panel" style="position: static"></nav>
     <button id="travel">Travel to…<kbd>Ctrl K</kbd></button>
     <nav id="views" class="panel" style="position: static" hidden></nav>
-    <button id="sound">Sound off</button>
   </div>
   <div id="crumbs" class="panel"></div>
   <div id="stats" class="panel">loading…</div>

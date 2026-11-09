@@ -139,7 +139,8 @@ export function installControls(c: Ctx) {
     { name: 'Whole map', run: () => go(0) },
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Clear route', hint: 'Esc', run: clearRoute },
-    { name: 'Toggle sound', run: () => document.getElementById('sound')?.click() },
+    { name: 'Toggle sound', run: () => { sound.toggle() } },
+    { name: 'Toggle frame stats', run: () => { const e = document.getElementById('stats'); if (e) e.hidden = !e.hidden } },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
   const palette = new Palette(tree, commands, (i, shift) => {

@@ -281,11 +281,16 @@ export class Renderer {
   }
 
   /** Titles from the root down to the deepest labelled node at the screen centre. */
+  /**
+   * Where the reader is: the chain of cards under the screen centre that fill most of the screen.
+   * A small card that happens to sit under the centre is something you look at, not a place you
+   * are in, so the chain stops above it.
+   */
   breadcrumb(): number[] {
-    const out: number[] = []
-    let cur = this.pick(this.cam.w / 2, this.cam.h / 2)
-    for (; cur > 0; cur = this.tree.parent[cur]) out.unshift(cur)
-    return out
+    const chain: number[] = []
+    for (let cur = this.pick(this.cam.w / 2, this.cam.h / 2); cur > 0; cur = this.tree.parent[cur]) chain.unshift(cur)
+    const k = chain.findIndex(i => { const [, , w, h] = this.screenRect(i); return w < this.cam.w * 0.55 && h < this.cam.h * 0.55 })
+    return k < 0 ? chain : chain.slice(0, k)
   }
 
   /** Whether node n is the focus, inside it, or contains it. */
@@ -462,7 +467,7 @@ export class Renderer {
 
     // Lens value badge in the bottom-right corner.
     if (this.lens && w > 90) {
-      const label = `${compact(this.lens.raw[i])} ${this.lens.unit}`
+      const label = `${compact(this.lens.raw[i])} ${this.lens.raw[i] === 1 ? this.lens.unit.replace(/s$/, '') : this.lens.unit}`
       const badge = (v.metric ??= this.text(label, texts))
       if (badge.text !== label) badge.text = label
       const bpx = Math.min(h * 0.1, 14)
@@ -640,6 +645,10 @@ export class Renderer {
       drawn.push({ e, kind, pts, sOn, tOn })
     }
     const quiet = drawn.length > 24
+    // Inside a file the screen is its code: chips naming off-screen ends would sit on it, so only
+    // the focused card's chips stay.
+    const crumb = this.breadcrumb(), here = crumb[crumb.length - 1] ?? 0
+    const reading = here > 0 && !this.tree.children[here].length
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -649,7 +658,7 @@ export class Renderer {
         const c = clipToScreen(pts, W, H, sOn, SAFE)
         if (!c) continue
         clipped = c
-        if (hot || !sel) {
+        if (hot || (!sel && !reading)) {
           const off = sOn ? e.t : e.s
           const k = sOn ? clipped.length - 2 : 0
           const chip = chipTargets.get(off)

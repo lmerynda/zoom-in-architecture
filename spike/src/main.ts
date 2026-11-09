@@ -137,8 +137,6 @@ async function main() {
 
   controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit })
   resize()
-  const soundBtn = $<HTMLButtonElement>('sound')
-  soundBtn.onclick = () => { const on = sound.toggle(); soundBtn.textContent = on ? 'Sound on' : 'Sound off'; soundBtn.classList.toggle('on', on) }
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
@@ -272,6 +270,8 @@ async function main() {
     minimap.draw(cam)
   }, 250)
 
+  // Frame stats are for developers: shown while loading, then behind the palette's Toggle frame stats.
+  $('stats').hidden = true
   const gl = (app.renderer as unknown as { gl?: WebGL2RenderingContext }).gl
   const dbg = gl?.getExtension('WEBGL_debug_renderer_info')
   Object.assign(window, {
@@ -293,5 +293,6 @@ async function main() {
 
 main().catch(e => {
   $('stats').textContent = String(e?.stack ?? e)
+  $('stats').hidden = false
   console.error(e)
 })

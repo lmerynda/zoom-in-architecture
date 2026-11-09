@@ -85,7 +85,9 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
     box.append(el('h3', '', `${title} · ${rows.length}`))
     for (const r of rows.slice(0, 40)) {
       const b = el('button')
-      b.append(el('i', '', arrow), el('b', '', tree.els[r.other].title), el('span', '', r.title))
+      // A relation named after the element it reaches (an import of KingdomDto) says nothing twice.
+      const name = tree.els[r.other].title
+      b.append(el('i', '', arrow), el('b', '', name), ...(r.title && r.title !== name ? [el('span', '', r.title)] : []))
       b.onclick = () => go(r.other)
       box.append(b, ...(r.evidence.length ? [proof(r.evidence, files, open)] : []))
     }
