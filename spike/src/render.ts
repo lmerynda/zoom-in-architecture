@@ -13,9 +13,12 @@ import { aggregateEdges, type EvidenceJson, type ShownEdge, type Tree } from './
 
 const FONT = 'ui'
 const FONT_PX = 32
-/** A container's children get labels between these on-screen child widths. */
-const OPEN_A = 70
-const OPEN_B = 120
+/**
+ * A container opens, and its children get labels, between these on-screen child widths: a child
+ * narrower than OPEN_A could not carry its name, so until then the container stays a closed card.
+ */
+const OPEN_A = 120
+const OPEN_B = 180
 /** Below this on-screen width a card is a plain coloured pip. */
 const PIP = 30
 const DESC_WRAP = 500
@@ -34,16 +37,18 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
-/** How far a long title may shrink below its level's size before it is cut with an ellipsis. */
-const TITLE_SHRINK = 0.6
+/** How far a long title may shrink below its level's size before it is cut with an ellipsis... */
+const TITLE_SHRINK = 0.45
+/** ...but never below this, in px: a whole name smaller than this is not read. */
+const TITLE_MIN = 9
 
 /**
  * A title's size: its level's size (`level`, the same for siblings), shrunk to fit `room` for a
- * title `em` wide, but never below TITLE_SHRINK of the level, so siblings stay close in size and a
- * name is cut only when shrinking would not save it.
+ * title `em` wide, down to TITLE_SHRINK of the level or TITLE_MIN px, whichever is larger. A name
+ * is cut only when shrinking that far would not save it: a whole name beats a uniform size.
  */
 export function titlePx(level: number, room: number, em: number): number {
-  return Math.min(level, Math.max(room / em, level * TITLE_SHRINK))
+  return Math.min(level, Math.max(room / em, Math.min(level, Math.max(TITLE_MIN, level * TITLE_SHRINK))))
 }
 
 const PALETTE: Record<string, number> = {
@@ -113,6 +118,8 @@ export class Renderer {
   private chipLayer = new Container()
   private views: (NodeView | undefined)[]
   private shown: number[] = []
+  /** Lens values drawn this frame, in screen px, so edge labels keep off them. */
+  private badges: number[][] = []
   private stamp: Int32Array
   private frameNo = 0
   private openMemo: Float32Array
@@ -294,6 +301,18 @@ export class Renderer {
     }
   }
 
+  /**
+   * The card the pointer is about: a file or a closed card under it, or an open container only by
+   * its header. The pointer always rests somewhere, so the background of an open container is
+   * space between cards, not a reason to light up every edge crossing it.
+   */
+  hoverAt(sx: number, sy: number): number {
+    const i = this.pick(sx, sy)
+    if (i <= 0 || !this.tree.children[i].length || this.open(i) <= 0) return i
+    const [, y, , h] = this.screenRect(i)
+    return sy <= y + Math.max(HEADER * h, 28) ? i : -1
+  }
+
   /** Titles from the root down to the deepest labelled node at the screen centre. */
   /**
    * Where the reader is: the chain of cards under the screen centre that fill most of the screen.
@@ -319,7 +338,7 @@ export class Renderer {
     this.frameNo++
     if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
     const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, cpuMs: 0 }
-    this.hover = this.pointer ? this.pick(this.pointer[0], this.pointer[1]) : -1
+    this.hover = this.pointer ? this.hoverAt(this.pointer[0], this.pointer[1]) : -1
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
     const edges = aggregateEdges(this.tree, i => this.rep(i), inFocus)
@@ -344,6 +363,7 @@ export class Renderer {
     this.codeSlots = []
     const prev = this.shown
     this.shown = []
+    this.badges = []
     this.visit(0, 1, 1, st)
     for (const i of prev) if (this.stamp[i] !== this.frameNo) this.hide(i)
     this.drawEdges(edges, focus, st)
@@ -447,10 +467,11 @@ export class Renderer {
     fill.visible = true
     fill.position.set(x, y)
     fill.width = w; fill.height = h
-    // Under a lens the heat sits on the cards you are looking at: closed ones are vivid, open
-    // containers fade to a dark frame so their children carry the colour.
+    // Under a lens the heat sits on the cards you are looking at: closed ones carry the colour,
+    // deep enough that white titles stay readable on the hot (pale yellow) end; open containers
+    // fade to a dark frame so their children carry it.
     fill.tint = heat >= 0
-      ? mix(heat, BG, isContainer ? 0.32 + 0.6 * t : hot || sel ? 0.12 : 0.28)
+      ? mix(heat, BG, isContainer ? 0.32 + 0.6 * t : hot || sel ? 0.45 : 0.58)
       : isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
     // An external system is outside what was mapped: an outline over the background.
     fill.alpha = alpha * dim * (outside && heat < 0 && !hot && !sel ? 0.3 : 1)
@@ -486,7 +507,10 @@ export class Renderer {
       if (bpx >= 7 && badge.width <= w * 0.88) {
         badge.visible = true
         badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
-        badge.position.set(x + w - w * 0.06 - badge.width, y + h - h * 0.08 - bpx * 1.25)
+        // Inside the card and inside the screen: a card running off the edge keeps its value in view.
+        const bx = Math.max(x + w * 0.06, Math.min(x + w - w * 0.06 - badge.width, this.cam.w - SAFE.right - badge.width)), by = Math.max(y + h * 0.3, Math.min(y + h - h * 0.08 - bpx * 1.25, this.cam.h - SAFE.bottom - bpx * 1.4))
+        badge.position.set(bx, by)
+        this.badges.push([bx, by, badge.width, bpx * 1.3])
         badge.alpha = la
       }
     }
@@ -594,9 +618,10 @@ export class Renderer {
     if (code) this.codeSlots.push({ i, ...code, alpha: la })
     const bottom = code ? code.y - pad * 0.4 : y + h - pad * 0.6
 
-    if (el.description) {
+    // Under a lens the card speaks in its value; a description would run under it.
+    if (el.description && !this.lens) {
       const dpx = Math.min((FONT_PX * inner) / DESC_WRAP, 14)
-      if (dpx >= 6.5) {
+      if (dpx >= 9) {
         const desc = (v.desc ??= this.text(shortText(el.description, 150), texts, DESC_WRAP))
         const dh = desc.height * (dpx / FONT_PX)
         if (dh <= bottom - cy) {
@@ -944,6 +969,7 @@ export class Renderer {
       // A label cut by the screen edge or under the HUD reads as noise ("2 re"): it waits for room.
       if (x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) continue
       if (this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch)) continue
+      if (this.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + cw && y < by + bh && by < y + ch)) continue
       // Labels live in the gutters: never on a card someone is reading (a closed card or a file).
       if (this.shown.some(c => {
         if (this.tree.children[c].length && this.open(c) > 0) return false
@@ -1024,7 +1050,8 @@ export function junctions(paths: number[][], eps = 0.75): number[] {
 
 /** `s` cut with an ellipsis to fit `width` at font size `px`, given its full width per px. */
 export function fitText(s: string, emFull: number, width: number, px: number): string {
-  if (emFull * px <= width) return s
+  // A pixel of slack: a title sized to fill its room exactly must not be cut by rounding.
+  if (emFull * px <= width + 1) return s
   return shortText(s, Math.max(2, Math.floor((s.length * width) / (emFull * px))))
 }
 

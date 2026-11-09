@@ -140,11 +140,11 @@ try {
   await page.mouse.move(6, vh / 2)
   for (let k = 0; k < 40; k++) { await page.mouse.wheel({ deltaY: -400 }); await sleep(15) }
   await sleep(1200)
-  const deep = await page.evaluate(() => { const s = window.__spike; return { z: s.cam.z, fit: Math.min(s.cam.w * 0.92 / s.world.rect[2], s.cam.h * 0.92 / s.world.rect[3]) } })
+  const deep = await page.evaluate(() => { const s = window.__spike; return { z: s.cam.z, fit: Math.min(s.cam.w * 0.92 / s.world.rect[2], s.cam.h * 0.92 / s.world.rect[3]), cards: s.last().nodes } })
   for (let k = 0; k < 60; k++) { await page.mouse.wheel({ deltaY: 400 }); await sleep(15) }
   await sleep(1200)
   const far = await page.evaluate(() => window.__spike.cam.z)
-  check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 2.5 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, far: far / deep.fit }))
+  check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 8 && deep.cards > 0 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, cards: deep.cards, far: far / deep.fit }))
   // Double-clicking a file reads it: it is selected and its code shows as text, beside the panel.
   const fileAt = await page.evaluate(async () => {
     const s = window.__spike, f = s.tree.els.findIndex(e => e.metadata?.path === 'web/src/api.ts')

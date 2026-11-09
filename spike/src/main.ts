@@ -98,7 +98,12 @@ async function main() {
   }
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
-    renderer.hud = ['stats', 'minimap', 'help'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e?.getBoundingClientRect(); return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
+    measureHud()
+  }
+  // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
+  // since the details panel opens and closes and layout settles after the first frame.
+  const measureHud = () => {
+    renderer.hud = ['stats', 'minimap', 'help', 'details'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
   {
     cam.resize(app.screen.width, app.screen.height)
@@ -125,7 +130,11 @@ async function main() {
       const font = code.fontOf(i)
       if (font) return (cam.z * MAX_READ_PX) / font
     }
-    return (cam.w * 1.5) / world.rect[Math.max(0, i) * 4 + 2]
+    // Empty space in a container: on until its smallest card is most of a screen wide, so the
+    // wheel never strands you in a gap, yet always reaches readable names.
+    const c = Math.max(0, i), kids = tree.children[c]
+    const smallest = kids.length ? Math.min(...kids.map(k => world.rect[k * 4 + 2])) : world.rect[c * 4 + 2]
+    return Math.max((cam.w * 1.5) / world.rect[c * 4 + 2], (cam.w * 0.6) / smallest)
   }
   /** How far the wheel may zoom out: a little past the whole landscape. */
   const zoomFloor = () => 0.5 * Math.min((cam.w * 0.92) / world.rect[2], (cam.h * 0.92) / world.rect[3])
@@ -148,6 +157,12 @@ async function main() {
     renderer.selected = i > 0 ? i : -1
     if (i > 0) sound.select()
     renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
+    // The panel opens on the right; a selected card under it glides left to clear it, at the same zoom.
+    if (i > 0 && !details.hidden && !cam.flying) {
+      const r = world.rect, [sx] = cam.toScreen(r[i * 4], 0), w = r[i * 4 + 2] * cam.z
+      const left = details.getBoundingClientRect().x - 24, dx = sx + w - left
+      if (dx > 0 && w < left - 24) cam.flyTo(cam.x + dx / cam.z, cam.y, cam.w / cam.z, cam.h / cam.z, now(), 1)
+    }
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.
@@ -294,6 +309,7 @@ async function main() {
       `drawn ${last.nodes} cards · ${last.texts} labels · ${last.edges} edges · ${last.chips} off-screen`,
     ].join('\n')
     minimap.draw(cam)
+    measureHud()
   }, 250)
 
   // Frame stats are for developers: shown while loading, then behind the palette's Toggle frame stats.

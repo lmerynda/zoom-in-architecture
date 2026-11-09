@@ -46,6 +46,11 @@ export interface SiblingEdge {
   count: number
 }
 
+/** A doc comment's text without its markup: {@link Pet} as Pet, <code>x</code> as x. */
+export function plainDoc(s: string): string {
+  return s.replace(/\{@\w+\s+([^}]*)\}/g, '$1').replace(/<\/?[a-z][^>]*>/gi, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+}
+
 /**
  * The element hierarchy as flat arrays. Node 0 is a virtual root holding the top-level elements,
  * so the whole landscape is just another container.
@@ -67,7 +72,8 @@ export class Tree {
       id: '', parent: null, title: model.title ?? model.name, kind: 'landscape', description: '',
       technology: '', tags: [], color: 'primary', shape: 'rectangle',
     }
-    this.els = [root, ...model.elements]
+    // Doc-comment markup reads as plain words, in maps uploaded before the scanner stripped it too.
+    this.els = [root, ...model.elements.map(e => (e.description && /<\/?[a-z][^>]*>|\{@\w+/i.test(e.description) ? { ...e, description: plainDoc(e.description) } : e))]
     const n = this.els.length
     this.parent = new Int32Array(n).fill(-1)
     this.depth = new Int32Array(n)

@@ -158,11 +158,14 @@ export function installControls(c: Ctx) {
 
   // --- Mouse.
   const canvas = c.app.canvas
+  let wheeledAt: { x: number; y: number } | null = null
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
     radial.close()
-    // A tooltip is about the card under a still cursor; zooming moves on from it.
+    // A tooltip is about the card under a still cursor; zooming moves on from it, and none opens
+    // until the pointer moves again.
     tooltips.closeAll()
+    wheeledAt = { x: e.offsetX, y: e.offsetY }
     const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
     cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
   }, { passive: false })
@@ -286,7 +289,8 @@ export function installControls(c: Ctx) {
       const inside = renderer.hover > 0 && world.rect[renderer.hover * 4 + 2] * cam.z > cam.w * 0.8
       // The selected card has the details panel; a tooltip on it would only repeat it.
       const selected = renderer.hover > 0 && renderer.hover === renderer.selected
-      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside || selected)
+      if (wheeledAt && p && Math.hypot(p[0] - wheeledAt.x, p[1] - wheeledAt.y) > 6) wheeledAt = null
+      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside || selected || !!wheeledAt)
     },
     go, back, forward, routeTo, stepRoute, cycleTarget, togglePin, palette, radial, help, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Backspace returns. */

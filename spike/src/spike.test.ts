@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
-import { aggregateEdges, Tree, type ModelJson } from './model'
+import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, fitText, junctions, shortText } from './render'
+import { clipToScreen, fitText, junctions, shortText, titlePx } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -23,6 +23,13 @@ const model: ModelJson = {
     { source: 'a', target: 'a.a1', title: 'parent-child' },
   ],
 }
+
+describe('plainDoc', () => {
+  it('reads doc-comment markup as plain words, for maps uploaded before the scanner stripped it', () => {
+    expect(plainDoc('Simple <code>Validator</code> for {@link Pet} names &amp; dates.')).toBe('Simple Validator for Pet names & dates.')
+    expect(new Tree({ name: 'm', elements: [{ id: 'a', parent: null, title: 'A', kind: 'code', description: 'A <code>Pet</code>.', technology: '', tags: [], color: 'primary', shape: 'rectangle' }], relations: [] }).els[1].description).toBe('A Pet.')
+  })
+})
 
 describe('Tree', () => {
   const tree = new Tree(model)
@@ -278,6 +285,20 @@ describe('fitText', () => {
     expect(fitText('0123456789', 5, 50, 10)).toBe('0123456789')
     expect(fitText('0123456789', 5, 30, 10)).toBe('01234…')
     expect(fitText('0123456789', 5, 30, 10).length).toBeLessThanOrEqual(6)
+    // A title sized to fill its room exactly is not cut by a rounding error.
+    expect(fitText('Eras and rankings', 7.9775, 171.2 - 1e-9, 21.46)).toBe('Eras and rankings')
+  })
+})
+
+describe('titlePx', () => {
+  it('shrinks a long name before cutting it, down to a readable size', () => {
+    // Fits at the level's size: the level's size.
+    expect(titlePx(20, 200, 8)).toBe(20)
+    // Too wide: shrinks to fit, below the 0.45 floor's pull only as far as 9 px.
+    expect(titlePx(20, 200, 16)).toBe(12.5)
+    expect(titlePx(20, 100, 16)).toBe(9)
+    // A small level never grows to the 9 px floor.
+    expect(titlePx(7, 30, 16)).toBe(7)
   })
 })
 
