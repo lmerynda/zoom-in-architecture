@@ -255,6 +255,14 @@ export function endpoints(graph) {
     const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
     return e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].some(n => used.has(n))
   }
+  /** Where in `part` of file `p` an edge's target is first used: by a name it imports, or a field of its type. */
+  const firstUse = (p, part) => {
+    const c = context(p), first = new Map()
+    for (const m of part.matchAll(/[A-Za-z_]\w*/g)) {
+      for (const n of [m[0], c.typeOf.get(m[0])]) if (n && !first.has(n)) first.set(n, m.index)
+    }
+    return e => Math.min(...e.names.map(n => first.get(n.replace(/\W+$/, '')) ?? Infinity))
+  }
   const dir = p => p.slice(0, p.lastIndexOf('/') + 1)
   const ROUTE_CALL = /([\w$]+)\s*\.\s*(?:get|post|put|delete|patch|all|route|HandleFunc|Handle)\s*\(/i
 
@@ -330,22 +338,21 @@ export function endpoints(graph) {
       // The steps in call order: the handler, the files it calls that lead somewhere, what those
       // call in turn, and last the files it only names (request and response types).
       const lead = direct.filter(e => leads(e.to, 1, new Set())), data = direct.filter(e => !lead.includes(e))
-      const steps = [hp, ...lead.map(e => e.to)]
+      const steps = [hp]
       // Below the handler a file takes part through the methods its caller calls on it, so only
       // what those methods use goes on; a file whose called methods are not its own (an inherited
-      // or generated API) is followed whole.
-      const queue = lead.filter(e => !own(e.to)).map(e => [e.to, 1, text, hp])
-      while (queue.length) {
-        const [p, d, callerText, caller] = queue.shift()
-        if (d >= DEPTH) continue
+      // or generated API) is followed whole. Each file's calls follow it at once, in the order its
+      // body makes them, so the steps read as the request runs.
+      const visit = (p, d, callerText, caller) => {
+        steps.push(p)
+        if (own(p) || d >= DEPTH) return
         const part = partOf(p, callerText, caller)
         const uses = part == null ? () => true : usedBy(p, part)
-        for (const e of out.get(p) ?? []) {
-          if (steps.includes(e.to) || byPath.get(e.to)?.lang === 'view' || !uses(e) || !leads(e.to, d + 1, new Set())) continue
-          steps.push(e.to)
-          if (!own(e.to)) queue.push([e.to, d + 1, part ?? context(p).whole, p])
-        }
+        const at = firstUse(p, part ?? context(p).whole)
+        const next = (out.get(p) ?? []).filter(e => !steps.includes(e.to) && byPath.get(e.to)?.lang !== 'view' && uses(e) && leads(e.to, d + 1, new Set()))
+        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, part ?? context(p).whole, p)
       }
+      for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
       for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)
       const redirect = said.find(s => s.startsWith('redirect:'))
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,

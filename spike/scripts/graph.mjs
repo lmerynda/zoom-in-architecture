@@ -219,7 +219,7 @@ function jsResolver(repo, projects, fileSet, allSet) {
   }
 }
 
-function summary(src, lang) {
+export function summary(src, lang) {
   if (lang === 'html') return src.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? ''
   // Python: the module docstring. Go: the comment above the package clause.
   if (lang === 'py') return src.match(/^(?:\s*#[^\n]*\n)*\s*[rRuU]?("""|''')([\s\S]*?)\1/)?.[2]?.replace(/\s+/g, ' ').trim() ?? ''
@@ -241,7 +241,8 @@ function summary(src, lang) {
   const block = lang === 'java'
     ? src.match(/\/\*\*([\s\S]*?)\*\/\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|final\s+|abstract\s+)*(?:class|interface|enum|record)\b/)
     : src.match(/^\s*(?:#![^\n]*\n\s*)?\/\*\*?([\s\S]*?)\*\//)
-  if (block) return block[1].replace(/^\s*\*\s?/gm, ' ').replace(/@\w+.*$/gm, '').replace(/\s+/g, ' ').trim()
+  // Javadoc and JSDoc markup reads as plain words on a card: {@link Owner} as Owner, <code>x</code> as x.
+  if (block) return block[1].replace(/^\s*\*\s?/gm, ' ').replace(/\{@\w+\s+([^}]*)\}/g, '$1').replace(/^\s*@\w+.*$/gm, '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
   if (lang === 'java') return ''
   for (const l of src.split('\n')) {
     const m = l.match(/^\s*\/\/\s?(.*)$/)

@@ -23,5 +23,6 @@ class AccountService {
 
 	void close() {
 		this.audit.record("closed");
+		this.cards.purge();
 	}
 }

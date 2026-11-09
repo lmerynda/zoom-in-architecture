@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildGraph } from './graph.mjs'
+import { buildGraph, summary } from './graph.mjs'
 import { folderText, graphText } from './zoom.mjs'
 
 const g = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -145,6 +145,11 @@ describe('buildGraph', () => {
     expect(doc('server/src/main/java/com/shop/orders/model/Order.java')).toBe('An order as stored.')
     expect(doc('src/Api/Controllers/OrdersController.cs')).toBe('Takes orders over HTTP.')
     expect(doc('web/src/ui/cart.ts')).toBe('The cart shown on every page.')
+  })
+
+  it('reads Javadoc markup as plain words', () => {
+    const src = ['/**', ' * Simple <code>Validator</code> for {@link Pet} names &amp; dates.', ' * @author Ken', ' */', 'public class PetValidator {}'].join('\n')
+    expect(summary(src, 'java')).toBe('Simple Validator for Pet names & dates.')
   })
 
   it('prints a compact text listing for agents', () => {

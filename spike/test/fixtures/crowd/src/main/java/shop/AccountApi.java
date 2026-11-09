@@ -17,7 +17,7 @@ class AccountApi {
 	ResponseEntity<?> details() { return ResponseEntity.ok().build(); }
 
 	@PostMapping("/close")
-	ResponseEntity<?> close() { return ResponseEntity.ok().build(); }
+	ResponseEntity<?> close() { this.accounts.close(); return ResponseEntity.ok().build(); }
 
 	@PostMapping("/add-card")
 	ResponseEntity<?> addCard() { this.accounts.addCard("4242"); return ResponseEntity.ok().build(); }

@@ -32,6 +32,12 @@ describe('endpoints', () => {
     expect(brief([add])).toEqual(['POST /account/add-card addCard: AccountApi.java > AccountService.java > CardRepository.java'])
   })
 
+  it('lists the steps in the order the code calls them, not the order the fields are declared', () => {
+    const close = endpoints(fixture('crowd')).find(e => e.path === '/account/close')
+    // close() writes the audit log, then purges the cards; the service declares cards first.
+    expect(brief([close])).toEqual(['POST /account/close close: AccountApi.java > AccountService.java > AuditRepository.java > CardRepository.java'])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([

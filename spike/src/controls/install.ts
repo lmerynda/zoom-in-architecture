@@ -96,7 +96,9 @@ export function installControls(c: Ctx) {
     renderer.target = n
     frame([sel, n])
     sound.blip(dir === 'out' ? 740 : 520, 0.05)
-    toast.show(`${dir === 'out' ? 'Calls' : 'Called by'} ${cycle.k + 1}/${list.length} · ${tree.els[n].title} — ${title}`, 'Enter walks there')
+    // A relation named after what it reaches (an import of KingdomTurnReport) says nothing twice.
+    const name = tree.els[n].title
+    toast.show(`${dir === 'out' ? 'Calls' : 'Called by'} ${cycle.k + 1}/${list.length} · ${name}${title && title !== name ? ` — ${title}` : ''}`, 'Enter walks there')
   }
   const clearTarget = () => { renderer.target = -1; cycle = null }
 

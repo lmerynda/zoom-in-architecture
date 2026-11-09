@@ -37,7 +37,7 @@ A map shows a codebase's architecture: the processes that run, the components in
 
     A prefix added by a custom framework convention, such as an ASP.NET `IControllerModelConvention`, is not read.
   - A route that names its handler (`router.POST("/login", UsersLogin)`) starts its path at that function, in the same file, its Go package, or the JS module it was imported from.
-  - Inside an endpoint is the request's path as numbered steps, in call order:
+  - Inside an endpoint is the request's path as numbered steps, in call order: each file is followed at once by what it calls, in the order its body first uses them (a field of a type counts as using that type):
     - the handler method;
     - the files its body calls that lead to a store or another service (fields lead to their types, helper methods in the same file count);
     - below those, what the called methods use, method by method: a service's other methods, and the stores only they reach, are not on this path. A file whose called methods it does not declare itself (an inherited or generated API) is followed whole. The path stops at the first file that reaches a store or service;
