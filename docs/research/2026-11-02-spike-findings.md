@@ -179,12 +179,14 @@ The help screen is now two short columns, mouse and keys.
 
 The motion work from the same pass stays, but secondary:
 - van Wijk–Nuij flights;
-- flow particles;
+- flow particles, since 2026-11-09 only on the focused card's edges;
 - the starfield;
 - reveal ripple and pulses;
 - lock-on reticles;
-- the altimeter and region banner;
+- the altimeter;
 - lenses.
+
+Two reviews on 2026-11-09 (see [2026-11-09-viewer-review.md](2026-11-09-viewer-review.md)) found that particles on every edge suggested call traffic the data does not have, and that the "Entering" region banner printed over card titles and named the wrong level. The particles now run only where the reader is looking, and the banner is gone: the breadcrumb and the altimeter already say where you are.
 
 ## Live mode, and layout stability across edits
 

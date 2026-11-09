@@ -237,7 +237,8 @@ export class Tooltips {
 export class RoutePanel {
   private root = el('div', 'routepanel panel')
   onStep: (k: number) => void = () => {}
-  constructor(public tree: Tree) { document.body.append(this.root) }
+  // Hidden until there is a route to show, so no empty panel sits on the map.
+  constructor(public tree: Tree) { this.root.hidden = true; document.body.append(this.root) }
 
   show(route: Hop[] | null, step: number) {
     this.root.hidden = !route

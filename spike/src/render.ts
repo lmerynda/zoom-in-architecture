@@ -76,6 +76,8 @@ export interface FrameStats {
   texts: number
   edges: number
   chips: number
+  /** Moving dots; only the focused card's edges carry them. */
+  particles: number
   cpuMs: number
 }
 
@@ -302,7 +304,7 @@ export class Renderer {
     this.time = now
     this.frameNo++
     if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
-    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, cpuMs: 0 }
+    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.pick(this.pointer[0], this.pointer[1]) : -1
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
@@ -656,7 +658,7 @@ export class Renderer {
         }
       }
       paths[kind].push(clipped)
-      flows.push({ pts: clipped, color: hot ? (kind === Kind.Out ? OUT : IN) : 0x9fb6ff, count: e.count, both: e.both, bright: hot })
+      if (hot) flows.push({ pts: clipped, color: kind === Kind.Out ? OUT : IN, both: e.both })
       st.edges++
       const n = pts.length
       if (tOn) heads[kind].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -693,7 +695,7 @@ export class Renderer {
       if (j.length) gg.fill({ color, alpha })
     }
 
-    this.particles.update(flows, this.time, sel)
+    st.particles = this.particles.update(flows, this.time)
     st.chips = this.drawChips(chipTargets, W, H)
     this.drawLabels(labelSpots)
   }

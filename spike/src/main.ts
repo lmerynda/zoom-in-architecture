@@ -3,7 +3,7 @@ import { Camera } from './camera'
 import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
-import { Altimeter, Banner, LensBar } from './hud'
+import { Altimeter, LensBar } from './hud'
 import { layoutJobs, placeWorld, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
@@ -59,7 +59,6 @@ async function main() {
   app.stage.addChild(renderer.stage)
   const minimap = new Minimap($<HTMLCanvasElement>('minimap'), tree, world)
   const altimeter = new Altimeter(tree)
-  const banner = new Banner(tree)
   const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
   renderer.onOpen = () => sound.chime()
@@ -196,7 +195,6 @@ async function main() {
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
     minimap.tree = next; minimap.world = live
     altimeter.setTree(next)
-    banner.tree = next
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
     renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
@@ -248,7 +246,6 @@ async function main() {
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
     altimeter.update(path, renderer.altitude(path), cam.z / ((cam.w * 0.92) / world.rect[2]))
-    banner.update(path[path.length - 1] ?? 0, t, code.reading)
     const key = path.join('/')
     if (key !== lastCrumb) {
       lastCrumb = key

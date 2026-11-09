@@ -114,13 +114,15 @@ try {
   })
   check('a cited line opens its code there', !!opened && Math.abs(opened.y + opened.h / 2 - opened.mid) < 60 && opened.h > 12 && opened.left < opened.panelLeft, JSON.stringify(opened))
   await shot('02c-evidence-opened')
-  // The "Entering" title card never covers code being read.
-  let covered = 0
-  for (let k = 0; k < 20; k++) {
-    covered += await page.evaluate(() => document.querySelector('.banner').classList.contains('show') && [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) ? 1 : 0)
-    await sleep(100)
-  }
-  check('the banner keeps off code being read', covered === 0, `${covered} of 20 frames`)
+  // Nothing moves on its own: dots run only along the focused card's edges, since the data has no traffic.
+  await page.evaluate(() => { const s = window.__spike; s.select(-1); s.unhover(); s.fit(0) })
+  await sleep(1500)
+  const idle = await page.evaluate(() => window.__spike.last())
+  await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
+  await sleep(300)
+  const focused = await page.evaluate(() => window.__spike.last())
+  check('no empty route panel sits on the map', await page.evaluate(() => document.querySelector('.routepanel').hidden))
+  check('only the focused card\'s edges move', idle.edges > 0 && idle.particles === 0 && focused.particles > 0, JSON.stringify({ idle: [idle.edges, idle.particles], focused: [focused.edges, focused.particles] }))
   // The controls screen tells readers a cited line opens its code.
   await page.keyboard.press('?')
   await sleep(250)

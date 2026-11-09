@@ -4,10 +4,7 @@ export interface Flow {
   /** Screen polyline from source to target. */
   pts: number[]
   color: number
-  /** Relations folded into the edge: more traffic, more particles. */
-  count: number
   both: boolean
-  bright: boolean
 }
 
 const CAP = 2400
@@ -26,27 +23,26 @@ function dotTexture() {
 }
 
 /**
- * Traffic along edges: glowing particles travel from caller to callee, like goods on a
- * logistics map. Busier edges carry more of them; focused edges run brighter and faster.
+ * Direction on the edges of the focused card: particles run from the card to what it uses (amber)
+ * and from its users to it (cyan). Only focused edges move. The data has no call traffic, so motion
+ * elsewhere would only suggest some, and arrowheads, widths and counts already show the rest.
  */
 export class FlowParticles {
   readonly view = new Container()
   private pool: Sprite[] = []
   private tex = dotTexture()
 
-  update(flows: Flow[], time: number, quiet: boolean) {
+  update(flows: Flow[], time: number) {
     let k = 0
     for (const f of flows) {
-      if (quiet && !f.bright) continue
       const p = f.pts
       const segs: number[] = []
       let len = 0
       for (let i = 2; i < p.length; i += 2) { const l = Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]); segs.push(l); len += l }
       if (len < 24) continue
-      const density = Math.min(2.2, 0.8 + Math.log2(f.count) * 0.35) * (f.bright ? 1.3 : 1)
-      const n = Math.max(1, Math.min(18, Math.round((len / 110) * density)))
-      const speed = f.bright ? 150 : 85
-      const size = f.bright ? 11 : 7
+      // Evenly spaced along the line, so the dots say "this way" and nothing about volume.
+      const n = Math.max(1, Math.min(12, Math.round(len / 120)))
+      const speed = 150, size = 10
       for (let j = 0; j < n && k < CAP; j++) {
         let u = (j / n + (time * speed) / 1000 / len) % 1
         // Edges used both ways carry traffic both ways.
@@ -61,7 +57,7 @@ export class FlowParticles {
         s.width = s.height = size
         s.tint = f.color
         // Fade in and out at the ends so particles never pop.
-        s.alpha = (f.bright ? 1 : 0.7) * Math.min(1, u * 8, (1 - u) * 8)
+        s.alpha = Math.min(1, u * 8, (1 - u) * 8)
         k++
       }
     }

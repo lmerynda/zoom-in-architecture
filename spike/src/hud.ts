@@ -52,40 +52,6 @@ export class Altimeter {
   }
 }
 
-/** "Entering" banner: names the region the camera settles in, like a game's area title card. */
-export class Banner {
-  private root = el('div', 'banner')
-  private title = el('div', 'banner-title')
-  private sub = el('div', 'banner-sub')
-  private shown = -1
-  private pending = -1
-  private since = 0
-
-  constructor(public tree: Tree) {
-    this.root.append(el('div', 'banner-kicker', 'ENTERING'), this.title, this.sub)
-    document.body.append(this.root)
-  }
-
-  /**
-   * Call every frame with the deepest element under the screen centre. While `quiet` (code is being
-   * read) the banner goes away at once and stays away for that place, so it never covers the code.
-   */
-  update(node: number, now: number, quiet = false) {
-    if (quiet) { this.root.classList.remove('show'); this.shown = this.pending = node; return }
-    if (node !== this.pending) { this.pending = node; this.since = now }
-    if (node === this.shown || node <= 0 || now - this.since < 450) return
-    this.shown = node
-    const e = this.tree.els[node]
-    const parent = this.tree.parent[node]
-    this.title.textContent = e.title
-    this.sub.textContent = [e.kind, this.tree.children[node].length ? `${this.tree.children[node].length} inside` : e.technology, parent > 0 ? `in ${this.tree.els[parent].title}` : '']
-      .filter(Boolean).join(' · ')
-    this.root.classList.remove('show')
-    void this.root.offsetWidth
-    this.root.classList.add('show')
-  }
-}
-
 /** Lens picker and legend. */
 export class LensBar {
   private root = el('div', 'lensbar panel')
