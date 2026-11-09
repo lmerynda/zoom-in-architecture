@@ -3,7 +3,7 @@ import type { Camera } from './camera'
 import { EdgeRouter } from './edges'
 import { FlowParticles, type Flow } from './fx/particles'
 import { Starfield } from './fx/starfield'
-import { WarpStreaks } from './fx/warp'
+import { FlightSpeed } from './fx/warp'
 import type { Hop } from './controls/logic'
 import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
@@ -92,7 +92,7 @@ export class Renderer {
   readonly stage = new Container()
   readonly router: EdgeRouter
   private stars = new Starfield()
-  private warp = new WarpStreaks()
+  private warp = new FlightSpeed()
   private particles = new FlowParticles()
   /** Pulse rings and selection reticle, drawn above cards. */
   private fxG = new Graphics()
@@ -180,7 +180,7 @@ export class Renderer {
     this.makeTextures()
     this.stage.addChild(this.stars.back)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.cardLayers.push(c); this.stage.addChild(c) }
-    this.stage.addChild(this.edgeG, this.hotEdgeG, this.routeG, this.particles.view, this.warp.view, this.stars.front, this.fxG, this.chipLayer)
+    this.stage.addChild(this.edgeG, this.hotEdgeG, this.routeG, this.particles.view, this.stars.front, this.fxG, this.chipLayer)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.textLayers.push(c); this.stage.addChild(c) }
   }
 
@@ -342,7 +342,7 @@ export class Renderer {
     this.visit(0, 1, 1, st)
     for (const i of prev) if (this.stamp[i] !== this.frameNo) this.hide(i)
     this.drawEdges(edges, focus, st)
-    this.warp.update(this.cam, now, this.dt)
+    this.warp.update(this.cam, this.dt)
     this.drawRoute()
     this.drawPulses()
     this.drawReticles()

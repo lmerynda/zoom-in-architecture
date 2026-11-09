@@ -41,22 +41,11 @@ function starTexture(seed: number, count: number, big: number) {
   return Texture.from(c)
 }
 
-function blobTexture(rgb: string) {
-  const [c, g] = canvas(256)
-  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128)
-  grad.addColorStop(0, `rgba(${rgb},0.55)`)
-  grad.addColorStop(0.45, `rgba(${rgb},0.18)`)
-  grad.addColorStop(1, `rgba(${rgb},0)`)
-  g.fillStyle = grad
-  g.fillRect(0, 0, 256, 256)
-  return Texture.from(c)
-}
-
 function vignetteTexture() {
   const [c, g] = canvas(256)
   const grad = g.createRadialGradient(128, 128, 60, 128, 128, 182)
   grad.addColorStop(0, 'rgba(2,3,8,0)')
-  grad.addColorStop(1, 'rgba(2,3,8,0.85)')
+  grad.addColorStop(1, 'rgba(2,3,8,0.5)')
   g.fillStyle = grad
   g.fillRect(0, 0, 256, 256)
   return Texture.from(c)
@@ -71,30 +60,22 @@ interface Layer {
 }
 
 /**
- * Space backdrop: three star planes at different depths plus drifting nebulae. Each plane
- * zooms as zoom^depth, so diving into the map flies through the stars; two octaves per plane
- * crossfade so the zoom never runs out of sky.
+ * A faint backdrop of stars in three planes at different depths: each plane zooms as zoom^depth,
+ * so a dive or a pan reads as motion even over empty space. Kept dim, with no colour wash or glow,
+ * so it never competes with the map's 1.3 px edges; two octaves per plane crossfade so the zoom
+ * never runs out of sky.
  */
 export class Starfield {
   readonly back = new Container()
   readonly front = new Container()
   private layers: Layer[] = []
-  private nebulae: { s: Sprite; fx: number; fy: number; speed: number; scale: number }[] = []
   private vignette: Sprite
 
   constructor() {
-    const blobs = ['70,90,220', '150,60,200', '30,140,190']
-    blobs.forEach((rgb, k) => {
-      const s = new Sprite(blobTexture(rgb))
-      s.anchor.set(0.5)
-      s.blendMode = 'add'
-      this.back.addChild(s)
-      this.nebulae.push({ s, fx: [0.22, 0.78, 0.55][k], fy: [0.3, 0.62, 0.85][k], speed: [0.00004, -0.00003, 0.00005][k], scale: [6, 7.5, 5][k] })
-    })
     const defs = [
-      { depth: 0.3, alpha: 0.55, drift: 0.004, seed: 11, count: 520, big: 2 },
-      { depth: 0.55, alpha: 0.7, drift: 0.008, seed: 23, count: 260, big: 3 },
-      { depth: 0.8, alpha: 0.8, drift: 0.013, seed: 37, count: 110, big: 2 },
+      { depth: 0.3, alpha: 0.22, drift: 0.004, seed: 11, count: 420, big: 0 },
+      { depth: 0.55, alpha: 0.28, drift: 0.008, seed: 23, count: 200, big: 0 },
+      { depth: 0.8, alpha: 0.34, drift: 0.013, seed: 37, count: 90, big: 0 },
     ]
     for (const d of defs) {
       const tex = starTexture(d.seed, d.count, d.big)
@@ -112,12 +93,6 @@ export class Starfield {
 
   update(cam: Camera, time: number) {
     const W = cam.w, H = cam.h
-    for (const n of this.nebulae) {
-      const a = time * n.speed
-      n.s.position.set(W * (n.fx + 0.04 * Math.sin(a)), H * (n.fy + 0.04 * Math.cos(a * 1.3)))
-      n.s.scale.set((Math.max(W, H) / 256) * (n.scale / 6) * (1 + 0.04 * Math.sin(a * 2)))
-      n.s.alpha = 0.55
-    }
     for (const L of this.layers) {
       const zk = Math.pow(cam.z, L.depth)
       const octave = Math.log2(zk)

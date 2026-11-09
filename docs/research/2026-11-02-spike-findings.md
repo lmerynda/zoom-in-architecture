@@ -180,7 +180,7 @@ The help screen is now two short columns, mouse and keys.
 The motion work from the same pass stays, but secondary:
 - van Wijk–Nuij flights;
 - flow particles, since 2026-11-09 only on the focused card's edges;
-- the starfield;
+- the starfield, since 2026-11-09 a dim parallax with no nebulae, glow or warp streaks;
 - reveal ripple and pulses;
 - lock-on reticles;
 - the altimeter;
