@@ -19,7 +19,7 @@
     "@types/node": "^26.6.6",
     "likec4": "^1.60.0",
     "mediabunny": "^1.65.0",
-    "puppeteer-core": "^23.11.1",
+    "puppeteer-core": "^25.16.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.1.0"
