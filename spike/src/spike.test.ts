@@ -5,7 +5,7 @@ import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, fitText, junctions, shortText, titlePx, weightTier } from './render'
+import { clipToScreen, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -362,6 +362,15 @@ describe('shortText', () => {
   it('collapses whitespace and keeps every letter', () => {
     expect(shortText('A customer of\n  the bank, with personal accounts.', 200)).toBe('A customer of the bank, with personal accounts.')
     expect(shortText('Sends emails using templates', 12)).toBe('Sends email…')
+  })
+})
+
+describe('repeatsNearby', () => {
+  it('leaves out the same label a step away, keeps it far off or with other words', () => {
+    const said: [string, number, number][] = [['User', 600, 700]]
+    expect(repeatsNearby(said, 'User', 690, 700)).toBe(true)
+    expect(repeatsNearby(said, 'User', 400, 500)).toBe(false)
+    expect(repeatsNearby(said, 'Article', 610, 700)).toBe(false)
   })
 })
 

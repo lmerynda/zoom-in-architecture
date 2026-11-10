@@ -1075,6 +1075,7 @@ export class Renderer {
   private drawLabels(spots: LabelSpot[]) {
     let k = 0
     const placed: number[][] = []
+    const said: [string, number, number][] = []
     // Highlighted edges claim label space first, then the busiest.
     spots.sort((a, b) => b.kind - a.kind || b.weight - a.weight)
     for (const sp of spots) {
@@ -1100,6 +1101,10 @@ export class Renderer {
         !placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)
       const spot = sp.at.find(([mx, my]) => fits(mx - cw / 2, my - ch / 2))
       if (!spot) continue
+      // The same words a step away from where they already stand ("User", "User" along one trunk)
+      // repeat the label, not the information: one says it.
+      if (repeatsNearby(said, label, spot[0], spot[1])) continue
+      said.push([label, spot[0], spot[1]])
       const x = spot[0] - cw / 2, y = spot[1] - ch / 2
       placed.push([x, y, cw, ch])
       lab.bg.position.set(x, y)
@@ -1207,6 +1212,13 @@ function borderPoint(r: number[], tx: number, ty: number): [number, number] {
 const TIER_W = [1.2, 2, 3, 4.4, 6]
 export function weightTier(n: number): number {
   return n >= 100 ? 4 : n >= 20 ? 3 : n >= 5 ? 2 : n >= 2 ? 1 : 0
+}
+
+/** Screen px within which a label repeating one already placed is left out. */
+const SAID_NEAR = 160
+/** Whether these words already stand within SAID_NEAR of (x, y). */
+export function repeatsNearby(said: [string, number, number][], label: string, x: number, y: number): boolean {
+  return said.some(([s, sx, sy]) => s === label && Math.hypot(sx - x, sy - y) < SAID_NEAR)
 }
 
 /** An edge's label and the places it may go, best first. */
