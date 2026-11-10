@@ -93,4 +93,12 @@ describe('fuzzy', () => {
     expect(elementScore('fast travel', travel)).toBeGreaterThan(0)
     expect(elementScore('fast travel', { ...travel, features: [] })).toBe(-1)
   })
+
+  it('finds an element by its file path or description, below any name match', () => {
+    const file = { id: 'api.tokenUtils', title: 'token.utils', description: 'Signs the log-in token.', metadata: { path: 'src/app/routes/auth/token.utils.ts' } }
+    expect(elementScore('routes/auth', file)).toBeGreaterThan(0)
+    expect(elementScore('login', file)).toBeGreaterThan(0)
+    expect(elementScore('login', file)).toBeLessThan(elementScore('login', { id: 'login', title: 'Login page' }))
+    expect(elementScore('payments', file)).toBe(-1)
+  })
 })

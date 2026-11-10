@@ -92,6 +92,11 @@ try {
   await sleep(300)
   const found = await page.evaluate(() => [...document.querySelectorAll('.palette .row b')].map(b => b.textContent))
   check('a feature’s name finds the nodes that carry it', ['Orders client', 'Orders', 'Orders API'].every(t => found.includes(t)), found.join(', '))
+  // A search that finds nothing says so, and offers the map's features instead of a blank box.
+  await page.evaluate(() => { const i = document.querySelector('.palette input'); i.value = 'zzqx'; i.dispatchEvent(new Event('input')) })
+  await sleep(200)
+  const none = await page.evaluate(() => ({ text: document.querySelector('.palette .none')?.textContent ?? '', rows: [...document.querySelectorAll('.palette .row b')].map(b => b.textContent) }))
+  check('a search that finds nothing says so and offers the features', none.text.includes('No card matches “zzqx”') && none.rows.includes('Order tracking'), JSON.stringify(none))
   await page.keyboard.press('Escape')
   await page.evaluate(() => { const s = window.__spike; s.unhover(); s.select(s.id('web.orders.api')); s.fit(0) })
   await page.waitForFunction(() => !window.__spike.cam.flying)

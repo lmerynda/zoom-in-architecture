@@ -107,7 +107,7 @@ Six keys plus the mouse; everything else is in the command wheel or the palette.
 |---|---|
 | Wheel, drag, click, double-click | Zoom at the cursor, pan, select (out in amber, in in cyan), fly in |
 | Right-click a card | Command wheel: fly in, select, calls, called by, route here (from the selection), pin; or hold right, flick, release |
-| `Ctrl+K` or `/` | Travel to any element, pin or command (lenses, sound, clear route); `Shift+Enter` routes there from the selection |
+| `Ctrl+K` or `/` | Travel to any element (by title, id, feature, then description or file path), pin or command (lenses, sound, clear route); `Shift+Enter` routes there from the selection; finding nothing, it offers the map's features |
 | `Backspace` | Back to the last place; `Alt+→` and the mouse buttons go back and forward |
 | `]` / `[` | Look at what the selection calls / what calls it, with both framed; `Enter` goes there |
 | `.` / `,` | Next / previous card in the level by importance (relations crossing its boundary), most connected first |

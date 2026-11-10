@@ -81,8 +81,15 @@ export class Palette {
       ...els.map(({ i }) => ({ label: this.tree.els[i].title, sub: pathOf(this.tree, i), kind: this.tree.els[i].kind, run: (shift: boolean) => this.warp(i, shift) })),
       ...cmds.slice(0, cmdOnly || !q ? 12 : 4).map(({ c }) => ({ label: c.name, sub: c.hint ?? '', kind: 'command', run: () => c.run() })),
     ]
+    // Nothing found: say so, and offer the map's own words, its features, to search for instead.
+    let none: HTMLElement | null = null
+    if (q && !this.items.length) {
+      none = el('div', 'none', `No card matches “${q}”. Search looks at titles, features, descriptions and file paths.`)
+      const features = [...new Set(this.tree.els.flatMap(e => e.features ?? []))].slice(0, 8)
+      this.items = features.map(f => ({ label: f, sub: 'feature', kind: 'try', run: () => this.open(f) }))
+    }
     this.active = 0
-    this.list.replaceChildren(...this.items.map((it, k) => {
+    this.list.replaceChildren(...(none ? [none] : []), ...this.items.map((it, k) => {
       const row = el('div', k === 0 ? 'row on' : 'row')
       row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
       row.onmousedown = e => { e.preventDefault(); this.close(); it.run(e.shiftKey) }

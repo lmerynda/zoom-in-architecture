@@ -107,7 +107,18 @@ export function fuzzy(query: string, text: string): number {
   return score - t.length * 0.02
 }
 
-/** How well a query finds an element: by its title, its id, or a feature it carries. */
-export function elementScore(query: string, e: { title: string; id: string; features?: string[] }): number {
-  return Math.max(fuzzy(query, e.title), fuzzy(query, e.id) - 4, ...(e.features ?? []).map(f => fuzzy(query, f) - 1))
+/**
+ * How well a query finds an element: by its title, its id, or a feature it carries; failing
+ * those, by its description or file path holding the query as written (separators aside), which
+ * ranks below any name match.
+ */
+export function elementScore(query: string, e: { title: string; id: string; features?: string[]; description?: string; metadata?: Record<string, string> }): number {
+  const named = Math.max(fuzzy(query, e.title), fuzzy(query, e.id) - 4, ...(e.features ?? []).map(f => fuzzy(query, f) - 1))
+  if (named >= 0) return named
+  const q = squash(query)
+  if (q.length < 3) return -1
+  if (squash(e.metadata?.path ?? '').includes(q)) return 0.5
+  if (squash(e.description ?? '').includes(q)) return 0.25
+  return -1
 }
+const squash = (s: string) => s.toLowerCase().replace(/[\s_-]+/g, '')
