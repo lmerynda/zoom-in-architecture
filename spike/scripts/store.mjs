@@ -31,7 +31,8 @@ export function writeIndex(root = ROOT) {
   const has = file => existsSync(at(root, 'public/models', file))
   mkdirSync(at(root, 'public/models'), { recursive: true })
   const entries = [
-    ...list('imports').filter(n => has(`${n}.json`)).map(n => ({ name: n, title: title(n), source: 'import', ...(has(`${n}.requests.json`) ? { views: ['requests'] } : {}) })),
+    // When each upload was built, so a visit naming no map opens the latest.
+    ...list('imports').filter(n => has(`${n}.json`)).map(n => ({ name: n, title: title(n), source: 'import', ...(storedPublished(n, root)?.at ? { at: storedPublished(n, root).at } : {}), ...(has(`${n}.requests.json`) ? { views: ['requests'] } : {}) })),
     ...list('model').filter(n => has(`${n}.json`)).map(n => ({ name: n, title: n, source: 'sample' })),
   ]
   writeAtomic(at(root, 'public/models', 'index.json'), JSON.stringify(entries))

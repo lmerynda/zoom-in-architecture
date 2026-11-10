@@ -61,6 +61,13 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('#models a')].some(a => a.textContent === 'Shop'), { timeout: 15000 })
   check('its tab appears without a reload', await page.evaluate(() => window.__sameDocument === true), `${Date.now() - t0} ms`)
   await shot('01-tab-appears')
+  // A visit that names no map opens the latest upload, this one, not a sample.
+  const bare = await browser.newPage()
+  await bare.goto(base, { waitUntil: 'load' })
+  await bare.waitForFunction(() => /model=/.test(location.search) && window.__spike?.ready, { timeout: 60000 }).catch(() => {})
+  const landed = await bare.evaluate(() => location.search)
+  await bare.close()
+  check('a visit naming no map opens the latest upload', landed === '?model=shop', landed)
 
   await page.evaluate(() => [...document.querySelectorAll('#models a')].find(a => a.textContent === 'Shop').click())
   await page.waitForFunction(() => location.search === '?model=shop' && window.__spike?.ready, { timeout: 60000 })

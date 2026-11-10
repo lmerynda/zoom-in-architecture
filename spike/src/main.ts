@@ -58,7 +58,21 @@ const push = (r: Ring, v: number) => { r.a[r.k] = v; r.k = (r.k + 1) % r.a.lengt
 const values = (r: Ring) => Array.from(r.full ? r.a : r.a.slice(0, r.k))
 const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] }
 
+/** The most recently uploaded map, for a visit that names none; null when only samples exist. */
+async function latestUpload(): Promise<string | null> {
+  try {
+    const index: { name: string; source: string; at?: string }[] = await (await fetch(`${import.meta.env.BASE_URL}models/index.json`, { cache: 'no-store' })).json()
+    const uploads = index.filter(e => e.source === 'import').sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+    return uploads[0]?.name ?? null
+  } catch { return null }
+}
+
 async function main() {
+  // A visit that names no map opens the latest upload, a real project, rather than a sample.
+  if (!new URLSearchParams(location.search).has('model')) {
+    const latest = await latestUpload()
+    if (latest) { location.replace(`?model=${encodeURIComponent(latest)}`); return }
+  }
   const t0 = performance.now()
   // Whether the open model is a project's upload (not a sample), for its provenance in the breadcrumb.
   let uploaded = false, crumbsStale = false

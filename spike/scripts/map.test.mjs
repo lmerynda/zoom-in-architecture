@@ -310,7 +310,7 @@ describe('bundle and store', () => {
       expect(storedSource('shop', 'package.json', root)).toBe(null)
       expect(storedSource('shop', '../import.json', root)).toBe(null)
       expect(JSON.parse(storedMap('shop', root))).toEqual(map)
-      expect(JSON.parse(readFileSync(join(root, 'public/models/index.json'), 'utf8'))).toEqual([{ name: 'shop', title: b.model.title, source: 'import', views: ['requests'] }])
+      expect(JSON.parse(readFileSync(join(root, 'public/models/index.json'), 'utf8'))).toEqual([{ name: 'shop', title: b.model.title, source: 'import', at: b.published.at, views: ['requests'] }])
       // A later upload replaces the sources whole: a file the model no longer shows is gone.
       const smaller = structuredClone(b)
       delete smaller.sources['web/src/api.ts']
