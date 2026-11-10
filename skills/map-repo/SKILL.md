@@ -88,7 +88,7 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
 
    Write down two things:
    - **What it is, in two sentences:** what the product does and for whom. It opens your report. Each app's description then says what that app does for the product.
-   - **The headline features, 5 to 15 of them,** in the product's own words: what a user can do, or what the system does for them ("Checkout", "Live collaboration", "Export to PNG", "Turn processing").
+   - **The headline features, 5 to 15 of them** (a re-map keeps every feature that still holds, even past 15, and says so in its report), in the product's own words: what a user can do, or what the system does for them ("Checkout", "Live collaboration", "Export to PNG", "Turn processing").
      - Use the names the docs and the UI use, not the folder names.
      - A page or menu item people can open is a feature, however small. Technical qualities they never see (caching, logging, metrics) are not, unless the product's pitch is about them. For a starter template or a framework sample, the pitch is the stack, so what it sets up for you (a generated client, API docs) counts.
      - The core features, the reason people use the product, go first in the list.
@@ -126,7 +126,7 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
    - **Check it:** `check <repo> <map.json>`, then `audit <repo> <map.json>` to review placement. `check` prints every node with its file count. Fix every error, and read every warning.
    - **Evidence warnings:**
      - Evidence in an application file should sit at one end of the link, or in a file that directly calls or is called by an end (such as the line that builds the URL a helper fetches); `check` warns otherwise. Config files can back any link.
-     - A warning that evidence "is not a line the graph recognised" quotes that line, so you can see whether it is the wrong line. When the real call is a line the graph does not mark (a wrapper function, a library it does not know), cite that line anyway and leave the warning. Never move evidence to a marked line that is not the call.
+     - A warning that evidence "is not a line the graph recognised" quotes that line, so you can see whether it is the wrong line. When the real call is a line the graph does not mark (a wrapper function, a library it does not know), cite that line anyway. Once you have read it and confirmed it is the call, accept it: add `"accepted": { "<file:line>": "<the line as the warning quotes it, trimmed>" }` to the map, and `check` stops repeating it while the line still reads the same; if the code changes, the warning returns with "check it again". Never move evidence to a marked line that is not the call.
    - **Publish it:** `publish <repo> <map.json>`. It checks the map again, then uploads one bundle: the map, the models and the source of every file the map shows. It records the commit the project is at, for the next re-map. The viewer opens it at `?model=<name>`, and an open viewer adds its tab live. For live updates while the code changes, run `publish <repo> <map.json> --watch`.
 8. **Report:**
    - what the product is, in your two sentences;
@@ -251,6 +251,7 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
   - Required unless one end is an actor.
   - In application code it should be a line the graph marked.
   - The viewer shows readers the cited lines (up to 8 per range) under the link, so cite the call itself, not the function around it.
+- **accepted:** evidence lines you read and confirmed although the graph does not mark them, each with the text the warning quoted: `{ "client.ts:85": "return call(\`${this.url}/game/rankings\`);" }`. `check` counts them instead of warning, until the line reads differently.
 - **titles and descriptions:** the user's language, not the folder's.
   - A title names what the node is or does ("Market", "Controllers"), not a path ("market/model").
   - A description is one sentence on what the node does.

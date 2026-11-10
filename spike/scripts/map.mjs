@@ -61,6 +61,7 @@ const globRe = g => new RegExp(`^${g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replac
  */
 export function buildModel(graph, map, { name, loose = false } = {}) {
   const errors = [], warnings = []
+  let acceptedSeen = 0
   // Problems the code moving under a map causes; live re-imports report them but still publish.
   const drift = msg => (loose ? warnings : errors).push(msg)
   const nodes = new Map()
@@ -201,9 +202,14 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       for (let k = from; k <= to; k++) cited.add(`${m[1]}:${k}`)
       if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1]) && !nearEnd(l.from, m[1]) && !nearEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
       else if (hints && !hints.some(h => h.line >= from && h.line <= to)) {
+        // A line someone read and confirmed (a call through a wrapper the scanner does not mark)
+        // is accepted while it still reads the same; once the code changes it is warned again.
+        const reads = text[from - 1].trim(), accepted = map.accepted?.[String(ev)]
+        // Compared as the warning quotes it (100 characters), so the quoted text can be pasted as is.
+        if (accepted != null && accepted.slice(0, 100) === reads.slice(0, 100)) { acceptedSeen++; continue }
         // Code moves under a map; the nearest marked line is usually where the evidence went.
         const near = hints.filter(h => Math.abs(h.line - from) <= 20).sort((x, y) => Math.abs(x.line - from) - Math.abs(y.line - from))[0]
-        warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${text[from - 1].trim().slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}`)
+        warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${reads.slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}${accepted != null ? ' (it was accepted when it read differently: check it again)' : ''}`)
       }
     }
     relations.push({ source: a, target: b, title: l.title ?? '', evidence: proof })
@@ -240,7 +246,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const files = graph.files.length
   return {
     model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations },
-    errors, warnings, tree, unplaced, uncited,
+    errors, warnings, tree, unplaced, uncited, accepted: acceptedSeen,
     stats: { nodes: nodes.size, files, relations: relations.length, links: (map.links ?? []).length, unplaced: unplaced.length },
   }
 }

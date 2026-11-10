@@ -124,7 +124,7 @@ const report = r => {
   for (const e of r.errors) console.log(`error: ${e}`)
   for (const w of r.warnings) console.log(`warning: ${w}`)
   const s = r.stats
-  console.log(`${s.nodes} nodes, ${s.files} files, ${s.relations} relations (${s.links} links), ${s.unplaced} files not in the map`)
+  console.log(`${s.nodes} nodes, ${s.files} files, ${s.relations} relations (${s.links} links), ${s.unplaced} files not in the map${r.accepted ? `, ${r.accepted} evidence lines accepted as read (map.accepted)` : ''}`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
@@ -140,7 +140,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       console.log(args.json ? JSON.stringify(g, null, 1) : args.folders ? folderText(g) : graphText(g, args.under ?? ''))
     } else if (cmd === 'check' && a && b) {
       const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
-      report(r)
+      // --uncited is a worklist: only its lines, and a count of what plain check reports.
+      if (args.uncited) console.log(`${r.errors.length} errors, ${r.warnings.length} warnings (check without --uncited lists them)`)
+      else report(r)
       // Routes nothing in the map calls are pages people open or an API outside callers use: listed apart, not as gaps.
       const open = r.uncited.filter(u => u.kind !== 'route'), routes = r.uncited.filter(u => u.kind === 'route')
       if (args.uncited) {

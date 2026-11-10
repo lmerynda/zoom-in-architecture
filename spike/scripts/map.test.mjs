@@ -219,6 +219,23 @@ describe('buildModel', () => {
   })
 })
 
+describe('accepted evidence', () => {
+  // Line 3 declares the helper: real code, but not a line the scanner marks.
+  const cite = accepted => ({ ...map, accepted, links: [...map.links, { from: 'web/src/api.ts', to: 'server/src/main/java/com/shop/orders/OrderController.java', title: 'via helper', evidence: ['web/src/api.ts:3'] }] })
+  const unmarked = r => r.warnings.filter(w => w.includes('"web/src/api.ts:3"'))
+  const line = 'declare const post: <T>(path: string, body: unknown) => Promise<T>'
+
+  it('warns about an unmarked line until someone accepts it as read, and again when it changes', () => {
+    expect(unmarked(buildModel(graph, cite(undefined), { name: 'shop' }))).toHaveLength(1)
+    const ok = buildModel(graph, cite({ 'web/src/api.ts:3': line }), { name: 'shop' })
+    expect(unmarked(ok)).toEqual([])
+    expect(ok.accepted).toBe(1)
+    const stale = unmarked(buildModel(graph, cite({ 'web/src/api.ts:3': 'what the line used to say' }), { name: 'shop' }))
+    expect(stale).toHaveLength(1)
+    expect(stale[0]).toContain('check it again')
+  })
+})
+
 describe('redact', () => {
   it('masks secrets on cited lines, since evidence is uploaded and shown', () => {
     expect(redact('    password: ${DB_PASSWORD:password}')).toBe('    password: ${DB_PASSWORD:••••}')
