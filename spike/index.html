@@ -36,7 +36,9 @@
     #views a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
     #views a:hover { color: var(--text); }
     #views a.on { color: #0b0f17; background: #6ee7b7; font-weight: 600; }
-    #crumbs { position: fixed; top: 64px; left: 24px; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; }
+    /* The breadcrumb and, on a first visit, the intro after it: one row, so neither covers the other. */
+    #crumbrow { position: fixed; top: 64px; left: 24px; right: 24px; display: flex; gap: 12px; align-items: flex-start; pointer-events: none; }
+    #crumbs { position: static; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; flex: none; pointer-events: auto; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
     #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
     #crumbs button:hover { color: var(--text); }
@@ -107,9 +109,11 @@
     #help { right: 12px; bottom: 12px; color: #94a3b8; font-size: 12px; position: fixed; }
     /* Shown when the screen holds only empty space inside a card: how to get back. */
     /* First visit only: what the map is, beside the breadcrumb; gone at the first scroll, click or key. */
-    #intro { position: fixed; top: 64px; height: 34px; display: flex; align-items: center; padding: 0 14px; color: #cbd5e1; background: var(--panel); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 10px; font-size: 12.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.4s; }
+    #intro { min-width: 0; flex: 0 1 auto; height: 34px; display: block; line-height: 32px; padding: 0 14px; color: #cbd5e1; background: var(--panel); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 10px; font-size: 12.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.4s; }
     #intro b { color: #fbbf24; font-weight: 600; margin-right: 6px; }
     #intro.gone { opacity: 0; }
+    #intro[hidden] { display: none; }
+    @media (max-width: 900px) { #intro { display: none; } }
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #94a3b8; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; pointer-events: none; }
     #empty[hidden] { display: none; }
     .lensbar { position: relative; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
@@ -194,11 +198,13 @@
     <button id="travel">Travel to…<kbd>Ctrl K</kbd></button>
     <nav id="views" class="panel" style="position: static" hidden></nav>
   </div>
-  <div id="crumbs" class="panel"></div>
+  <div id="crumbrow">
+    <div id="crumbs" class="panel"></div>
+    <div id="intro" hidden><b>New here?</b>Cards are the parts of the product, arrows how they use each other (thicker carries more). Scroll into a card to open it · double-click a file to read it · ? for every control</div>
+  </div>
   <div id="stats" class="panel">loading…</div>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
-  <div id="intro" hidden><b>New here?</b>Cards are the parts of the product, arrows how they use each other (thicker carries more). Scroll into a card to open it · double-click a file to read it · ? for every control</div>
   <div id="empty" hidden>Nothing here · Backspace goes back · Esc goes up a level · or click the minimap</div>
   <div id="help">scroll to zoom · drag to pan · right-click: command wheel · Ctrl K: travel · ] [: look around · ⌫: back · ?: controls</div>
   <script type="module" src="/src/main.ts"></script>

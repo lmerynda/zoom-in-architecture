@@ -4,14 +4,14 @@ import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
 import { LensBar, ago } from './hud'
-import { importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
+import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
 import { renderModelTabs } from './models'
 import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
-import { Renderer } from './render'
+import { OPEN_A, Renderer } from './render'
 import { Sound } from './sound'
 import { synthetic } from './synthetic'
 
@@ -64,27 +64,16 @@ const INTRO_SEEN = 'zoom.introSeen'
  * go in. The first scroll, click or key puts it away for good.
  */
 function showIntro() {
-  const intro = $('intro'), crumbs = $('crumbs')
+  const intro = $('intro')
   let seen = false
   try { seen = localStorage.getItem(INTRO_SEEN) === '1' } catch { /* storage blocked: show it this time */ }
   if (seen) return
-  const place = () => {
-    const left = crumbs.getBoundingClientRect().right + 12
-    intro.style.left = `${left}px`
-    intro.style.maxWidth = `${Math.max(0, innerWidth - left - 24)}px`
-    // Where the line would be cut to nothing, it is not worth showing.
-    intro.hidden = innerWidth - left - 24 < 320
-  }
-  // The breadcrumb widens after load (its provenance arrives with the index): the line follows it.
-  const watch = new ResizeObserver(place)
-  watch.observe(crumbs)
-  addEventListener('resize', place)
+  // It shares the breadcrumb's row (index.html), so it always follows it, however wide.
+  intro.hidden = false
   const done = () => {
     try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ }
     intro.classList.add('gone')
     setTimeout(() => { intro.hidden = true }, 400)
-    watch.disconnect()
-    removeEventListener('resize', place)
     for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) removeEventListener(ev, done, true)
   }
   for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) addEventListener(ev, done, true)
@@ -157,10 +146,14 @@ async function main() {
     if (mini) frames.push([0, t, Math.min(right, mini.left - 8), bottom])
     const fill = i === 0 ? 0.96 : tree.children[i].length ? 0.9 : 0.4
     const w = r[i * 4 + 2], h = r[i * 4 + 3]
+    // A crowded level framed with a margin can come out too small to open: it uses the margin, up
+    // to filling its frame, so its children are drawn with their names.
+    const opens = i > 0 && tree.children[i].length ? (OPEN_A + 12) / (CARD_W * world.content[i * 3 + 2]) : 0
     let best = { z: 0, x: 0, y: 0 }
     for (const [l, tt, rr, bb] of frames) {
       const fw = Math.max(40, rr - l), fh = Math.max(40, bb - tt)
-      const z = fill * Math.min(fw / w, fh / h)
+      const whole = Math.min(fw / w, fh / h)
+      const z = Math.min(whole, Math.max(fill * whole, opens))
       if (z <= best.z) continue
       // The target's centre goes to the frame's centre.
       best = { z, x: r[i * 4] + w / 2 - ((l + rr) / 2 - W / 2) / z, y: r[i * 4 + 1] + h / 2 - ((tt + bb) / 2 - H / 2) / z }

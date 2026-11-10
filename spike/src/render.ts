@@ -17,7 +17,7 @@ const FONT_PX = 32
  * A container opens, and its children get labels, between these on-screen child widths: a child
  * narrower than OPEN_A could not carry its name, so until then the container stays a closed card.
  */
-const OPEN_A = 105
+export const OPEN_A = 105
 const OPEN_B = 165
 /** Below this on-screen width a card is a plain coloured pip. */
 const PIP = 30
@@ -183,6 +183,8 @@ export class Renderer {
   /** Connections view: each node's importance and its rank among its siblings, shown on its card. */
   ranking: { weight: Float64Array; rank: Int32Array; partners: Int32Array } | null = null
   hover = -1
+  /** This frame's breadcrumb: the containers that fill the view, outermost first. */
+  private here: number[] = []
   /** Clicked element: its relations stay highlighted and everything unrelated dims. */
   selected = -1
   /** HUD panels anchored to the bottom edge, as screen rects x, y, w, h. */
@@ -293,12 +295,14 @@ export class Renderer {
     // Edges end at a card once its parent is well open, so a level that is only starting to open
     // keeps its rolled-up arrows. The card in focus, and the cards holding it, take their own
     // edges as soon as they are drawn: selecting or hovering a small card shows its links.
+    // The level you are in (the breadcrumb's cards, which fill the view) shows its children's
+    // edges as soon as they are drawn too: there, a crowded level is what you came to read.
     const focus = this.selected > 0 ? this.selected : this.hover
     let cur = 0
     for (let k = chain.length - 1; k >= 0; k--) {
-      const node = chain[k]
-      const o = this.open(this.tree.parent[node])
-      const onFocus = focus > 0 && (node === focus || this.tree.isAncestor(node, focus))
+      const node = chain[k], parent = this.tree.parent[node]
+      const o = this.open(parent)
+      const onFocus = (focus > 0 && (node === focus || this.tree.isAncestor(node, focus))) || this.here.includes(parent)
       if (o <= 0 || (o < 0.5 && !onFocus)) break
       cur = node
       if (!this.onScreen(node)) break
@@ -361,6 +365,7 @@ export class Renderer {
     if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
     const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, inView: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.hoverAt(this.pointer[0], this.pointer[1]) : -1
+    this.here = this.breadcrumb()
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
     const edges = aggregateEdges(this.tree, i => this.rep(i), inFocus)

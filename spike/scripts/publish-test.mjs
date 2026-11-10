@@ -47,11 +47,19 @@ try {
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await page.evaluate(() => { window.__sameDocument = true })
   // A first visit says what the map is, beside the breadcrumb; the first input puts it away for good.
-  await sleep(500)
-  const intro = await page.evaluate(() => {
+  const besideCrumbs = () => page.evaluate(() => {
     const e = document.getElementById('intro'), r = e.getBoundingClientRect(), c = document.getElementById('crumbs').getBoundingClientRect()
-    return { shown: !e.hidden, beside: r.left >= c.right && Math.abs(r.top - c.top) < 4, text: e.textContent.slice(0, 40) }
+    return { shown: !e.hidden && r.width > 0, beside: r.left >= c.right && Math.abs(r.top - c.top) < 4, text: e.textContent.slice(0, 40) }
   })
+  await sleep(500)
+  const first = await besideCrumbs()
+  // A later load (another map, before any input) keeps it after the breadcrumb, never over it.
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => { window.__sameDocument = true })
+  await sleep(1200)
+  const later = await besideCrumbs()
+  const intro = { ...later, shown: first.shown && later.shown, beside: first.beside && later.beside }
   await page.keyboard.press('Shift')
   await sleep(600)
   const introGone = await page.evaluate(() => document.getElementById('intro').hidden && localStorage.getItem('zoom.introSeen') === '1')
