@@ -127,7 +127,8 @@ const RING = 0.3
 
 /**
  * The Connections view's arrangement of one level, on the same grid as the cards (so edges still
- * run in the gutters). The most connected child sits exactly at the centre; the rest fill rings
+ * run in the gutters). The most connected child sits at the centre (exactly, unless a side would
+ * be left empty); the rest fill rings
  * outward in rank order, so distance from the centre follows rank: a card never sits farther out
  * than one ranked below it by more than a ring. Within its ring a card takes the cell nearest the
  * siblings it is coupled with. The centre of a level is its centre of gravity; the rim holds what
@@ -177,12 +178,14 @@ export function centreOut(job: LayoutJob): { pos: number[]; w: number; h: number
     at.set(child, { c: best!.c, r: best!.r, span })
     take(best!.c, best!.r, span)
   })
-  // Drop empty rows and columns evenly from both sides, so the centre stays the centre.
+  // Drop every empty outer row and column. A ring that does not go all the way round (three cards
+  // around one) would otherwise leave a whole side of the level blank; #1 then sits half a cell
+  // off the exact middle, still at the centre of the cards around it.
   const placed = [...at.values()]
-  const trimC = Math.min(Math.min(...placed.map(p => p.c)), cols - Math.max(...placed.map(p => p.c + p.span)))
-  const trimR = Math.min(Math.min(...placed.map(p => p.r)), rows - Math.max(...placed.map(p => p.r + p.span)))
-  const pos = job.children.flatMap(ch => { const p = at.get(ch)!; return [GUTTER + (p.c - trimC) * cellW, GUTTER + (p.r - trimR) * cellH] })
-  return { pos, w: (cols - 2 * trimC) * cellW + GUTTER, h: (rows - 2 * trimR) * cellH + GUTTER }
+  const left = Math.min(...placed.map(p => p.c)), right = cols - Math.max(...placed.map(p => p.c + p.span))
+  const top = Math.min(...placed.map(p => p.r)), bottom = rows - Math.max(...placed.map(p => p.r + p.span))
+  const pos = job.children.flatMap(ch => { const p = at.get(ch)!; return [GUTTER + (p.c - left) * cellW, GUTTER + (p.r - top) * cellH] })
+  return { pos, w: (cols - left - right) * cellW + GUTTER, h: (rows - top - bottom) * cellH + GUTTER }
 }
 
 export interface SiblingRoute {
@@ -219,7 +222,7 @@ export interface World {
 export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
   const edges = tree.siblingEdges()
   // The Connections view sizes by connection, not by code: the most connected child of a level of
-  // five or more is the big card at its centre.
+  // four or more is the big card at its centre.
   const weight = coupling ? rankKey(tree) : null
   const span = coupling ? couplingSpans(tree, weight!) : spans(tree)
   const jobs: LayoutJob[] = []
@@ -242,7 +245,9 @@ function couplingSpans(tree: Tree, w: Float64Array): Uint8Array {
   const span = new Uint8Array(tree.size).fill(1)
   for (let i = 0; i < tree.size; i++) {
     const c = tree.children[i]
-    if (c.length < 5) continue
+    // From four up: three cards around a single centre form a plus with one side empty, around a
+    // 2 × 2 one they close the grid.
+    if (c.length < 4) continue
     const top = c.reduce((a, b) => (w[b] > w[a] ? b : a))
     if (w[top] > 0) span[top] = 2
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -143,6 +143,20 @@ describe('coupling layout', () => {
       expect(mid(0)[1]).toBeCloseTo(L.h / 2)
       const d = kids.map((_, k) => Math.hypot(mid(k)[0] - L.w / 2, mid(k)[1] - L.h / 2) / (CARD_W + GUTTER))
       for (let a = 1; a < d.length; a++) for (let b = a + 1; b < d.length; b++) expect(d[a]).toBeLessThanOrEqual(d[b] + 0.3 + 1e-9)
+    }
+  })
+
+  it('leaves no side of a small level empty', () => {
+    // Four children: #1 takes a 2 × 2 card and the rest close the grid around it; a pair sits side by side.
+    const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
+    for (const n of [2, 3, 4]) {
+      const ids = ['a', 'b', 'c', 'd'].slice(0, n)
+      const tree = new Tree({ name: 'm', elements: [el('p', null), ...ids.map(id => el(`p.${id}`, 'p'))], relations: ids.slice(1).map(id => ({ source: 'p.a', target: `p.${id}`, title: '' })) })
+      const j = layoutJobs(tree, true).find(x => tree.els[x.id].id === 'p')!
+      const L = centreOut(j)
+      const cols = Math.round((L.w - GUTTER) / (CARD_W + GUTTER)), rows = Math.round((L.h - GUTTER) / (CARD_H + GUTTER))
+      const used = j.spans.reduce((a, s) => a + s * s, 0)
+      expect(cols * rows - used, `${n} children: ${cols} × ${rows}`).toBeLessThanOrEqual(n === 2 ? 0 : 1)
     }
   })
 
