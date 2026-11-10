@@ -274,8 +274,8 @@ export class Renderer {
   }
 
   /**
-   * The node that stands in for i on screen: the deepest ancestor whose parent has opened far
-   * enough to label it. An end that is off screen collapses to its largest off-screen ancestor,
+   * The node that stands in for i on screen: the deepest ancestor whose parent has opened, so its
+   * card is drawn with its name (a card that is drawn is also where its edges end). An end that is off screen collapses to its largest off-screen ancestor,
    * so edges leave the screen toward something nameable.
    */
   rep(i: number): number {
@@ -285,7 +285,7 @@ export class Renderer {
     let cur = 0
     for (let k = chain.length - 1; k >= 0; k--) {
       const node = chain[k]
-      if (this.open(this.tree.parent[node]) < 0.5) break
+      if (this.open(this.tree.parent[node]) <= 0) break
       cur = node
       if (!this.onScreen(node)) break
     }
@@ -294,11 +294,11 @@ export class Renderer {
     return cur
   }
 
-  /** Deepest labelled node under a screen point. */
+  /** Deepest drawn node under a screen point: a card on screen with its name is one you can click. */
   pick(sx: number, sy: number): number {
     let cur = 0
     for (;;) {
-      if (this.open(cur) < 0.5) return cur
+      if (this.open(cur) <= 0) return cur
       let next = -1
       for (const c of this.tree.children[cur]) {
         const [x, y, w, h] = this.screenRect(c)
