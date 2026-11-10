@@ -172,6 +172,8 @@ export class Renderer {
   flash = new Map<number, { color: number; t0: number }>()
   /** Active lens, or null for the structure view. */
   lens: Lens | null = null
+  /** Coupling view: each node's importance and its rank among its siblings, shown on its card. */
+  ranking: { weight: Float64Array; rank: Int32Array } | null = null
   hover = -1
   /** Clicked element: its relations stay highlighted and everything unrelated dims. */
   selected = -1
@@ -572,7 +574,7 @@ export class Renderer {
         if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
         st.texts++
       }
-      const meta = (v.sub ??= this.text(`${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
+      const meta = (v.sub ??= this.text(`${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ` : ''}${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
       meta.scale.set(mpx / FONT_PX)
@@ -635,7 +637,8 @@ export class Renderer {
     const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
     const inside = this.tree.children[i].length
     const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${el.kind} · ${inside} inside` : el.kind
-    const subText = [kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
+    const rk = this.ranking, place = rk ? `#${rk.rank[i]} · ${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}` : ''
+    const subText = [place, kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
     const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity

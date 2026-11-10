@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
-import { cardH, cardW, CONTENT_ASPECT, GUTTER, type LayoutJob, type LocalLayout } from './layout'
+import { cardH, cardW, centreOut, CONTENT_ASPECT, GUTTER, type LayoutJob, type LocalLayout } from './layout'
 import { ChannelGrid } from './route'
 
 const elk = new ELK()
@@ -19,23 +19,31 @@ const OPTIONS = {
  * their own, so the result is the same as separate calls.
  */
 async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
+  // Coupling-view levels are placed centre-out by importance; the rest are packed by ELK.
+  const packed = jobs.filter(j => !j.weights)
   const root: ElkNode = {
     id: 'root',
     layoutOptions: { 'elk.algorithm': 'box' },
-    children: jobs.map(job => ({
+    children: packed.map(job => ({
       id: `c${job.id}`,
       layoutOptions: OPTIONS,
       children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: cardH(job.spans[k]) })),
     })),
   }
-  const g = await elk.layout(root)
-  return g.children!.map((c, n) => {
-    const job = jobs[n]
-    const at = new Map(c.children!.map(k => [k.id, k]))
-    const pos: number[] = []
-    for (const ch of job.children) {
-      const k = at.get(String(ch))!
-      pos.push(k.x!, k.y!)
+  const g = packed.length ? await elk.layout(root) : { children: [] }
+  const elkOf = new Map(packed.map((j, n) => [j.id, g.children![n]]))
+  return jobs.map(job => {
+    let pos: number[], w: number, h: number
+    if (job.weights) ({ pos, w, h } = centreOut(job))
+    else {
+      const c = elkOf.get(job.id)!
+      const at = new Map(c.children!.map(k => [k.id, k]))
+      pos = []
+      for (const ch of job.children) {
+        const k = at.get(String(ch))!
+        pos.push(k.x!, k.y!)
+      }
+      w = c.width!; h = c.height!
     }
     const index = new Map(job.children.map((ch, k) => [ch, k]))
     const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: cardH(job.spans[k]), header: job.headed[k] } }
@@ -46,7 +54,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       const r = grid.route(rect(e.s), rect(e.t), used)
       return r ? [{ s: e.s, t: e.t, ...r }] : []
     })
-    return { id: job.id, w: c.width!, h: c.height!, children: job.children, pos, spans: job.spans, routes }
+    return { id: job.id, w, h, children: job.children, pos, spans: job.spans, routes }
   })
 }
 

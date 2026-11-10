@@ -1,6 +1,6 @@
 import type { Application } from 'pixi.js'
 import type { Camera } from '../camera'
-import type { World } from '../layout'
+import { importance, ranks, type World } from '../layout'
 import type { Lens, LensName } from '../lens'
 import type { Minimap } from '../minimap'
 import type { Tree } from '../model'
@@ -62,6 +62,24 @@ export function installControls(c: Ctx) {
     c.select(i)
     c.fit(i)
     sound.whoosh(cam.flightMs / 1000)
+  }
+  /**
+   * Walks a level from its most connected card to its least: `.` selects and frames the next by
+   * importance, `,` the one before. With nothing selected it starts at the #1 of the level on screen.
+   */
+  let rankOf: { tree: Tree; rank: Int32Array; weight: Float64Array } | null = null
+  const byImportance = (step: 1 | -1) => {
+    if (rankOf?.tree !== tree) { const weight = importance(tree); rankOf = { tree, weight, rank: ranks(tree, weight) } }
+    const { rank, weight } = rankOf
+    const sel = renderer.selected
+    const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0
+    const level = sel > 0 ? tree.parent[sel] : tree.children[here].length ? here : Math.max(0, tree.parent[here])
+    const siblings = [...tree.children[level]].sort((a, b) => rank[a] - rank[b])
+    if (!siblings.length) return
+    const at = sel > 0 ? siblings.indexOf(sel) : -1
+    const next = siblings[at < 0 ? 0 : (at + step + siblings.length) % siblings.length]
+    goSelect(next)
+    toast.show(`#${rank[next]} of ${siblings.length} · ${tree.els[next].title} · ${weight[next]} relation${weight[next] === 1 ? '' : 's'}`, '. next · , back')
   }
   const goView = (v: View) => {
     cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
@@ -252,6 +270,7 @@ export function installControls(c: Ctx) {
     if (k === '?') return help.toggle()
     if (k === 'backspace' || (e.altKey && k === 'arrowleft')) { e.preventDefault(); return back() }
     if (e.altKey && k === 'arrowright') { e.preventDefault(); return forward() }
+    if (k === '.' || k === ',') return byImportance(k === '.' ? 1 : -1)
     if (k === ']') return cycleTarget('out', e.shiftKey ? -1 : 1)
     if (k === '[') return cycleTarget('in', e.shiftKey ? -1 : 1)
     if (k === 'enter') {

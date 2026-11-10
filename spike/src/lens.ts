@@ -1,4 +1,5 @@
 import type { Tree } from './model'
+import { importance } from './layout'
 
 /** Map overlays, like strategy-game lenses: each colours every card by one measure. */
 export type LensName = 'structure' | 'size' | 'coupling' | 'churn'
@@ -45,12 +46,7 @@ export function buildLenses(tree: Tree): Lens[] {
   const hasLines = tree.els.some(e => Number.isFinite(num(e.metadata?.lines)))
   const hasChurn = tree.els.some(e => num(e.metadata?.churn) > 0)
   const size = sum(i => (hasLines ? num(tree.els[i].metadata?.lines) || 0 : 1))
-  const coupling = new Float64Array(n)
-  for (let k = 0; k < tree.rels.length; k += 2) {
-    const s = tree.rels[k], t = tree.rels[k + 1], top = tree.lca(s, t)
-    for (let a = s; a !== top; a = tree.parent[a]) coupling[a]++
-    for (let a = t; a !== top; a = tree.parent[a]) coupling[a]++
-  }
+  const coupling = importance(tree)
   const lenses: Lens[] = [
     { name: 'size', label: hasLines ? 'Size · lines of code' : 'Size · elements inside', raw: size, heat: normalise(tree, size), unit: hasLines ? 'lines' : 'elements' },
     { name: 'coupling', label: 'Coupling · relations crossing the boundary', raw: coupling, heat: normalise(tree, coupling), unit: 'relations' },

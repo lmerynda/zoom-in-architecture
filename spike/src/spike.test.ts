@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, contentBox, placeWorld, spans, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, ranks, spans, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -93,6 +93,50 @@ describe('Tree', () => {
     expect(aggregateEdges(tree, open).map(e => [e.s, e.t, e.count]).sort()).toEqual(
       [[id('a.a1'), id('b'), 1], [id('a.a2'), id('b'), 1], [id('a.a1'), id('a.a2'), 1]].sort(),
     )
+  })
+})
+
+describe('coupling layout', () => {
+  // Nine children: 1 is the hub, 2 and 3 talk to it a lot, 9 talks to nothing.
+  const children = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  const job = {
+    id: 0, children, spans: children.map(c => (c === 1 ? 2 : 1)), headed: children.map(() => false),
+    edges: [{ s: 1, t: 2, count: 20 }, { s: 1, t: 3, count: 15 }, { s: 4, t: 5, count: 8 }, { s: 1, t: 6, count: 2 }, { s: 7, t: 8, count: 1 }],
+    weights: [37, 20, 15, 8, 8, 2, 1, 1, 0],
+  }
+  const { pos, w, h } = centreOut(job)
+  const centre = (k: number) => [pos[k * 2] + cardW(job.spans[k]) / 2, pos[k * 2 + 1] + cardH(job.spans[k]) / 2]
+  const from = (k: number, x: number, y: number) => Math.hypot(centre(k)[0] - x, centre(k)[1] - y)
+
+  it('puts the most connected child nearest the middle and the unconnected one at the rim', () => {
+    const d = children.map((_, k) => from(k, w / 2, h / 2))
+    expect(Math.min(...d)).toBe(d[0])
+    // The rim: its card touches the edge of the level's layout.
+    const [x, y] = [pos[16], pos[17]]
+    expect(x === GUTTER || y === GUTTER || x + CARD_W === w - GUTTER || y + CARD_H === h - GUTTER).toBe(true)
+  })
+
+  it('places a child beside what it is coupled with, on the card grid, without overlaps', () => {
+    // 2 and 3 are the hub's heaviest partners: each touches the hub's 2 × 2 block.
+    for (const k of [1, 2]) expect(from(k, ...centre(0) as [number, number])).toBeLessThan(cardW(2) / 2 + CARD_W + GUTTER + 1)
+    const boxes = children.map((_, k) => [pos[k * 2], pos[k * 2 + 1], cardW(job.spans[k]), cardH(job.spans[k])])
+    for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++) {
+      const [x1, y1, w1, h1] = boxes[a], [x2, y2, w2, h2] = boxes[b]
+      expect(x1 + w1 <= x2 || x2 + w2 <= x1 || y1 + h1 <= y2 || y2 + h2 <= y1).toBe(true)
+    }
+    // Every card sits on a cell of the grid, so edges keep their gutters.
+    for (let k = 0; k < children.length; k++) {
+      expect((pos[k * 2] - GUTTER) % (CARD_W + GUTTER)).toBe(0)
+      expect((pos[k * 2 + 1] - GUTTER) % (CARD_H + GUTTER)).toBe(0)
+    }
+  })
+
+  it('ranks siblings by the relations crossing their boundary, map order breaking ties', () => {
+    const tree = new Tree(model)
+    const r = ranks(tree, importance(tree))
+    const top = tree.children[0].map(i => [tree.els[i].id, r[i]])
+    expect(new Set(top.map(t => t[1])).size).toBe(top.length)
+    expect(top.map(t => t[1]).sort()).toEqual(top.map((_, k) => k + 1))
   })
 })
 

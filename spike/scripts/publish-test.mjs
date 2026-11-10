@@ -234,6 +234,24 @@ try {
   await sleep(400)
   await shot('03-source-edit')
 
+  // The Coupling view: the same map laid out by connection, most connected in the middle, and `.`
+  // walks a level from the most connected down.
+  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Coupling').click())
+  await page.waitForFunction(() => location.search.includes('view=coupling') && window.__spike?.ready, { timeout: 60000 })
+  await sleep(1500)
+  const cv = await page.evaluate(() => {
+    const s = window.__spike, r = s.world.rect, rk = s.renderer.ranking, top = s.tree.children[0]
+    const mid = [r[2] / 2, r[3] / 2], d = i => Math.hypot(r[i * 4] + r[i * 4 + 2] / 2 - mid[0], r[i * 4 + 1] + r[i * 4 + 3] / 2 - mid[1])
+    const first = top.find(i => rk.rank[i] === 1)
+    return { first: s.tree.els[first].id, nearest: s.tree.els[top.reduce((a, b) => (d(b) < d(a) ? b : a))].id, weights: top.map(i => rk.weight[i]) }
+  })
+  await page.keyboard.press('.')
+  await sleep(2200)
+  const picked = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)
+  check('the Coupling view puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
+  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
+  await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
+
   // The Requests view: a switch beside the lenses opens the edge, and an endpoint holds its request's path.
   check('the view switch sits with the lenses, not among the models', await page.evaluate(() => {
     const views = document.querySelector('#views'), lenses = document.querySelector('.lensbar')

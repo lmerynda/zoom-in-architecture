@@ -228,12 +228,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       // line moving onto another moved line's old number is not moved twice.
       if (r.moved.length) {
         let text = readFileSync(b, 'utf8')
-        const pairs = r.moved.map(x => x.split(' → '))
+        const pairs = [...new Set(r.moved)].map(x => x.split(' → '))
         pairs.forEach(([from], k) => { text = text.replaceAll(`"${from}"`, `"\u0000${k}\u0000"`) })
         pairs.forEach(([, to], k) => { text = text.replaceAll(`"\u0000${k}\u0000"`, `"${to}"`) })
         writeFileSync(b, text)
       }
-      console.log([`${r.moved.length} evidence lines moved with their code${r.moved.length ? ` (${b} rewritten)` : ''}:`, ...r.moved.map(x => `  ${x}`), ...(r.left.length ? [`${r.left.length} left for you:`, ...r.left.map(x => `  ${x}`)] : [])].join('\n'))
+      const moved = [...new Set(r.moved)]
+      console.log([`${moved.length} evidence lines moved with their code${moved.length ? ` (${b} rewritten)` : ''}:`, ...moved.map(x => `  ${x}`), ...(r.left.length ? [`${r.left.length} left for you:`, ...r.left.map(x => `  ${x}`)] : [])].join('\n'))
     } else if (cmd === 'pull' && a) {
       let res
       try { res = await fetch(new URL(`/maps/${encodeURIComponent(a)}.json`, service)) } catch { throw new Error(`no viewer answers at ${service}`) }

@@ -4,7 +4,7 @@ import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
 import { LensBar, ago } from './hud'
-import { layoutJobs, placeWorld, type World } from './layout'
+import { importance, layoutJobs, placeWorld, ranks, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
@@ -20,7 +20,9 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const modelName = new URLSearchParams(location.search).get('model') ?? 'acme'
 /** A second view of the same import, such as its requests; it reads code from the import's repo. */
 const view = new URLSearchParams(location.search).get('view')
-const modelFile = view ? `${modelName}.${view}` : modelName
+/** The Coupling view lays out the architecture model by connection; other views have their own model. */
+const coupling = view === 'coupling'
+const modelFile = view && !coupling ? `${modelName}.${view}` : modelName
 /** On-screen font size a jump into code aims for, and the largest the wheel zooms code to. */
 const READ_PX = 15
 const MAX_READ_PX = 28
@@ -66,7 +68,7 @@ async function main() {
   // The current model version; live updates replace all four.
   let tree = new Tree(model)
   let published = model.published
-  let jobs = layoutJobs(tree)
+  let jobs = layoutJobs(tree, coupling)
   const tLayout = performance.now()
   let local = await runLayout(jobs)
   const layoutMs = performance.now() - tLayout
@@ -78,6 +80,9 @@ async function main() {
   Renderer.installFont()
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
+  // In the Coupling view each card shows its rank among its siblings and how connected it is.
+  const rankFor = (t: Tree) => { if (!coupling) return null; const w = importance(t); return { weight: w, rank: ranks(t, w) } }
+  renderer.ranking = rankFor(tree)
   app.stage.addChild(renderer.stage)
   const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')
   const minimap = new Minimap(minimapEl, tree, world)
@@ -198,7 +203,7 @@ async function main() {
   const swapModel = async (json: ModelJson, buildMs = 0) => {
     const swapStart = performance.now()
     const next = new Tree(json)
-    const nextJobs = layoutJobs(next)
+    const nextJobs = layoutJobs(next, coupling)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
     const fresh = rerun.length ? await runLayout(rerun) : new Map()
@@ -224,6 +229,7 @@ async function main() {
     const prev = renderer
     const remap = (i: number) => (i > 0 ? next.byId.get(tree.els[i].id) ?? -1 : -1)
     const nextRenderer = new Renderer(app, next, live, cam)
+    nextRenderer.ranking = rankFor(next)
     nextRenderer.onOpen = () => sound.chime()
     nextRenderer.hud = prev.hud
     nextRenderer.pointer = prev.pointer

@@ -20,8 +20,11 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
     return a
   }
   const open = entries.find(e => e.name === current)
-  viewsNav.replaceChildren(...(open?.views?.length
-    ? [tab(`?model=${open.name}`, 'Architecture', !view), ...open.views.map(v => tab(`?model=${open.name}&view=${v}`, v[0].toUpperCase() + v.slice(1), view === v))]
+  // Every model can be seen by its structure (Architecture) or by its connections (Coupling);
+  // an import with endpoints also has its Requests.
+  const views = open || current !== 'synthetic' ? ['coupling', ...(open?.views ?? [])] : []
+  viewsNav.replaceChildren(...(views.length
+    ? [tab(`?model=${current}`, 'Architecture', !view), ...views.map(v => tab(`?model=${current}&view=${v}`, v[0].toUpperCase() + v.slice(1), view === v))]
     : []))
   viewsNav.hidden = !viewsNav.childElementCount
 
