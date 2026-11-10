@@ -94,15 +94,35 @@ async function main() {
   let manual = false, simNow = performance.now()
   const now = () => (manual ? simNow : performance.now())
 
+  /**
+   * The camera that shows node i in the screen the panels leave free: below the top bar and the
+   * breadcrumb, left of the details panel, and beside or above the minimap, whichever leaves it
+   * larger. A container fills that space; a single file is shown among its neighbours.
+   */
+  const frameFor = (i: number) => {
+    const r = world.rect, W = cam.w, H = cam.h
+    const box = (id: string) => { const e = document.getElementById(id); return e && !e.hidden && e.getClientRects().length ? e.getBoundingClientRect() : null }
+    const crumbs = box('crumbs'), top = box('top'), panel = box('details'), mini = box('minimap')
+    const t = Math.max(crumbs?.bottom ?? 0, top?.bottom ?? 0) + 8
+    const right = panel ? panel.left - 12 : W, bottom = H - 28
+    const frames: [number, number, number, number][] = [[0, t, right, bottom]]
+    if (mini && !panel) frames[0] = [0, t, right, mini.top - 8]
+    if (mini) frames.push([0, t, Math.min(right, mini.left - 8), bottom])
+    const fill = i === 0 ? 0.96 : tree.children[i].length ? 0.9 : 0.4
+    const w = r[i * 4 + 2], h = r[i * 4 + 3]
+    let best = { z: 0, x: 0, y: 0 }
+    for (const [l, tt, rr, bb] of frames) {
+      const fw = Math.max(40, rr - l), fh = Math.max(40, bb - tt)
+      const z = fill * Math.min(fw / w, fh / h)
+      if (z <= best.z) continue
+      // The target's centre goes to the frame's centre.
+      best = { z, x: r[i * 4] + w / 2 - ((l + rr) / 2 - W / 2) / z, y: r[i * 4 + 1] + h / 2 - ((tt + bb) / 2 - H / 2) / z }
+    }
+    return best
+  }
   const fit = (i = 0) => {
-    const r = world.rect
-    // With the details panel open, frame the target in the space left of it.
-    const panel = document.getElementById('details')
-    const cover = panel && !panel.hidden ? panel.getBoundingClientRect().width + 24 : 0
-    const widen = cam.w / Math.max(1, cam.w - cover)
-    // A container fills the view; a single file is shown among its neighbours, for context.
-    const fill = i === 0 ? 0.92 : tree.children[i].length ? 0.85 : 0.38
-    cam.flyTo(r[i * 4], r[i * 4 + 1], r[i * 4 + 2] * widen, r[i * 4 + 3], now(), fill)
+    const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
+    cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
@@ -115,9 +135,8 @@ async function main() {
   }
   {
     cam.resize(app.screen.width, app.screen.height)
-    const r = world.rect
-    const z = Math.min((cam.w * 0.92) / r[2], (cam.h * 0.92) / r[3])
-    cam.set(r[2] / 2, r[3] / 2, z)
+    const f = frameFor(0)
+    cam.set(f.x, f.y, f.z)
   }
   // Pixi applies a window resize a frame later; reading the screen before that keeps the old
   // size, and everything outside it is culled as off-screen.

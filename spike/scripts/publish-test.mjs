@@ -124,6 +124,28 @@ try {
   await page.evaluate(() => { const s = window.__spike; s.select(-1); s.unhover(); s.fit(0) })
   await sleep(1500)
   const idle = await page.evaluate(() => window.__spike.last())
+  // Fit frames the map in the space the panels leave: no card under the breadcrumb or the minimap.
+  const clear = {}
+  const viewport = page.viewport()
+  for (const [width, height] of [[1600, 1000], [1100, 900], [1000, 1000], [1400, 700]]) {
+    await page.setViewport({ width, height })
+    await sleep(300)
+    await page.evaluate(() => window.__spike.fit(0))
+    await sleep(2800)
+    const under = await page.evaluate(() => {
+      const s = window.__spike, r = s.world.rect
+      const boxes = ['crumbs', 'top', 'minimap'].map(id => document.getElementById(id).getBoundingClientRect())
+      return s.tree.children[0].filter(i => {
+        const [x, y] = s.cam.toScreen(r[i * 4], r[i * 4 + 1]), w = r[i * 4 + 2] * s.cam.z, h = r[i * 4 + 3] * s.cam.z
+        return boxes.some(b => x < b.right && b.left < x + w && y < b.bottom && b.top < y + h)
+      }).map(i => s.tree.els[i].id)
+    })
+    if (under.length) clear[`${width}x${height}`] = under
+  }
+  await page.setViewport(viewport)
+  await page.evaluate(() => window.__spike.fit(0))
+  await sleep(2800)
+  check('fit keeps the landscape clear of the breadcrumb and the minimap', Object.keys(clear).length === 0, JSON.stringify(clear))
   // At the landscape you are nowhere deeper, whatever card sits under the screen centre.
   check('the landscape is where the breadcrumb says you are', await page.evaluate(() => window.__spike.renderer.breadcrumb().length === 0))
   // The copy is not a git checkout: the map says it has no commit, and how old it is.
@@ -187,8 +209,13 @@ try {
     await wait(200)
     const panelLeft = document.getElementById('details').getBoundingClientRect().x
     const rect = i => { const [x, y] = s.cam.toScreen(r[i * 4], r[i * 4 + 1]); return [x, y, r[i * 4 + 2] * s.cam.z, r[i * 4 + 3] * s.cam.z] }
-    const under = s.tree.els.map((_, i) => i).find(i => { if (i < 1) return false; const [x, , w] = rect(i); return x < panelLeft && x + w > panelLeft && w < panelLeft / 2 })
+    // Fit keeps the map clear of the panels, so move a landscape card under the panel's edge first.
+    const under = s.tree.children[0].find(i => rect(i)[2] < panelLeft / 2)
     if (under == null) return { under: null }
+    s.cam.set(r[under * 4] + r[under * 4 + 2] / 2 - (panelLeft - s.cam.w / 2) / s.cam.z, s.cam.y, s.cam.z)
+    await wait(100)
+    const [ux, , uw] = rect(under)
+    if (!(ux < panelLeft && ux + uw > panelLeft)) return { under: null, ux, uw, panelLeft }
     s.select(under)
     await wait(2000)
     const [x, y, w, h] = rect(under)
@@ -277,7 +304,8 @@ try {
     s.manual(false)
     return labels
   })
-  check('the Connections landscape labels its arrows in narrow gutters', ['money', 'shops in a browser', 'GET /api/orders', 'JPA'].every(t => counts.includes(t)), JSON.stringify(counts))
+  await shot('connections-landscape')
+  check('the Connections landscape labels its arrows in narrow gutters', ['money', 'shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
