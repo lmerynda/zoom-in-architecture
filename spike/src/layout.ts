@@ -98,13 +98,21 @@ export function siblingPartners(tree: Tree): Int32Array {
 }
 
 /**
- * What ranks a node among its siblings in the Connections view: first how many of them it reaches,
- * then how many relations cross it. Breadth before volume: a shared-types library that a few parts
- * import hundreds of times does not outrank the part that talks to all of its peers.
+ * What ranks a node among its siblings in the Connections view: the share of its siblings it
+ * reaches, plus half its relations on a log scale against its busiest sibling. Breadth leads, so a
+ * shared-types library that a few parts import hundreds of times does not outrank the part that
+ * talks to all of its peers; volume still counts, so a heavy part missing one sibling is not
+ * ranked below a light one that touches them all.
  */
 export function rankKey(tree: Tree): Float64Array {
-  const w = importance(tree), p = siblingPartners(tree)
-  return Float64Array.from(w, (x, i) => p[i] * 1e6 + x)
+  const w = importance(tree), p = siblingPartners(tree), key = new Float64Array(tree.size)
+  for (let i = 0; i < tree.size; i++) {
+    const kids = tree.children[i]
+    if (!kids.length) continue
+    const others = Math.max(1, kids.length - 1), top = Math.log1p(Math.max(...kids.map(k => w[k])))
+    for (const k of kids) key[k] = p[k] / others + (top > 0 ? (0.5 * Math.log1p(w[k])) / top : 0)
+  }
+  return key
 }
 
 /** Each node's rank among its siblings by importance, 1 for the most connected; ties keep map order. */
@@ -130,13 +138,17 @@ export function centreOut(job: LayoutJob): { pos: number[]; w: number; h: number
   const cellW = CARD_W + GUTTER, cellH = CARD_H + GUTTER
   const order = job.children.map((_, k) => k).sort((a, b) => weights[b] - weights[a] || a - b)
   const cells = job.spans.reduce((a, s) => a + s * s, 0)
-  let cols = Math.max(1, Math.ceil(Math.sqrt((cells * CONTENT_ASPECT * cellH) / cellW)))
-  let rows = Math.max(1, Math.ceil(cells / cols))
-  // #1 sits exactly at the centre: an even grid around a 2 × 2 card, an odd one around a single card.
+  // The grid shape whose cards come out largest in the parent's content box, with the parity that
+  // puts #1 exactly at the centre (even around a 2 × 2 card, odd around a single one): a crowded
+  // level fills its card as well as the packed Architecture grid does, so it opens at the same zoom.
   const first = job.spans[order[0]] ?? 1, parity = first === 2 ? 0 : 1
-  if (cols % 2 !== parity) cols++
-  if (rows % 2 !== parity) rows++
-  while (cols * rows < cells) { cols += 2; rows += 2 }
+  let cols = 1, rows = 1, bestScale = 0
+  for (let c = parity || 2; c <= cells + 2; c += 2) {
+    const r0 = Math.max(first, Math.ceil(cells / c))
+    const r = r0 % 2 === parity ? r0 : r0 + 1
+    const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / (r * cellH + GUTTER))
+    if (scale > bestScale + 1e-12) { bestScale = scale; cols = c; rows = r }
+  }
   const taken = new Uint8Array(cols * rows)
   const cx = (cols - 1) / 2, cy = (rows - 1) / 2
   const at = new Map<number, { c: number; r: number; span: number }>()

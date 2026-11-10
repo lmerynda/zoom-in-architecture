@@ -164,6 +164,15 @@ describe('coupling layout', () => {
     expect(r[t.byId.get('hub')!]).toBe(1)
   })
 
+  it('still counts volume: a heavy part missing one sibling outranks a light one that touches them all', () => {
+    const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
+    const rel = (s: string, t: string) => ({ source: `${s}.f`, target: `${t}.f`, title: '' })
+    // war: 30 relations with a and b (misses light); light: one relation with each of war, a and b.
+    const t = new Tree({ name: 'v', elements: ['war', 'light', 'a', 'b'].flatMap(x => [el(x, null), el(`${x}.f`, x)]), relations: [...Array(15).fill(0).flatMap(() => [rel('war', 'a'), rel('war', 'b')]), rel('light', 'war'), rel('light', 'a'), rel('light', 'b')] })
+    const r = ranks(t, rankKey(t))
+    expect(r[t.byId.get('war')!]).toBeLessThan(r[t.byId.get('light')!])
+  })
+
   it('counts the siblings each node reaches, once per sibling however many relations', () => {
     const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
     // a reaches b twice and c once; b and c do not meet.

@@ -17,8 +17,8 @@ const FONT_PX = 32
  * A container opens, and its children get labels, between these on-screen child widths: a child
  * narrower than OPEN_A could not carry its name, so until then the container stays a closed card.
  */
-const OPEN_A = 120
-const OPEN_B = 180
+const OPEN_A = 105
+const OPEN_B = 165
 /** Below this on-screen width a card is a plain coloured pip. */
 const PIP = 30
 const DESC_WRAP = 500
