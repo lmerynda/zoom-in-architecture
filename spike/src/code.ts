@@ -60,7 +60,7 @@ export function codeLayout(lines: number, cols: number, w: number, h: number): {
 }
 
 /** A file card this wide on screen shows its source: small enough that a file you travel to already shows it. */
-export const CODE_W = 280
+export const CODE_W = 110
 /** The code fills the card below this fraction of its height; title, kind and description sit above. */
 const CODE_TOP = 0.4
 /** The text padding of a card, as a fraction of its width (as the renderer lays it out). */

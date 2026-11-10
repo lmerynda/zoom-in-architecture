@@ -497,7 +497,9 @@ export class Renderer {
     }
 
     const texts = this.textLayers[d]
-    const la = alpha * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9)
+    // A name reads at full strength while its card fades in (alpha starts low as a container
+    // opens): the box can arrive gently, the name must be legible from the start.
+    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9)
     if (la < 0.02 || w < 44) return
 
     // Lens value badge in the bottom-right corner.
@@ -584,9 +586,10 @@ export class Renderer {
     const lead = glyph ? ICON + ICON_GAP : 0
     const px = titlePx(Math.min(h * 0.15, 24), inner, v.titleEm + lead)
     if (px < 6) return
-    // Reading a file: its code reaches up under the top bar, and the breadcrumb names it. A title
-    // held on screen there would sit on the code, so the card's text scrolls away with its top.
-    if (el.metadata?.path && w >= CODE_W && codeBox(x, y, w, h).y < SAFE.top) {
+    // Reading a file: it fills the screen and its top has scrolled under the top bar, and the
+    // breadcrumb names it. A title held on screen there would sit on the code, so the card's text
+    // scrolls away with its top.
+    if (el.metadata?.path && w >= CODE_W && (codeBox(x, y, w, h).y < SAFE.top || (y < SAFE.top && w > this.cam.w * 0.6))) {
       this.codeSlots.push({ i, ...codeBox(x, y, w, h), alpha: la })
       return
     }
