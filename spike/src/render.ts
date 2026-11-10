@@ -758,7 +758,7 @@ export class Renderer {
     g.clear(); hg.clear()
     const W = this.cam.w, H = this.cam.h
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
-    const labelSpots: { x: number; y: number; s: string; kind: Kind; weight: number }[] = []
+    const labelSpots: LabelSpot[] = []
     const paths: number[][][] = [[], [], [], [], []]
     const heads: number[][] = [[], [], [], [], []]
     const sel = this.selected > 0
@@ -805,13 +805,14 @@ export class Renderer {
       if (sOn && e.both) heads[kind].push(pts[2], pts[3], pts[0], pts[1])
       // Every edge with room says what it carries, on its own last stretch beside the card it
       // reaches: the middle of a route is often a trunk many edges share, where a count could
-      // belong to any of them. Busier edges claim the space first (drawLabels).
+      // belong to any of them. When a narrow gutter leaves no room at its middle, a point nearer
+      // either end may. Busier edges claim the space first (drawLabels).
       if (sOn && tOn) {
-        const m = endStretch(pts)
+        const at = stretches(pts)
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
         // One import named after the card it reaches says nothing the arrow does not.
         const s = n > 1 ? `${n} relations` : this.tree.relTitles[rel]
-        if (m && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ x: m[0], y: m[1], s, kind, weight: n })
+        if (at.length && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ at, s, kind, weight: n })
       }
     }
 
@@ -1030,7 +1031,7 @@ export class Renderer {
     return k
   }
 
-  private drawLabels(spots: { x: number; y: number; s: string; kind: Kind; weight: number }[]) {
+  private drawLabels(spots: LabelSpot[]) {
     let k = 0
     const placed: number[][] = []
     // Highlighted edges claim label space first, then the busiest.
@@ -1044,18 +1045,21 @@ export class Renderer {
       const px = 11
       lab.text.scale.set(px / FONT_PX)
       const cw = lab.text.width + 12, ch = px * 1.8
-      const x = sp.x - cw / 2, y = sp.y - ch / 2
-      // A label cut by the screen edge or under the HUD reads as noise ("2 re"): it waits for room.
-      if (x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) continue
-      if (this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch)) continue
-      if (this.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + cw && y < by + bh && by < y + ch)) continue
-      // Labels live in the gutters: never on a card someone is reading (a closed card or a file).
-      if (this.shown.some(c => {
-        if (this.tree.children[c].length && this.open(c) > 0) return false
-        const [cx, cy, cw2, ch2] = this.screenRect(c)
-        return x < cx + cw2 && cx < x + cw && y < cy + ch2 && cy < y + ch
-      })) continue
-      if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
+      const fits = (x: number, y: number) =>
+        // A label cut by the screen edge or under the HUD reads as noise ("2 re"): it waits for room.
+        !(x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) &&
+        !this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch) &&
+        !this.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + cw && y < by + bh && by < y + ch) &&
+        // Labels live in the gutters: never on a card someone is reading (a closed card or a file).
+        !this.shown.some(c => {
+          if (this.tree.children[c].length && this.open(c) > 0) return false
+          const [cx, cy, cw2, ch2] = this.screenRect(c)
+          return x < cx + cw2 && cx < x + cw && y < cy + ch2 && cy < y + ch
+        }) &&
+        !placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)
+      const spot = sp.at.find(([mx, my]) => fits(mx - cw / 2, my - ch / 2))
+      if (!spot) continue
+      const x = spot[0] - cw / 2, y = spot[1] - ch / 2
       placed.push([x, y, cw, ch])
       lab.bg.position.set(x, y)
       lab.bg.width = cw; lab.bg.height = ch
@@ -1158,13 +1162,22 @@ function borderPoint(r: number[], tx: number, ty: number): [number, number] {
  * Where an edge's label goes: the middle of the last stretch long enough to hold it, counting back
  * from the card it reaches, or null when the edge has none.
  */
-function endStretch(pts: number[]): [number, number] | null {
+/** An edge's label and the places it may go, best first. */
+type LabelSpot = { at: [number, number][]; s: string; kind: Kind; weight: number }
+
+/**
+ * Places for a label on the last stretch of a route long enough to hold one (earlier stretches
+ * are often trunks other edges share): its middle, then points toward its ends, where it may
+ * cross a gutter wide enough.
+ */
+function stretches(pts: number[]): [number, number][] {
   for (let k = pts.length - 2; k >= 2; k -= 2) {
     const l = Math.hypot(pts[k] - pts[k - 2], pts[k + 1] - pts[k - 1])
-    if (l >= 56) return [(pts[k] + pts[k - 2]) / 2, (pts[k + 1] + pts[k - 1]) / 2]
+    if (l >= 56) return ALONG.map(t => [pts[k - 2] + (pts[k] - pts[k - 2]) * t, pts[k - 1] + (pts[k + 1] - pts[k - 1]) * t])
   }
-  return null
+  return []
 }
+const ALONG = [0.5, 0.65, 0.35]
 
 function arrowHeads(g: Graphics, segs: number[], color: number, alpha: number, L: number) {
   if (!segs.length) return

@@ -267,6 +267,17 @@ try {
   await sleep(2200)
   const picked = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)
   check('the Connections view puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
+  // Its grid's gutters are narrow; the landscape's arrows still say what they carry (the customer's
+  // arrow runs beside a card at its middle and once went unlabelled).
+  const counts = await page.evaluate(() => {
+    const s = window.__spike
+    s.select(-1); s.unhover(); s.manual(true); s.fit(0)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    const labels = s.renderer.labels.filter(l => l.text.visible).map(l => l.text.text)
+    s.manual(false)
+    return labels
+  })
+  check('the Connections landscape labels its arrows in narrow gutters', ['money', 'shops in a browser', 'GET /api/orders', 'JPA'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
