@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, ranks, siblingPartners, spans, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -142,7 +142,7 @@ describe('coupling layout', () => {
       expect(mid(0)[0]).toBeCloseTo(L.w / 2)
       expect(mid(0)[1]).toBeCloseTo(L.h / 2)
       const d = kids.map((_, k) => Math.hypot(mid(k)[0] - L.w / 2, mid(k)[1] - L.h / 2) / (CARD_W + GUTTER))
-      for (let a = 1; a < d.length; a++) for (let b = a + 1; b < d.length; b++) expect(d[a]).toBeLessThanOrEqual(d[b] + 0.75 + 1e-9)
+      for (let a = 1; a < d.length; a++) for (let b = a + 1; b < d.length; b++) expect(d[a]).toBeLessThanOrEqual(d[b] + 0.3 + 1e-9)
     }
   })
 
@@ -152,6 +152,16 @@ describe('coupling layout', () => {
     const top = tree.children[0].map(i => [tree.els[i].id, r[i]])
     expect(new Set(top.map(t => t[1])).size).toBe(top.length)
     expect(top.map(t => t[1]).sort()).toEqual(top.map((_, k) => k + 1))
+  })
+
+  it('ranks breadth before volume: reaching more siblings beats more relations to fewer', () => {
+    const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
+    // types is imported 6 times, by a only; hub talks once each to a, b and c.
+    const rel = (s: string, t: string) => ({ source: `${s}.f`, target: `${t}.f`, title: '' })
+    const t = new Tree({ name: 'r', elements: ['types', 'hub', 'a', 'b', 'c'].flatMap(x => [el(x, null), el(`${x}.f`, x)]), relations: [...Array(6).fill(0).map(() => rel('a', 'types')), rel('hub', 'a'), rel('hub', 'b'), rel('hub', 'c')] })
+    const r = ranks(t, rankKey(t)), w = importance(t)
+    expect(w[t.byId.get('types')!]).toBeGreaterThan(w[t.byId.get('hub')!])
+    expect(r[t.byId.get('hub')!]).toBe(1)
   })
 
   it('counts the siblings each node reaches, once per sibling however many relations', () => {

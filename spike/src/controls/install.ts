@@ -1,6 +1,6 @@
 import type { Application } from 'pixi.js'
 import type { Camera } from '../camera'
-import { importance, ranks, type World } from '../layout'
+import { importance, rankKey, ranks, type World } from '../layout'
 import type { Lens, LensName } from '../lens'
 import type { Minimap } from '../minimap'
 import type { Tree } from '../model'
@@ -69,7 +69,7 @@ export function installControls(c: Ctx) {
    */
   let rankOf: { tree: Tree; rank: Int32Array; weight: Float64Array } | null = null
   const byImportance = (step: 1 | -1) => {
-    if (rankOf?.tree !== tree) { const weight = importance(tree); rankOf = { tree, weight, rank: ranks(tree, weight) } }
+    if (rankOf?.tree !== tree) rankOf = { tree, weight: importance(tree), rank: ranks(tree, rankKey(tree)) }
     const { rank, weight } = rankOf
     const sel = renderer.selected
     const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0

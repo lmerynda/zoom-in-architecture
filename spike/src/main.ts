@@ -4,7 +4,7 @@ import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
 import { renderDetails } from './details'
 import { LensBar, ago } from './hud'
-import { importance, layoutJobs, placeWorld, ranks, siblingPartners, type World } from './layout'
+import { importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
@@ -81,7 +81,7 @@ async function main() {
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
   // In the Connections view each card shows its rank among its siblings and how connected it is.
-  const rankFor = (t: Tree) => { if (!coupling) return null; const w = importance(t); return { weight: w, rank: ranks(t, w), partners: siblingPartners(t) } }
+  const rankFor = (t: Tree) => { if (!coupling) return null; const w = importance(t); return { weight: w, rank: ranks(t, rankKey(t)), partners: siblingPartners(t) } }
   renderer.ranking = rankFor(tree)
   app.stage.addChild(renderer.stage)
   const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')

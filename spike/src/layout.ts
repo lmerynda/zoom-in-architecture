@@ -97,6 +97,16 @@ export function siblingPartners(tree: Tree): Int32Array {
   return p
 }
 
+/**
+ * What ranks a node among its siblings in the Connections view: first how many of them it reaches,
+ * then how many relations cross it. Breadth before volume: a shared-types library that a few parts
+ * import hundreds of times does not outrank the part that talks to all of its peers.
+ */
+export function rankKey(tree: Tree): Float64Array {
+  const w = importance(tree), p = siblingPartners(tree)
+  return Float64Array.from(w, (x, i) => p[i] * 1e6 + x)
+}
+
 /** Each node's rank among its siblings by importance, 1 for the most connected; ties keep map order. */
 export function ranks(tree: Tree, w: Float64Array): Int32Array {
   const r = new Int32Array(tree.size)
@@ -104,8 +114,8 @@ export function ranks(tree: Tree, w: Float64Array): Int32Array {
   return r
 }
 
-/** How far out a ring reaches, in cell widths: cells this much farther than the nearest free one are the next ring. */
-const RING = 0.75
+/** How far out a ring reaches, in cell widths: cells this much farther than the nearest free one wait. Tight, so a ring fills its edge cells before its corners, as far out as the next ring. */
+const RING = 0.3
 
 /**
  * The Connections view's arrangement of one level, on the same grid as the cards (so edges still
@@ -198,7 +208,7 @@ export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
   const edges = tree.siblingEdges()
   // The Connections view sizes by connection, not by code: the most connected child of a level of
   // five or more is the big card at its centre.
-  const weight = coupling ? importance(tree) : null
+  const weight = coupling ? rankKey(tree) : null
   const span = coupling ? couplingSpans(tree, weight!) : spans(tree)
   const jobs: LayoutJob[] = []
   for (let i = 0; i < tree.size; i++) {
