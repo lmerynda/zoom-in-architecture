@@ -213,6 +213,24 @@ try {
   const focused = await page.evaluate(() => window.__spike.last())
   check('no empty route panel sits on the map', await page.evaluate(() => document.querySelector('.routepanel').hidden))
   check('only the focused card\'s edges move', idle.edges > 0 && idle.particles === 0 && focused.particles > 0, JSON.stringify({ idle: [idle.edges, idle.particles], focused: [focused.edges, focused.particles] }))
+  // A card that is only starting to open keeps its rolled-up arrows, yet its children, drawn with
+  // their names, are clickable, and a selected one shows its own edges.
+  const opening = await page.evaluate(() => {
+    const s = window.__spike, rd = s.renderer, t = s.tree, r = s.world.rect, i = s.id('server')
+    const kid = t.els.findIndex((_, k) => t.parent[k] === i), inner = t.els.findIndex((_, k) => t.parent[k] === kid)
+    const cx = r[i * 4] + r[i * 4 + 2] / 2, cy = r[i * 4 + 1] + r[i * 4 + 3] / 2
+    s.select(-1); s.unhover(); s.manual(true)
+    let lo = s.cam.w / r[i * 4 + 2] / 256, hi = lo * 4096
+    for (let n = 0; n < 40; n++) { const z = Math.sqrt(lo * hi); s.cam.set(cx, cy, z); for (let f = 0; f < 30; f++) s.advance(16); if (rd.open(i) < 0.25) lo = z; else hi = z }
+    const open = rd.open(i), rolled = rd.rep(inner)
+    const [x, y] = s.cam.toScreen(r[kid * 4] + r[kid * 4 + 2] / 2, r[kid * 4 + 1] + r[kid * 4 + 3] / 2)
+    const picked = rd.pick(x, y)
+    s.select(kid); s.advance(16)
+    const own = rd.rep(inner)
+    s.select(-1); s.manual(false)
+    return { open: +open.toFixed(2), rolled: t.els[rolled].id, picked: t.els[picked].id, own: t.els[own].id, kid: t.els[kid].id }
+  })
+  check('a card starting to open keeps its rolled-up arrows, and its children are still clickable', opening.open > 0.1 && opening.open < 0.4 && opening.rolled === 'server' && opening.picked === opening.kid && opening.own === opening.kid, JSON.stringify(opening))
   // The controls screen tells readers a cited line opens its code.
   await page.keyboard.press('?')
   await sleep(250)

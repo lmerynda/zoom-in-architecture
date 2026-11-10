@@ -274,18 +274,24 @@ export class Renderer {
   }
 
   /**
-   * The node that stands in for i on screen: the deepest ancestor whose parent has opened, so its
-   * card is drawn with its name (a card that is drawn is also where its edges end). An end that is off screen collapses to its largest off-screen ancestor,
-   * so edges leave the screen toward something nameable.
+   * The node whose card an edge from i ends at: the deepest ancestor whose parent is well open
+   * (any drawn ancestor, along the focus). An end that is off screen collapses to its largest
+   * off-screen ancestor, so edges leave the screen toward something nameable.
    */
   rep(i: number): number {
     if (this.repStamp[i] === this.frameNo) return this.repMemo[i]
     const chain: number[] = []
     for (let a = i; a > 0; a = this.tree.parent[a]) chain.push(a)
+    // Edges end at a card once its parent is well open, so a level that is only starting to open
+    // keeps its rolled-up arrows. The card in focus, and the cards holding it, take their own
+    // edges as soon as they are drawn: selecting or hovering a small card shows its links.
+    const focus = this.selected > 0 ? this.selected : this.hover
     let cur = 0
     for (let k = chain.length - 1; k >= 0; k--) {
       const node = chain[k]
-      if (this.open(this.tree.parent[node]) <= 0) break
+      const o = this.open(this.tree.parent[node])
+      const onFocus = focus > 0 && (node === focus || this.tree.isAncestor(node, focus))
+      if (o <= 0 || (o < 0.5 && !onFocus)) break
       cur = node
       if (!this.onScreen(node)) break
     }
