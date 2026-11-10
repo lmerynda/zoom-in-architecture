@@ -508,7 +508,8 @@ export class Renderer {
     border.position.set(x, y)
     border.width = w; border.height = h
     border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
-    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : outside ? 0.8 : isContainer ? 0.55 : 0.45) * dim
+    // An external system is periphery: its outline is the quietest on the map until it is in play.
+    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : outside ? 0.4 : isContainer ? 0.55 : 0.45) * dim
 
     if (sel || ends || flashA > 0.02) {
       const glow = v.glow!
@@ -523,7 +524,7 @@ export class Renderer {
     const texts = this.textLayers[d]
     // A name reads at full strength while its card fades in (alpha starts low as a container
     // opens): the box can arrive gently, the name must be legible from the start.
-    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9)
+    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9) * (outside && !hot && !sel && !ends ? 0.75 : 1)
     if (la < 0.02 || w < 44) return
 
     // Lens value badge in the bottom-right corner.
