@@ -240,6 +240,9 @@ describe('followEvidence', () => {
     const many = followEvidence(crowd, { links: [{ from: 'a', to: 'b', evidence: ['src/main/java/shop/AccountService.java:2'] }] }, () => ['', '}'])
     expect(many.moved).toEqual([])
     expect(many.left[0]).toMatch(/^src\/main\/java\/shop\/AccountService\.java:2: \d+ lines read as it did$/)
+    // Evidence already on a marked line stays, even when an older version read differently there.
+    const stale = followEvidence(repo, cite('web/src/api.ts:2'), () => ['// old header', ...cur], (f, l) => f === 'web/src/api.ts' && l === 2)
+    expect(stale.moved).toEqual([])
     const none = followEvidence(repo, cite('web/src/api.ts:1'), () => ['something that is gone'])
     expect(none.left).toEqual(['web/src/api.ts:1: no line reads as it did'])
   })

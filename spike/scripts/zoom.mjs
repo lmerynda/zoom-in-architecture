@@ -223,7 +223,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       // What each cited file said at --since (the last commit by default), from git.
       const rev = args.since ?? 'HEAD'
       const before = file => { try { return execFileSync('git', ['-C', a, 'show', `${rev}:./${file}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 26 }).split('\n') } catch { return null } }
-      const r = followEvidence(a, readMap(b), before)
+      // Lines the scanner marks today (calls, routes, stores): evidence on one stays put.
+      const hints = new Map(buildGraph(a).files.map(f => [f.path, new Set(f.hints.map(h => h.line))]))
+      const r = followEvidence(a, readMap(b), before, (file, line) => !!hints.get(file)?.has(line))
       // Only the moved strings change, so the map keeps its own layout; through placeholders, so a
       // line moving onto another moved line's old number is not moved twice.
       if (r.moved.length) {
