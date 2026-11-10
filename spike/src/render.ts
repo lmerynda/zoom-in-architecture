@@ -815,8 +815,10 @@ export class Renderer {
       if (sOn && tOn) {
         const at = stretches(pts)
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
+        // A single import's name ("User") is detail: it shows on the focused card's edges only.
+        // Counts and the map's links (what a call or a store does) always say what they carry.
+        const s = n > 1 ? `${n} relations` : hot || this.tree.relEvidence[rel] ? this.tree.relTitles[rel] : ''
         // One import named after the card it reaches says nothing the arrow does not.
-        const s = n > 1 ? `${n} relations` : this.tree.relTitles[rel]
         if (at.length && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ at, s, kind, weight: n })
       }
     }

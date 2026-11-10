@@ -19,7 +19,7 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
 
 - **Cards inside cards, at any depth.** Every node is a card, and its children are laid out inside it. The first view is the landscape: the top-level nodes. Zooming into a card reveals its children; a level's text is readable only while you are at that level, so each level has to make sense on its own.
 - **Files are the leaves.** Each application file becomes a card titled with its name and its doc comment. Zoomed past a file card, its source code appears, syntax-coloured, with the lines the graph marked (routes, calls, stores) tagged.
-- **Relations are drawn for you, at every level.** Every reference between two files (an import, a call, a controller rendering a view) is an arrow between them. Between two cards that hold those files, the arrows roll up into one, labelled with its count ("38 relations"). **How you group files therefore decides what the arrows between groups say:**
+- **Relations are drawn for you, at every level.** Every reference between two files (an import, a call, a controller rendering a view) is an arrow between them. Between two cards that hold those files, the arrows roll up into one, labelled with its count ("38 relations") and drawn thicker the more it carries. A single import is labelled with its name only while one of its ends is selected or hovered. **How you group files therefore decides what the arrows between groups say:**
   - parts that work together a lot show one thick arrow;
   - a good split leaves few arrows between groups, and each of them means something;
   - at the bottom levels, the arrows show how the individual controllers, models, views and services connect.

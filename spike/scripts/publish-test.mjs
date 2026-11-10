@@ -245,6 +245,28 @@ try {
   const focused = await page.evaluate(() => window.__spike.last())
   check('no empty route panel sits on the map', await page.evaluate(() => document.querySelector('.routepanel').hidden))
   check('only the focused card\'s edges move', idle.edges > 0 && idle.particles === 0 && focused.particles > 0, JSON.stringify({ idle: [idle.edges, idle.particles], focused: [focused.edges, focused.particles] }))
+  // A single import's name labels its arrow only while one of its ends is in focus.
+  const named = await page.evaluate(() => {
+    const s = window.__spike, t = s.tree, rd = s.renderer
+    const pair = new Map()
+    for (let k = 0; k < t.relTitles.length; k++) {
+      const a = t.rels[k * 2], b = t.rels[k * 2 + 1], key = `${a}>${b}`
+      pair.set(key, [...(pair.get(key) ?? []), k])
+    }
+    const k = [...pair.values()].filter(ks => ks.length === 1).map(ks => ks[0])
+      .find(k => !t.relEvidence[k] && t.relTitles[k] && t.parent[t.rels[k * 2]] === t.parent[t.rels[k * 2 + 1]] && !t.children[t.rels[k * 2]].length)
+    if (k == null) return null
+    const src = t.rels[k * 2], title = t.relTitles[k]
+    const settle = () => { for (let f = 0; f < 200; f++) s.advance(16) }
+    const shown = () => rd.labels.filter(l => l.text.visible).map(l => l.text.text)
+    s.select(-1); s.unhover(); s.manual(true); s.fit(t.parent[src]); settle()
+    const idle = shown()
+    s.select(src); settle()
+    const focused = shown()
+    s.select(-1); s.manual(false)
+    return { title, idle: idle.includes(title), focused: focused.includes(title) }
+  })
+  check('an import’s name labels its arrow only in focus', !!named && !named.idle && named.focused, JSON.stringify(named))
   // A card that is only starting to open keeps its rolled-up arrows, yet its children, drawn with
   // their names, are clickable, and a selected one shows its own edges.
   const opening = await page.evaluate(() => {
@@ -310,7 +332,7 @@ try {
     return labels
   })
   await shot('connections-landscape')
-  check('the Connections landscape labels its arrows in narrow gutters', ['money', 'shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
+  check('the Connections landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
