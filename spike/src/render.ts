@@ -77,6 +77,8 @@ interface NodeView {
   header?: NineSliceSprite
   headerSq?: Sprite
   title?: BitmapText
+  /** The title on two lines, for a name that would otherwise be cut. */
+  title2?: BitmapText
   sub?: BitmapText
   desc?: BitmapText
   /** A closed container's list of what it holds. */
@@ -99,6 +101,8 @@ export interface FrameStats {
   chips: number
   /** Moving dots; only the focused card's edges carry them. */
   particles: number
+  /** Cards on screen that do not just surround it: 0 means the reader is looking at empty space. */
+  inView: number
   cpuMs: number
 }
 
@@ -238,7 +242,7 @@ export class Renderer {
   private text(s: string, layer: Container, wrap = 0) {
     const t = new BitmapText({
       text: s,
-      style: { fontFamily: FONT, fontSize: FONT_PX, fill: 0xffffff, wordWrap: wrap > 0, wordWrapWidth: wrap || 100, lineHeight: FONT_PX * 1.25 },
+      style: { fontFamily: FONT, fontSize: FONT_PX, fill: 0xffffff, wordWrap: wrap > 0, wordWrapWidth: wrap || 100, lineHeight: FONT_PX * 1.25, align: 'left' },
     })
     // Created hidden: a label made for a card too small to show it must not appear at (0, 0).
     t.visible = false
@@ -339,7 +343,7 @@ export class Renderer {
     this.time = now
     this.frameNo++
     if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
-    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, cpuMs: 0 }
+    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, inView: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.hoverAt(this.pointer[0], this.pointer[1]) : -1
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
@@ -381,7 +385,7 @@ export class Renderer {
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.inside, v.dossier, v.metric, v.icon]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.title2, v.sub, v.desc, v.inside, v.dossier, v.metric, v.icon]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -424,6 +428,7 @@ export class Renderer {
 
   private drawCard(i: number, x: number, y: number, w: number, h: number, alpha: number, labelAlpha: number, st: FrameStats) {
     st.nodes++
+    if (!(x <= 0 && y <= 0 && x + w >= this.cam.w && y + h >= this.cam.h)) st.inView++
     const d = this.tree.depth[i]
     const v = (this.views[i] ??= {})
     const color = this.colors[i]
@@ -593,25 +598,42 @@ export class Renderer {
       this.codeSlots.push({ i, ...codeBox(x, y, w, h), alpha: la })
       return
     }
-    const shownTitle = fitText(full, v.titleEm, inner - lead * px, px)
-    if (title.text !== shownTitle) title.text = shownTitle
+    // A name of several words that would be cut takes two lines, larger, when the card has room.
+    const level = Math.min(h * 0.15, 24)
+    let tpx = px, two: BitmapText | null = null
+    if (/ /.test(full) && (v.titleEm + lead) * px > inner + 1 && h > level * 5) {
+      const want = Math.min(level, (1.8 * (inner - lead * level)) / v.titleEm)
+      if (want > px * 1.12) {
+        const wrap = Math.round(((inner - lead * want) * FONT_PX) / want / 8) * 8
+        two = v.title2 ??= this.text(full, texts, wrap)
+        if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
+        // Two lines or it is no help: past that, the one-line title, cut.
+        if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1) tpx = want
+        else two = null
+      }
+    }
+    const shownTitle = fitText(full, v.titleEm, inner - lead * tpx, tpx)
+    if (!two && title.text !== shownTitle) title.text = shownTitle
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
-    const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - px * 6))
-    title.visible = true
-    title.scale.set(px / FONT_PX)
-    title.position.set(bx + lead * px, by)
-    if (glyph) this.icon(v, glyph, texts, bx, by + (px * 1.25 - px * ICON) / 2, px * ICON, color, la)
-    title.alpha = la
+    const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
+    const shown = two ?? title
+    shown.visible = true
+    shown.scale.set(tpx / FONT_PX)
+    shown.position.set(bx + lead * tpx, by)
+    if (glyph) this.icon(v, glyph, texts, bx, by + (tpx * 1.25 - tpx * ICON) / 2, tpx * ICON, color, la)
+    shown.alpha = la
+    // A title held on screen never sits under a panel (the folded details header): it waits.
+    if (this.hud.some(([hx, hy, hw, hh]) => hw && bx < hx + hw && hx < bx + lead * tpx + shown.width && by < hy + hh && hy < by + tpx * 1.3)) shown.visible = false
     st.texts++
-    let cy = by + px * 1.3
+    let cy = by + tpx * (two ? 2.55 : 1.3)
 
     // A file says how big it is and in what, not just that it is code.
     const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
     const inside = this.tree.children[i].length
     const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${el.kind} · ${inside} inside` : el.kind
     const subText = [kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
-    const spx = Math.min(px * 0.62, 14)
+    const spx = Math.min(tpx * 0.62, 14)
     if (spx >= 6 && subText) {
       const sub = (v.sub ??= this.text(subText, texts))
       v.subEm ??= em(sub)

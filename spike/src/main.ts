@@ -79,7 +79,7 @@ async function main() {
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
   app.stage.addChild(renderer.stage)
-  const minimapEl = $<HTMLCanvasElement>('minimap')
+  const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')
   const minimap = new Minimap(minimapEl, tree, world)
   const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
@@ -302,6 +302,8 @@ async function main() {
     minimapEl.classList.toggle('faint', readingCode)
     // The panel folds to its header too: the code is what is being read. Hovering it opens it.
     details.classList.toggle('folded', readingCode)
+    // Nothing but a card's empty inside on screen (a drag went past its children): say how back.
+    emptyHint.hidden = last.inView > 0 || readingCode || cam.flying
     const key = path.join('/')
     if (key !== lastCrumb || crumbsStale) {
       crumbsStale = false

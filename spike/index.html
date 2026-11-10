@@ -104,6 +104,9 @@
     .d-ev button.more { display: inline-block; align-self: flex-start; font-size: 11px; padding: 1px 6px; }
     .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
     #help { right: 12px; bottom: 12px; color: var(--dim); font-size: 11px; position: fixed; }
+    /* Shown when the screen holds only empty space inside a card: how to get back. */
+    #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #94a3b8; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; pointer-events: none; }
+    #empty[hidden] { display: none; }
     .lensbar { position: relative; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
     .lensbar button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
     .lensbar button.on { color: #0b0f17; background: var(--accent); font-weight: 600; }
@@ -189,6 +192,7 @@
   <div id="stats" class="panel">loading…</div>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
+  <div id="empty" hidden>Nothing here · Backspace goes back · Esc goes up a level · or click the minimap</div>
   <div id="help">scroll to zoom · drag to pan · right-click: command wheel · Ctrl K: travel · ] [: look around · ⌫: back · ?: controls</div>
   <script type="module" src="/src/main.ts"></script>
 </body>

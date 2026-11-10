@@ -182,6 +182,18 @@ try {
     return { under: s.tree.els[under].id, x, y, w, h, panelLeft, W: s.cam.w, H: s.cam.h }
   })
   check('selecting a card under the panel glides it clear and keeps it on screen', cleared.under != null && cleared.x >= 0 && cleared.y >= 0 && cleared.x + cleared.w <= cleared.panelLeft && cleared.y + cleared.h <= cleared.H, JSON.stringify(cleared))
+  // Empty space says how to get back: deep in a card's empty corner a hint shows, and goes on the way out.
+  const empty = await page.evaluate(async () => {
+    const s = window.__spike, r = s.world.rect, i = s.id('server'), wait = ms => new Promise(res => setTimeout(res, ms))
+    s.select(-1); s.unhover()
+    s.cam.set(r[i * 4] + r[i * 4 + 2] * 0.995, r[i * 4 + 1] + r[i * 4 + 3] * 0.99, s.cam.w / (r[i * 4 + 2] * 0.004))
+    await wait(400)
+    const there = !document.getElementById('empty').hidden
+    s.fit(0)
+    await wait(1800)
+    return { there, gone: document.getElementById('empty').hidden }
+  })
+  check('empty space shows a way back, and the hint goes on the way out', empty.there && empty.gone, JSON.stringify(empty))
   check('a lens does not reflow the top bar', bar.before === bar.after && bar.after < 60, JSON.stringify(bar))
   await page.evaluate(() => { const s = window.__spike; s.select(s.id('web')) })
   await sleep(300)
