@@ -44,6 +44,15 @@ describe('reuseLayouts', () => {
     // The root lost "gone" and b gained a child: both lay out again.
     expect(ids(rerun.map(j => j.id))).toEqual(['', 'b'])
   })
+
+  it('in the Coupling view, lays a level out again when its children\'s importance changed', () => {
+    // a's children and its own edges stay the same; a.y gains a relation to b, so it outranks a.x.
+    const c: ModelJson = { ...v1, relations: [...v1.relations, { source: 'a.y', target: 'b.z', title: '' }, { source: 'a.y', target: 'gone', title: '' }] }
+    const a = new Tree(v1), b = new Tree(c)
+    const { reused, rerun } = reuseLayouts(a, layoutJobs(a, true), fakeLocal(a), b, layoutJobs(b, true))
+    expect(rerun.map(j => b.els[j.id].id)).toContain('a')
+    expect([...reused.keys()].map(i => b.els[i].id)).not.toContain('a')
+  })
 })
 
 describe('stableOrder', () => {
