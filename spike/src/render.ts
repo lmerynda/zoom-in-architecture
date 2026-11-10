@@ -760,7 +760,9 @@ export class Renderer {
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
     const labelSpots: LabelSpot[] = []
     const paths: number[][][] = [[], [], [], [], []]
-    const heads: number[][] = [[], [], [], [], []]
+    // Strokes by kind and weight tier: [kind][tier] (see TIER_W).
+    const strokes: number[][][][] = paths.map(() => TIER_W.map(() => []))
+    const heads: number[][][] = paths.map(() => TIER_W.map(() => []))
     const sel = this.selected > 0
 
     const drawn: { e: ShownEdge; kind: Kind; pts: number[]; sOn: boolean; tOn: boolean }[] = []
@@ -798,11 +800,14 @@ export class Renderer {
         }
       }
       paths[kind].push(clipped)
+      // A line is as thick as what it carries: the weight shows without reading labels.
+      const tier = weightTier(hot ? e.focusCount : e.count)
+      strokes[kind][tier].push(clipped)
       if (hot) flows.push({ pts: clipped, color: kind === Kind.Out ? OUT : IN, both: e.both })
       st.edges++
       const n = pts.length
-      if (tOn) heads[kind].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
-      if (sOn && e.both) heads[kind].push(pts[2], pts[3], pts[0], pts[1])
+      if (tOn) heads[kind][tier].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
+      if (sOn && e.both) heads[kind][tier].push(pts[2], pts[3], pts[0], pts[1])
       // Every edge with room says what it carries, on its own last stretch beside the card it
       // reaches: the middle of a route is often a trunk many edges share, where a count could
       // belong to any of them. When a narrow gutter leaves no room at its middle, a point nearer
@@ -819,17 +824,20 @@ export class Renderer {
     // Busy screens get quieter lines; a selection pushes everything else into the background.
     // Many edges at rest fade to faint strokes (96 in a busy component); focus draws its own bright.
     const base = sel ? 0.1 : focus > 0 ? 0.22 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
+    // Thin lines draw first, so a heavy one sharing their gutter stays on top and reads as heavy.
     const style: [Graphics, number, number, number][] = [
-      [g, 1.3, EDGE, base], [g, 2.2, EDGE, base * 1.1], [g, 3.4, EDGE, base * 1.2], [hg, 2.4, OUT, 0.95], [hg, 2.4, IN, 0.95],
+      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95],
     ]
-    style.forEach(([gg, width, color, alpha], kind) => {
-      for (const p of paths[kind]) {
+    TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
+      const ps = strokes[kind][tier]
+      for (const p of ps) {
         gg.moveTo(p[0], p[1])
         for (let k = 2; k < p.length; k += 2) gg.lineTo(p[k], p[k + 1])
       }
-      if (paths[kind].length) gg.stroke({ width, color, alpha: Math.min(1, alpha), join: 'round', cap: 'round' })
-      arrowHeads(gg, heads[kind], color, Math.min(1, alpha + 0.15), 6 + width * 1.4)
-    })
+      const width = tw + extra, a = Math.min(1, alpha * (1 + tier * 0.15))
+      if (ps.length) gg.stroke({ width, color, alpha: a, join: 'round', cap: 'round' })
+      arrowHeads(gg, heads[kind][tier], color, Math.min(1, a + 0.15), 6 + width * 1.4)
+    }))
     // A dot where a line leaves a shared trunk, so a branch reads as a join, not as an edge from
     // the card beside it. Quiet lines are dotted together, highlighted ones in their own colour.
     const dots: [Graphics, number[][], number, number, number][] = [
@@ -1162,6 +1170,12 @@ function borderPoint(r: number[], tx: number, ty: number): [number, number] {
  * Where an edge's label goes: the middle of the last stretch long enough to hold it, counting back
  * from the card it reaches, or null when the edge has none.
  */
+/** Stroke widths for edges by how many relations they carry: 1, 2-4, 5-19, 20-99, 100 and more. */
+const TIER_W = [1.2, 2, 3, 4.4, 6]
+export function weightTier(n: number): number {
+  return n >= 100 ? 4 : n >= 20 ? 3 : n >= 5 ? 2 : n >= 2 ? 1 : 0
+}
+
 /** An edge's label and the places it may go, best first. */
 type LabelSpot = { at: [number, number][]; s: string; kind: Kind; weight: number }
 

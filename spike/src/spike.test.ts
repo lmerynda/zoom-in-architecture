@@ -5,7 +5,7 @@ import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, fitText, junctions, shortText, titlePx } from './render'
+import { clipToScreen, fitText, junctions, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -348,6 +348,12 @@ describe('shortText', () => {
   it('collapses whitespace and keeps every letter', () => {
     expect(shortText('A customer of\n  the bank, with personal accounts.', 200)).toBe('A customer of the bank, with personal accounts.')
     expect(shortText('Sends emails using templates', 12)).toBe('Sends email…')
+  })
+})
+
+describe('weightTier', () => {
+  it('gives heavier edges thicker strokes, on a log scale', () => {
+    expect([1, 2, 4, 5, 19, 20, 99, 100, 500].map(weightTier)).toEqual([0, 1, 1, 2, 2, 3, 3, 4, 4])
   })
 })
 
