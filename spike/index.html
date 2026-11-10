@@ -48,6 +48,8 @@
     #minimap.faint { opacity: 0.3; }
     #minimap.faint:hover { opacity: 1; }
     #details { top: 72px; right: 12px; width: 330px; max-height: calc(100vh - 290px); overflow: auto; padding: 16px 16px 12px; }
+    #details.folded { max-height: 58px; overflow: hidden; opacity: 0.85; transition: max-height 0.2s; }
+    #details.folded:hover { max-height: calc(100vh - 290px); overflow: auto; opacity: 1; }
     #details[hidden] { display: none; }
     .d-head { display: flex; flex-direction: column; gap: 6px; }
     .d-kind { align-self: flex-start; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #0b0f17; background: #fbbf24; border-radius: 4px; padding: 2px 7px; font-weight: 700; }

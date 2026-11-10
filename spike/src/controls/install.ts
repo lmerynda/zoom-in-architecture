@@ -167,7 +167,11 @@ export function installControls(c: Ctx) {
     tooltips.closeAll()
     wheeledAt = { x: e.offsetX, y: e.offsetY }
     const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
-    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * 0.0022), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
+    // Over a file that fills much of the screen the wheel goes faster: between there and readable
+    // code there is nothing new to see, only the text growing.
+    const n = renderer.pick(e.offsetX, e.offsetY)
+    const intoCode = n > 0 && !tree.children[n].length && !!tree.els[n].metadata?.path && world.rect[n * 4 + 2] * cam.z > cam.w * 0.4
+    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * (intoCode && d < 0 ? 0.0038 : 0.0022)), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
   }, { passive: false })
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
   let rightHold: { x: number; y: number; t: number } | null = null

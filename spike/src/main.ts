@@ -154,7 +154,9 @@ async function main() {
     const z = READ_PX / p.font
     // The line goes in the middle of the space the details panel leaves free.
     const cover = details.hidden ? 0 : details.getBoundingClientRect().width + 24
-    controls.visit({ x: p.x + cover / 2 / z, y: p.y, z, selected: tree.els[i].id })
+    // A cited line sits mid-screen; a file opened to read starts at its top, under the top bar.
+    const fromTop = line <= 1 ? (cam.h / 2 - 140) / z : 0
+    controls.visit({ x: p.x + cover / 2 / z, y: p.y + fromTop, z, selected: tree.els[i].id })
   }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
@@ -296,7 +298,10 @@ async function main() {
     const path = renderer.breadcrumb()
     // Reading a file, the minimap steps back: still there to click, no longer over the code.
     const here = path[path.length - 1] ?? 0
-    minimapEl.classList.toggle('faint', here > 0 && !tree.children[here].length && !!tree.els[here].metadata?.path)
+    const readingCode = here > 0 && !tree.children[here].length && !!tree.els[here].metadata?.path
+    minimapEl.classList.toggle('faint', readingCode)
+    // The panel folds to its header too: the code is what is being read. Hovering it opens it.
+    details.classList.toggle('folded', readingCode)
     const key = path.join('/')
     if (key !== lastCrumb || crumbsStale) {
       crumbsStale = false

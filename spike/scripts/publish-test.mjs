@@ -148,18 +148,23 @@ try {
   await sleep(1200)
   const far = await page.evaluate(() => window.__spike.cam.z)
   check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 8 && deep.cards > 0 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, cards: deep.cards, far: far / deep.fit }))
-  // Double-clicking a file reads it: it is selected and its code shows as text, beside the panel.
+  // Double-clicking a file reads it: a real double-click (two presses, the second counted as such,
+  // so the browser fires dblclick) flies in to the file's code at reading size.
   const fileAt = await page.evaluate(async () => {
     const s = window.__spike, f = s.tree.els.findIndex(e => e.metadata?.path === 'web/src/api.ts')
     s.select(-1); s.fit(s.tree.parent[f])
     await new Promise(r => setTimeout(r, 1800))
+    window.__dblclicks = 0
+    document.querySelector('#stage canvas').addEventListener('dblclick', () => window.__dblclicks++)
     const r = s.world.rect, [x, y] = s.cam.toScreen(r[f * 4] + r[f * 4 + 2] / 2, r[f * 4 + 1] + r[f * 4 + 3] / 2)
-    return { x, y, f, under: s.renderer.pick(x, y) }
+    return { x, y, f, under: s.renderer.pick(x, y), z: s.cam.z }
   })
-  await page.mouse.click(fileAt.x, fileAt.y, { clickCount: 2 })
+  await page.mouse.move(fileAt.x, fileAt.y)
+  await page.mouse.down({ clickCount: 1 }); await page.mouse.up({ clickCount: 1 })
+  await page.mouse.down({ clickCount: 2 }); await page.mouse.up({ clickCount: 2 })
   await sleep(3000)
-  const read = await page.evaluate(() => ({ sel: window.__spike.renderer.selected, text: [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) }))
-  check('double-clicking a file opens its code as text', fileAt.under === fileAt.f && read.sel === fileAt.f && read.text, JSON.stringify({ ...fileAt, ...read }))
+  const read = await page.evaluate(() => ({ dblclicks: window.__dblclicks, sel: window.__spike.renderer.selected, z: window.__spike.cam.z, text: [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) }))
+  check('double-clicking a file flies in to its code as text', fileAt.under === fileAt.f && read.dblclicks === 1 && read.sel === fileAt.f && read.z > fileAt.z * 1.5 && read.text, JSON.stringify({ ...fileAt, ...read }))
   // Selecting a card the details panel would cover glides it clear, and it stays on screen.
   const cleared = await page.evaluate(async () => {
     const s = window.__spike, r = s.world.rect, wait = ms => new Promise(res => setTimeout(res, ms))

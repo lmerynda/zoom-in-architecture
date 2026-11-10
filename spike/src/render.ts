@@ -79,6 +79,8 @@ interface NodeView {
   title?: BitmapText
   sub?: BitmapText
   desc?: BitmapText
+  /** A closed container's list of what it holds. */
+  inside?: BitmapText
   dossier?: BitmapText
   metric?: BitmapText
   icon?: Sprite
@@ -379,7 +381,7 @@ export class Renderer {
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.dossier, v.metric, v.icon]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.sub, v.desc, v.inside, v.dossier, v.metric, v.icon]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -414,9 +416,9 @@ export class Renderer {
         const d = Math.hypot(cx + cw / 2 - this.cam.focusX, cy + ch / 2 - this.cam.focusY) / diag
         r = Math.min(1, Math.max(0, t * 1.8 - d * 0.8))
       }
-      // Names come first: a child's label is full strength a third of the way into the opening,
-      // so a container that has started to open never shows a row of nameless boxes.
-      this.visit(c, alpha * (i === 0 ? 1 : 0.35 + 0.65 * r), Math.min(1, r * 3), st)
+      // Names come first: a drawn child carries its name at full strength from the start (its box
+      // fades in), so an opening container shows names or nothing, never ghosts or blank boxes.
+      this.visit(c, alpha * (i === 0 ? 1 : 0.35 + 0.65 * r), 1, st)
     }
   }
 
@@ -546,6 +548,7 @@ export class Renderer {
       const level = Math.min(hh * 0.6, 26), room = w - 2 * pad
       const px = titlePx(level, room, v.titleEm + lead)
       const roomy = (v.titleEm + lead) * px <= w * 0.62
+      let titleRight = 0
       if (px >= 6) {
         const shown = fitText(full, v.titleEm, room - lead * px, px)
         if (title.text !== shown) title.text = shown
@@ -553,6 +556,7 @@ export class Renderer {
         title.scale.set(px / FONT_PX)
         const tw = title.width + lead * px
         const tx = Math.max(x + pad, Math.min(SAFE.left, x + w - pad - tw))
+        titleRight = tx + tw
         title.position.set(tx + lead * px, y + (hh - px * 1.25) / 2)
         title.alpha = la
         if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
@@ -560,9 +564,10 @@ export class Renderer {
       }
       const meta = (v.sub ??= this.text(`${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
       const mpx = level * 0.62
-      if (mpx >= 6 && w > 160 && roomy) {
+      // Beside the title, never under it: a header held at the screen edge can reach its right side.
+      meta.scale.set(mpx / FONT_PX)
+      if (mpx >= 6 && w > 160 && roomy && titleRight + 16 < x + w - pad - meta.width) {
         meta.visible = true
-        meta.scale.set(mpx / FONT_PX)
         meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
         meta.alpha = la * 0.6
         st.texts++
@@ -629,7 +634,8 @@ export class Renderer {
       const dpx = Math.min((FONT_PX * inner) / DESC_WRAP, 14)
       if (dpx >= 9) {
         const desc = (v.desc ??= this.text(shortText(el.description, 150), texts, DESC_WRAP))
-        const dh = desc.height * (dpx / FONT_PX)
+        // Measured at scale 1: the text keeps last frame's scale until it is set again below.
+        const dh = (desc.height / (desc.scale.y || 1)) * (dpx / FONT_PX)
         if (dh <= bottom - cy) {
           desc.visible = true
           desc.scale.set(dpx / FONT_PX)
@@ -641,11 +647,29 @@ export class Renderer {
       }
     }
 
+    // A closed container lists what it holds, so its card says what opening it will show.
+    const kids = this.tree.children[i]
+    if (kids.length && !this.lens) {
+      const ipx = Math.min((FONT_PX * inner) / DESC_WRAP, 13)
+      if (ipx >= 9) {
+        const list = (v.inside ??= this.text(shortText(`Inside: ${kids.map(k => this.tree.els[k].title).join(' · ')}`, 170), texts, DESC_WRAP))
+        const ih = (list.height / (list.scale.y || 1)) * (ipx / FONT_PX)
+        if (ih <= bottom - cy) {
+          list.visible = true
+          list.scale.set(ipx / FONT_PX)
+          list.position.set(bx, cy)
+          list.alpha = la * 0.6
+          st.texts++
+          cy += ih + ipx
+        }
+      }
+    }
+
     // Dossier: once a leaf is most of the screen, it lists what it talks to (a file shows its code instead).
     if (!code && w > 640 && cy < y + h - 80) {
       const dossier = (v.dossier ??= this.text(this.dossierText(i), texts, DESC_WRAP * 1.2))
       const s = 13 / FONT_PX
-      if (dossier.text && cy + dossier.height * s < y + h - pad) {
+      if (dossier.text && cy + (dossier.height / (dossier.scale.y || 1)) * s < y + h - pad) {
         dossier.visible = true
         dossier.scale.set(s)
         dossier.position.set(bx, cy + 10)
@@ -750,7 +774,8 @@ export class Renderer {
     }
 
     // Busy screens get quieter lines; a selection pushes everything else into the background.
-    const base = sel ? 0.1 : focus > 0 ? 0.28 : Math.max(0.3, Math.min(0.75, 0.85 - drawn.length / 250))
+    // Many edges at rest fade to faint strokes (96 in a busy component); focus draws its own bright.
+    const base = sel ? 0.1 : focus > 0 ? 0.22 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
     const style: [Graphics, number, number, number][] = [
       [g, 1.3, EDGE, base], [g, 2.2, EDGE, base * 1.1], [g, 3.4, EDGE, base * 1.2], [hg, 2.4, OUT, 0.95], [hg, 2.4, IN, 0.95],
     ]
