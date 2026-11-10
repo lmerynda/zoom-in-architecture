@@ -234,10 +234,10 @@ try {
   await sleep(400)
   await shot('03-source-edit')
 
-  // The Coupling view: the same map laid out by connection, most connected in the middle, and `.`
+  // The Connections view: the same map laid out by connection, most connected in the middle, and `.`
   // walks a level from the most connected down.
-  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Coupling').click())
-  await page.waitForFunction(() => location.search.includes('view=coupling') && window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Connections').click())
+  await page.waitForFunction(() => location.search.includes('view=connections') && window.__spike?.ready, { timeout: 60000 })
   await sleep(1500)
   const cv = await page.evaluate(() => {
     const s = window.__spike, r = s.world.rect, rk = s.renderer.ranking, top = s.tree.children[0]
@@ -248,7 +248,7 @@ try {
   await page.keyboard.press('.')
   await sleep(2200)
   const picked = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)
-  check('the Coupling view puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
+  check('the Connections view puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 

@@ -63,13 +63,13 @@ export interface LayoutJob {
   headed: boolean[]
   /** Sibling edges, one per unordered pair, with how many relations they carry. */
   edges: { s: number; t: number; count: number }[]
-  /** Coupling view: each child's importance (relations crossing its boundary), in `children` order; placed centre-out. */
+  /** Connections view: each child's importance (relations crossing its boundary), in `children` order; placed centre-out. */
   weights?: number[]
 }
 
 /**
  * How connected each node is: the relations that cross its boundary, to anything outside it.
- * The Coupling view ranks siblings by it and places the most connected at the centre.
+ * The Connections view ranks siblings by it and places the most connected at the centre.
  */
 export function importance(tree: Tree): Float64Array {
   const w = new Float64Array(tree.size)
@@ -81,6 +81,22 @@ export function importance(tree: Tree): Float64Array {
   return w
 }
 
+/** How many of its siblings each node shares at least one relation with. */
+export function siblingPartners(tree: Tree): Int32Array {
+  const p = new Int32Array(tree.size)
+  for (const edges of tree.siblingEdges().values()) {
+    const seen = new Set<string>()
+    for (const e of edges) {
+      const key = e.s < e.t ? `${e.s}>${e.t}` : `${e.t}>${e.s}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      p[e.s]++
+      p[e.t]++
+    }
+  }
+  return p
+}
+
 /** Each node's rank among its siblings by importance, 1 for the most connected; ties keep map order. */
 export function ranks(tree: Tree, w: Float64Array): Int32Array {
   const r = new Int32Array(tree.size)
@@ -88,52 +104,63 @@ export function ranks(tree: Tree, w: Float64Array): Int32Array {
   return r
 }
 
+/** How far out a ring reaches, in cell widths: cells this much farther than the nearest free one are the next ring. */
+const RING = 0.75
+
 /**
- * The Coupling view's arrangement of one level: on the same grid as the cards (so edges still run
- * in the gutters), the most connected child at the centre, then each next one by importance in the
- * free cell nearest the siblings it is coupled with, pulled toward the centre. The centre of a
- * level is its centre of gravity; its rim holds what little depends on anything.
+ * The Connections view's arrangement of one level, on the same grid as the cards (so edges still
+ * run in the gutters). The most connected child sits exactly at the centre; the rest fill rings
+ * outward in rank order, so distance from the centre follows rank: a card never sits farther out
+ * than one ranked below it by more than a ring. Within its ring a card takes the cell nearest the
+ * siblings it is coupled with. The centre of a level is its centre of gravity; the rim holds what
+ * little depends on anything.
  */
 export function centreOut(job: LayoutJob): { pos: number[]; w: number; h: number } {
-  const n = job.children.length, weights = job.weights ?? job.children.map(() => 0)
+  const weights = job.weights ?? job.children.map(() => 0)
   const cellW = CARD_W + GUTTER, cellH = CARD_H + GUTTER
+  const order = job.children.map((_, k) => k).sort((a, b) => weights[b] - weights[a] || a - b)
   const cells = job.spans.reduce((a, s) => a + s * s, 0)
-  const cols = Math.max(1, Math.ceil(Math.sqrt((cells * CONTENT_ASPECT * cellH) / cellW)))
-  const rows = Math.max(1, Math.ceil(cells / cols)) + (cols * Math.ceil(cells / cols) - cells < 1 && n > 2 ? 1 : 0)
+  let cols = Math.max(1, Math.ceil(Math.sqrt((cells * CONTENT_ASPECT * cellH) / cellW)))
+  let rows = Math.max(1, Math.ceil(cells / cols))
+  // #1 sits exactly at the centre: an even grid around a 2 × 2 card, an odd one around a single card.
+  const first = job.spans[order[0]] ?? 1, parity = first === 2 ? 0 : 1
+  if (cols % 2 !== parity) cols++
+  if (rows % 2 !== parity) rows++
+  while (cols * rows < cells) { cols += 2; rows += 2 }
   const taken = new Uint8Array(cols * rows)
   const cx = (cols - 1) / 2, cy = (rows - 1) / 2
   const at = new Map<number, { c: number; r: number; span: number }>()
   const pair = new Map<string, number>()
   for (const e of job.edges) { pair.set(`${e.s}>${e.t}`, e.count); pair.set(`${e.t}>${e.s}`, e.count) }
   const dist = (c1: number, r1: number, c2: number, r2: number) => Math.hypot((c1 - c2) * cellW, (r1 - r2) * cellH) / cellW
-  const order = job.children.map((_, k) => k).sort((a, b) => weights[b] - weights[a] || a - b)
-  for (const k of order) {
+  const take = (c: number, r: number, span: number) => { for (let dr = 0; dr < span; dr++) for (let dc = 0; dc < span; dc++) taken[(r + dr) * cols + c + dc] = 1 }
+  const fits = (c: number, r: number, span: number) => { for (let dr = 0; dr < span; dr++) for (let dc = 0; dc < span; dc++) if (taken[(r + dr) * cols + c + dc]) return false; return true }
+  order.forEach((k, n) => {
     const child = job.children[k], span = job.spans[k]
+    if (n === 0) { const c = (cols - span) / 2, r = (rows - span) / 2; at.set(child, { c, r, span }); take(c, r, span); return }
+    const free: { c: number; r: number; d: number }[] = []
+    for (let r = 0; r + span <= rows; r++) for (let c = 0; c + span <= cols; c++) if (fits(c, r, span)) free.push({ c, r, d: dist(c + (span - 1) / 2, r + (span - 1) / 2, cx, cy) })
+    // The innermost ring with room; within it, nearest what this card is coupled with.
+    const inner = Math.min(...free.map(f => f.d))
     let best: { c: number; r: number; score: number } | null = null
-    for (let r = 0; r + span <= rows; r++) for (let c = 0; c + span <= cols; c++) {
-      let free = true
-      for (let dr = 0; dr < span && free; dr++) for (let dc = 0; dc < span && free; dc++) if (taken[(r + dr) * cols + c + dc]) free = false
-      if (!free) continue
-      const mc = c + (span - 1) / 2, mr = r + (span - 1) / 2
-      // Near the siblings it is coupled with (by how much), and toward the centre.
+    for (const f of free.filter(x => x.d <= inner + RING)) {
       let pull = 0, total = 0
       for (const [other, p] of at) {
         const wgt = pair.get(`${child}>${other}`) ?? 0
-        if (wgt) { pull += wgt * dist(mc, mr, p.c + (p.span - 1) / 2, p.r + (p.span - 1) / 2); total += wgt }
+        if (wgt) { pull += wgt * dist(f.c + (span - 1) / 2, f.r + (span - 1) / 2, p.c + (p.span - 1) / 2, p.r + (p.span - 1) / 2); total += wgt }
       }
-      const score = 0.6 * dist(mc, mr, cx, cy) + (total ? pull / total : 0)
-      if (!best || score < best.score - 1e-9) best = { c, r, score }
+      const score = (total ? pull / total : 0) + 0.25 * f.d
+      if (!best || score < best.score - 1e-9) best = { c: f.c, r: f.r, score }
     }
-    if (!best) best = { c: 0, r: rows, score: 0 }
-    at.set(child, { c: best.c, r: best.r, span })
-    for (let dr = 0; dr < span; dr++) for (let dc = 0; dc < span; dc++) if ((best.r + dr) < rows) taken[(best.r + dr) * cols + best.c + dc] = 1
-  }
-  // Tight bounds: drop empty rows and columns at the edges.
+    at.set(child, { c: best!.c, r: best!.r, span })
+    take(best!.c, best!.r, span)
+  })
+  // Drop empty rows and columns evenly from both sides, so the centre stays the centre.
   const placed = [...at.values()]
-  const c0 = Math.min(...placed.map(p => p.c)), r0 = Math.min(...placed.map(p => p.r))
-  const c1 = Math.max(...placed.map(p => p.c + p.span)), r1 = Math.max(...placed.map(p => p.r + p.span))
-  const pos = job.children.flatMap(ch => { const p = at.get(ch)!; return [GUTTER + (p.c - c0) * cellW, GUTTER + (p.r - r0) * cellH] })
-  return { pos, w: (c1 - c0) * cellW + GUTTER, h: (r1 - r0) * cellH + GUTTER }
+  const trimC = Math.min(Math.min(...placed.map(p => p.c)), cols - Math.max(...placed.map(p => p.c + p.span)))
+  const trimR = Math.min(Math.min(...placed.map(p => p.r)), rows - Math.max(...placed.map(p => p.r + p.span)))
+  const pos = job.children.flatMap(ch => { const p = at.get(ch)!; return [GUTTER + (p.c - trimC) * cellW, GUTTER + (p.r - trimR) * cellH] })
+  return { pos, w: (cols - 2 * trimC) * cellW + GUTTER, h: (rows - 2 * trimR) * cellH + GUTTER }
 }
 
 export interface SiblingRoute {
@@ -169,7 +196,7 @@ export interface World {
 
 export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
   const edges = tree.siblingEdges()
-  // The Coupling view sizes by connection, not by code: the most connected child of a level of
+  // The Connections view sizes by connection, not by code: the most connected child of a level of
   // five or more is the big card at its centre.
   const weight = coupling ? importance(tree) : null
   const span = coupling ? couplingSpans(tree, weight!) : spans(tree)

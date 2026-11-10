@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, ranks, spans, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, placeWorld, ranks, siblingPartners, spans, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -131,12 +131,35 @@ describe('coupling layout', () => {
     }
   })
 
+  it('puts #1 exactly at the centre, and reads outward in rank order, a ring at most out of turn', () => {
+    // Nine children with a 2 × 2 #1 (as in a 9-component editor level), weights falling, a few couplings;
+    // and seven single cards, for an odd grid.
+    for (const spansOf of [(c: number) => (c === 1 ? 2 : 1), () => 1]) {
+      const kids = spansOf(1) === 2 ? children : children.slice(0, 7)
+      const j = { ...job, children: kids, spans: kids.map(spansOf), headed: kids.map(() => false), weights: kids.map((_, k) => 50 - 5 * k), edges: job.edges.filter(e => kids.includes(e.s) && kids.includes(e.t)) }
+      const L = centreOut(j)
+      const mid = (k: number) => [L.pos[k * 2] + cardW(j.spans[k]) / 2, L.pos[k * 2 + 1] + cardH(j.spans[k]) / 2]
+      expect(mid(0)[0]).toBeCloseTo(L.w / 2)
+      expect(mid(0)[1]).toBeCloseTo(L.h / 2)
+      const d = kids.map((_, k) => Math.hypot(mid(k)[0] - L.w / 2, mid(k)[1] - L.h / 2) / (CARD_W + GUTTER))
+      for (let a = 1; a < d.length; a++) for (let b = a + 1; b < d.length; b++) expect(d[a]).toBeLessThanOrEqual(d[b] + 0.75 + 1e-9)
+    }
+  })
+
   it('ranks siblings by the relations crossing their boundary, map order breaking ties', () => {
     const tree = new Tree(model)
     const r = ranks(tree, importance(tree))
     const top = tree.children[0].map(i => [tree.els[i].id, r[i]])
     expect(new Set(top.map(t => t[1])).size).toBe(top.length)
     expect(top.map(t => t[1]).sort()).toEqual(top.map((_, k) => k + 1))
+  })
+
+  it('counts the siblings each node reaches, once per sibling however many relations', () => {
+    const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
+    // a reaches b twice and c once; b and c do not meet.
+    const t = new Tree({ name: 'p', elements: ['a', 'b', 'c'].flatMap(x => [el(x, null), el(`${x}.f`, x)]), relations: [{ source: 'a.f', target: 'b.f', title: '' }, { source: 'b.f', target: 'a.f', title: '' }, { source: 'a.f', target: 'c.f', title: '' }] })
+    const p = siblingPartners(t)
+    expect(['a', 'b', 'c'].map(x => p[t.byId.get(x)!])).toEqual([2, 1, 1])
   })
 })
 

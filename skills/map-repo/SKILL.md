@@ -35,7 +35,7 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
   - `app`, `library` (amber) and `component` are the code's own parts.
 - **Search and features.** Ctrl K finds any card by its title, its id, or a feature it carries. The details panel shows a card's features as chips, and what it calls and what calls it.
 - **Lenses** colour every card by size, coupling or churn (commits in the last 90 days).
-- **A Coupling view** lays every level out by connection: the most connected node in the middle, the least at the rim, each card ranked. Grouping decides what it shows too: a node holding unrelated parts reads as falsely central.
+- **A Connections view** lays every level out by connection: the most connected node in the middle, the least at the rim, each card ranked. Grouping decides what it shows too: a node holding unrelated parts reads as falsely central.
 - **A Requests view, beside the map.** For every app that declares endpoints, publishing also builds a second view, from code:
   - the callers, the backend and the stores on the landscape;
   - the backend's route groups, then the endpoints;

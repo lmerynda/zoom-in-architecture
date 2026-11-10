@@ -38,7 +38,7 @@ const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([
   job.spans,
   job.headed,
   job.edges.map(e => [t.els[e.s].id, t.els[e.t].id, e.count]).sort(),
-  // The Coupling view places children by importance: a change there is a change of layout.
+  // The Connections view places children by importance: a change there is a change of layout.
   job.weights ?? null,
 ])
 
