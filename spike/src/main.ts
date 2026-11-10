@@ -79,7 +79,8 @@ async function main() {
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
   app.stage.addChild(renderer.stage)
-  const minimap = new Minimap($<HTMLCanvasElement>('minimap'), tree, world)
+  const minimapEl = $<HTMLCanvasElement>('minimap')
+  const minimap = new Minimap(minimapEl, tree, world)
   const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
   renderer.onOpen = () => sound.chime()
@@ -293,6 +294,9 @@ async function main() {
     last = renderer.frame(t)
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
+    // Reading a file, the minimap steps back: still there to click, no longer over the code.
+    const here = path[path.length - 1] ?? 0
+    minimapEl.classList.toggle('faint', here > 0 && !tree.children[here].length && !!tree.els[here].metadata?.path)
     const key = path.join('/')
     if (key !== lastCrumb || crumbsStale) {
       crumbsStale = false

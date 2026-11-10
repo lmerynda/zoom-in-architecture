@@ -44,6 +44,9 @@
     #crumbs .provenance { color: #64748b; font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 40px; width: 240px; height: 150px; cursor: crosshair; }
+    #minimap { transition: opacity 0.3s; }
+    #minimap.faint { opacity: 0.3; }
+    #minimap.faint:hover { opacity: 1; }
     #details { top: 72px; right: 12px; width: 330px; max-height: calc(100vh - 290px); overflow: auto; padding: 16px 16px 12px; }
     #details[hidden] { display: none; }
     .d-head { display: flex; flex-direction: column; gap: 6px; }
