@@ -58,6 +58,38 @@ const push = (r: Ring, v: number) => { r.a[r.k] = v; r.k = (r.k + 1) % r.a.lengt
 const values = (r: Ring) => Array.from(r.full ? r.a : r.a.slice(0, r.k))
 const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] }
 
+const INTRO_SEEN = 'zoom.introSeen'
+/**
+ * On a first visit, one line beside the breadcrumb says what the cards and arrows are and how to
+ * go in. The first scroll, click or key puts it away for good.
+ */
+function showIntro() {
+  const intro = $('intro'), crumbs = $('crumbs')
+  let seen = false
+  try { seen = localStorage.getItem(INTRO_SEEN) === '1' } catch { /* storage blocked: show it this time */ }
+  if (seen) return
+  const place = () => {
+    const left = crumbs.getBoundingClientRect().right + 12
+    intro.style.left = `${left}px`
+    intro.style.maxWidth = `${Math.max(0, innerWidth - left - 24)}px`
+    // Where the line would be cut to nothing, it is not worth showing.
+    intro.hidden = innerWidth - left - 24 < 320
+  }
+  // The breadcrumb widens after load (its provenance arrives with the index): the line follows it.
+  const watch = new ResizeObserver(place)
+  watch.observe(crumbs)
+  addEventListener('resize', place)
+  const done = () => {
+    try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ }
+    intro.classList.add('gone')
+    setTimeout(() => { intro.hidden = true }, 400)
+    watch.disconnect()
+    removeEventListener('resize', place)
+    for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) removeEventListener(ev, done, true)
+  }
+  for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) addEventListener(ev, done, true)
+}
+
 /** The most recently uploaded map, for a visit that names none; null when only samples exist. */
 async function latestUpload(): Promise<string | null> {
   try {
@@ -100,6 +132,7 @@ async function main() {
   app.stage.addChild(renderer.stage)
   const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')
   const minimap = new Minimap(minimapEl, tree, world)
+  showIntro()
   const code = new CodeView($('code'), modelName, tree)
   const sound = new Sound()
   renderer.onOpen = () => sound.chime()

@@ -46,6 +46,16 @@ try {
   await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await page.evaluate(() => { window.__sameDocument = true })
+  // A first visit says what the map is, beside the breadcrumb; the first input puts it away for good.
+  await sleep(500)
+  const intro = await page.evaluate(() => {
+    const e = document.getElementById('intro'), r = e.getBoundingClientRect(), c = document.getElementById('crumbs').getBoundingClientRect()
+    return { shown: !e.hidden, beside: r.left >= c.right && Math.abs(r.top - c.top) < 4, text: e.textContent.slice(0, 40) }
+  })
+  await page.keyboard.press('Shift')
+  await sleep(600)
+  const introGone = await page.evaluate(() => document.getElementById('intro').hidden && localStorage.getItem('zoom.introSeen') === '1')
+  check('a first visit says what the map is, and the first input puts it away', intro.shown && intro.beside && introGone, JSON.stringify({ ...intro, introGone }))
 
   // A map with a guessed link is refused, and nothing is published.
   const map = JSON.parse(readFileSync('test/fixtures/polyglot-map.json', 'utf8'))

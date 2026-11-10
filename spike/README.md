@@ -8,7 +8,7 @@ npm run dev        # extracts the models to public/models/, serves http://localh
 npm test           # unit tests: tree, aggregation, placement, camera, clipping, live diff, graph, map
 ```
 
-URL parameters: `?model=<name>` (without it, the most recently uploaded map; `acme` when there are only samples), and `?model=synthetic&n=10000` for a generated landscape of that size. The tabs list every model there is.
+URL parameters: `?model=<name>` (without it, the most recently uploaded map; `acme` when there are only samples), and `?model=synthetic&n=10000` for a generated landscape of that size. The tabs list every model there is. A first visit shows one line beside the breadcrumb on what the cards and arrows are; the first scroll, click or key puts it away for good.
 
 ## Map your own codebase
 

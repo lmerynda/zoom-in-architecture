@@ -106,6 +106,10 @@
     /* The controls a newcomer needs first: readable (AA contrast), not small print. */
     #help { right: 12px; bottom: 12px; color: #94a3b8; font-size: 12px; position: fixed; }
     /* Shown when the screen holds only empty space inside a card: how to get back. */
+    /* First visit only: what the map is, beside the breadcrumb; gone at the first scroll, click or key. */
+    #intro { position: fixed; top: 64px; height: 34px; display: flex; align-items: center; padding: 0 14px; color: #cbd5e1; background: var(--panel); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 10px; font-size: 12.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.4s; }
+    #intro b { color: #fbbf24; font-weight: 600; margin-right: 6px; }
+    #intro.gone { opacity: 0; }
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #94a3b8; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; pointer-events: none; }
     #empty[hidden] { display: none; }
     .lensbar { position: relative; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
@@ -194,6 +198,7 @@
   <div id="stats" class="panel">loading…</div>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
+  <div id="intro" hidden><b>New here?</b>Cards are the parts of the product, arrows how they use each other (thicker carries more). Scroll into a card to open it · double-click a file to read it · ? for every control</div>
   <div id="empty" hidden>Nothing here · Backspace goes back · Esc goes up a level · or click the minimap</div>
   <div id="help">scroll to zoom · drag to pan · right-click: command wheel · Ctrl K: travel · ] [: look around · ⌫: back · ?: controls</div>
   <script type="module" src="/src/main.ts"></script>

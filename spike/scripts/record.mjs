@@ -22,6 +22,8 @@ const errors = []
 async function record(name, model, script) {
   const page = await browser.newPage()
   page.on('pageerror', e => errors.push(`${name}: ${e}`))
+  // A recording shows the map, not the first-visit hint.
+  await page.evaluateOnNewDocument(() => { try { localStorage.setItem('zoom.introSeen', '1') } catch { /* none */ } })
   await page.goto(`${base}?model=${model}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await page.evaluate(() => { window.__spike.unhover(); window.__spike.manual(true) })
