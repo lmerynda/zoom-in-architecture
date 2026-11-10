@@ -317,9 +317,17 @@ export function buildGraph(repo) {
   const rec = p => {
     if (!recs.has(p)) {
       const src = readFileSync(join(repo, p), 'utf8')
-      recs.set(p, { path: p, lang: extOf(p) === '.html' ? 'html' : LANG[extOf(p)], project: owner.get(p) ?? null, src, edges: new Map() })
+      recs.set(p, { path: p, lang: extOf(p) === '.html' ? 'html' : LANG[extOf(p)], project: owner.get(p) ?? null, src, edges: new Map(), misses: [] })
     }
     return recs.get(p)
+  }
+  /**
+   * A reference the scanner saw but could not follow to a file (a relative import that resolves
+   * to nothing): kept with its line, so the map can say what it does not show.
+   */
+  const missed = (f, needle, spec) => {
+    const line = f.src.split('\n').findIndex(l => l.includes(needle)) + 1
+    if (!f.misses.some(x => x.spec === spec)) f.misses.push({ line, spec })
   }
   // An edge is type-only while every reference along it is a type import, and a re-export while
   // every one is an export … from (a barrel passing a module on, not using it).
@@ -370,7 +378,10 @@ export function buildGraph(repo) {
   while (pyQueue.length) {
     const p = pyQueue.shift(), f = rec(p)
     for (const imp of pyr.importsOf(p, f.src)) {
-      for (const [t, name] of pyr.resolveImport(p, imp)) {
+      const hits = pyr.resolveImport(p, imp)
+      // A relative import names a module of this repo: one that resolves to nothing is a miss.
+      if (!hits.length && imp.relative) missed(f, `from ${imp.spec} import`, imp.spec)
+      for (const [t, name] of hits) {
         relate(f, rec(t), name, imp.types)
         if (!pySeen.has(t)) { pySeen.add(t); pyQueue.push(t) }
       }
@@ -427,7 +438,9 @@ export function buildGraph(repo) {
     const label = spec => (spec.startsWith('.') ? posix.basename(spec).replace(/\.\w+$/, '') : spec)
     for (const m of code.matchAll(staticSpec)) {
       const target = js.resolve(f.path, m[4], f.project)
-      if (!target) continue
+      // A relative path names a file of this repo: one that resolves to nothing is a miss.
+      // An asset that is there (./en.json, ./font.woff2, ./icon.svg?url) is not code, not a miss.
+      if (!target) { if (m[4].startsWith('.') && !existsSync(join(repo, posix.join(posix.dirname(f.path), m[4].split('?')[0])))) missed(f, m[4], m[4]); continue }
       reach(target)
       const clause = m[3].trim()
       const braces = clause.match(/\{([^}]*)\}/)?.[1].split(',').map(x => x.trim()).filter(Boolean) ?? []
@@ -509,7 +522,7 @@ export function buildGraph(repo) {
     entries: [...new Set([...entries, ...pages.inline, ...pyEntries, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
-    files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src) })),
+    files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src), ...(f.misses.length ? { misses: f.misses } : {}) })),
     edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
     dropped: { generated: all.filter(p => LANG[extOf(p)] && GENERATED.test(p) && !/(^|\/)vendor\//.test(p)).length, tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
@@ -665,7 +678,7 @@ function pythonResolver(pyFiles, allSet, read) {
       let m = line.match(/^\s*import\s+([\w.,\s]+?)\s*(#.*)?$/)
       if (m) for (const x of m[1].split(',')) { const mod = x.trim().split(/\s+as\s+/)[0]; if (mod) out.push({ module: mod, names: [], types }) }
       m = line.match(/^\s*from\s+([.\w]+)\s+import\s+(.+)$/)
-      if (m) out.push({ module: absolute(path, m[1]), names: m[2].replace(/#.*$/, '').split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(x => /^\w+$/.test(x)), types })
+      if (m) out.push({ spec: m[1], relative: m[1].startsWith('.'), module: absolute(path, m[1]), names: m[2].replace(/#.*$/, '').split(',').map(x => x.trim().split(/\s+as\s+/)[0]).filter(x => /^\w+$/.test(x)), types })
     }
     return out
   }

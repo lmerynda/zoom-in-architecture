@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, bundle, compareMaps, redact, revision, toName } from './map.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, redact, revision, toName } from './map.mjs'
 import { maxUpload, refusals, storeBundle, storedMap, storedPublished, storedSource, unauthorised, writeAtomic } from './store.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -216,6 +216,32 @@ describe('buildModel', () => {
 
   it('refuses a model name the viewer could not serve, before reading the repo', () => {
     expect(() => bundle(graph.repo, map, { name: 'shop/' })).toThrow('is not a model name')
+  })
+})
+
+describe('followEvidence', () => {
+  const repo = join(import.meta.dirname, '../test/fixtures/polyglot')
+  const cur = readFileSync(join(repo, 'web/src/api.ts'), 'utf8').split('\n')
+  const cite = ev => ({ links: [{ from: 'web/src/api.ts', to: 'db', evidence: [ev] }], accepted: { [ev]: 'x' } })
+
+  it('moves evidence to the one line that still reads as the cited line did', () => {
+    // At the last commit the file had a header line, so today's line 1 was line 2.
+    const r = followEvidence(repo, cite('web/src/api.ts:2'), () => ['// old header', ...cur])
+    expect(r.moved).toEqual(['web/src/api.ts:2 → web/src/api.ts:1'])
+    expect(r.map.links[0].evidence).toEqual(['web/src/api.ts:1'])
+    // An acceptance moves with its line.
+    expect(r.map.accepted).toEqual({ 'web/src/api.ts:1': 'x' })
+  })
+
+  it('leaves a line that did not change, and one it cannot place for certain', () => {
+    expect(followEvidence(repo, cite('web/src/api.ts:1'), () => cur).moved).toEqual([])
+    // The cited text (a closing brace) now reads the same on many lines: a person decides.
+    const crowd = join(import.meta.dirname, '../test/fixtures/crowd')
+    const many = followEvidence(crowd, { links: [{ from: 'a', to: 'b', evidence: ['src/main/java/shop/AccountService.java:2'] }] }, () => ['', '}'])
+    expect(many.moved).toEqual([])
+    expect(many.left[0]).toMatch(/^src\/main\/java\/shop\/AccountService\.java:2: \d+ lines read as it did$/)
+    const none = followEvidence(repo, cite('web/src/api.ts:1'), () => ['something that is gone'])
+    expect(none.left).toEqual(['web/src/api.ts:1: no line reads as it did'])
   })
 })
 

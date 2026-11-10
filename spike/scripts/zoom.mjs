@@ -12,14 +12,17 @@
 //                                                         --watch uploads again whenever the repo's code changes
 //   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from;
 //                                                         on stderr, the commit it was built from
+//   node scripts/zoom.mjs follow <repo> <map.json> [--since <rev>]   move evidence whose line moved since <rev>
+//                                                         (default HEAD) to the one line that reads as it did; rewrites the map
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
+import { execFileSync } from 'node:child_process'
 import { cpSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, bundle, compareMaps, toName } from './map.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, toName } from './map.mjs'
 
 /** Files whose change can change the map: code, project manifests and server-side views. */
 const SOURCE = /\.(cs|rs|java|kt|go|py|tsx?|mts|cts|jsx?|mjs|cjs|vue|svelte|csproj|html|cshtml|razor|jinja2?|j2)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?|go\.mod|pyproject\.toml|setup\.py)$/
@@ -131,7 +134,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = process.argv.slice(2)
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); Object.assign(args, { name, under, to, json, folders, uncited, watching }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); const since = opt('--since'); Object.assign(args, { name, under, to, json, folders, uncited, watching, since }); return args })()
   const service = args.to ?? process.env.ZOOM_URL ?? 'http://localhost:5180'
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
@@ -139,7 +142,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const g = buildGraph(a)
       console.log(args.json ? JSON.stringify(g, null, 1) : args.folders ? folderText(g) : graphText(g, args.under ?? ''))
     } else if (cmd === 'check' && a && b) {
-      const r = buildModel(buildGraph(a), readMap(b), { name: toName(a) })
+      const g = buildGraph(a), r = buildModel(g, readMap(b), { name: toName(a) })
       // --uncited is a worklist: only its lines, and a count of what plain check reports.
       if (args.uncited) console.log(`${r.errors.length} errors, ${r.warnings.length} warnings (check without --uncited lists them)`)
       else report(r)
@@ -151,6 +154,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         if (routes.length) console.log(`${routes.length} routes no link reaches (pages people open, or an API outside callers use; link them only when an app in the map calls them):`)
         for (const u of routes) console.log(`  ${u.path}:${u.line} ${u.kind} ${u.text.slice(0, 100)}`)
       } else if (open.length) console.log(`${open.length} marked lines no link cites (--uncited lists them)`)
+      // What the scanner saw but could not follow: the map cannot show those references, and the viewer marks them.
+      const misses = g.files.flatMap(f => (f.misses ?? []).map(x => `  ${f.path}:${x.line} ${x.spec}`))
+      if (misses.length) console.log([`${misses.length} relative imports the scanner could not follow (marked "missed" in the viewer):`, ...misses].join('\n'))
       if (r.errors.length) process.exitCode = 1
     } else if (cmd === 'publish' && a && b) {
       const name = args.name ?? toName(a)
@@ -211,6 +217,21 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       for (const l of c.processLinks.onlyA) console.log(`  only A: ${l}`)
       for (const l of c.processLinks.onlyB) console.log(`  only B: ${l}`)
       console.log(`File-to-file links: ${c.fileLinks.shared} shared of ${c.fileLinks.a} in A and ${c.fileLinks.b} in B`)
+    } else if (cmd === 'follow' && a && b) {
+      // What each cited file said at --since (the last commit by default), from git.
+      const rev = args.since ?? 'HEAD'
+      const before = file => { try { return execFileSync('git', ['-C', a, 'show', `${rev}:./${file}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 26 }).split('\n') } catch { return null } }
+      const r = followEvidence(a, readMap(b), before)
+      // Only the moved strings change, so the map keeps its own layout; through placeholders, so a
+      // line moving onto another moved line's old number is not moved twice.
+      if (r.moved.length) {
+        let text = readFileSync(b, 'utf8')
+        const pairs = r.moved.map(x => x.split(' → '))
+        pairs.forEach(([from], k) => { text = text.replaceAll(`"${from}"`, `"\u0000${k}\u0000"`) })
+        pairs.forEach(([, to], k) => { text = text.replaceAll(`"\u0000${k}\u0000"`, `"${to}"`) })
+        writeFileSync(b, text)
+      }
+      console.log([`${r.moved.length} evidence lines moved with their code${r.moved.length ? ` (${b} rewritten)` : ''}:`, ...r.moved.map(x => `  ${x}`), ...(r.left.length ? [`${r.left.length} left for you:`, ...r.left.map(x => `  ${x}`)] : [])].join('\n'))
     } else if (cmd === 'pull' && a) {
       let res
       try { res = await fetch(new URL(`/maps/${encodeURIComponent(a)}.json`, service)) } catch { throw new Error(`no viewer answers at ${service}`) }

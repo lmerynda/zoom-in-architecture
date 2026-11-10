@@ -163,7 +163,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       used.add(seg)
       fileId.set(p, `${id}.${seg}`)
       const f = app.get(p)
-      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], features: featured.get(p) ?? [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn), marks: f.hints.map(h => `${h.line}:${h.kind}`).join(' ') } })
+      elements.push({ id: `${id}.${seg}`, parent: id, title, kind: 'code', description: f.doc, technology: '', tags: [], features: featured.get(p) ?? [], ...CODE, metadata: { path: p, lines: String(f.lines), churn: String(f.churn), marks: [...f.hints.map(h => `${h.line}:${h.kind}`), ...(f.misses ?? []).map(x => `${x.line}:missed`)].join(' '), ...(f.misses ? { missed: f.misses.map(x => `${x.line} ${x.spec}`).join('; ') } : {}) } })
     }
   }
 
@@ -255,11 +255,6 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
 export const MAX_SOURCE = 1_000_000
 
 /**
- * What a mapped project uploads to the viewer service as model `name`: the map, the model, the
- * Requests view when the code has endpoints, and the source of every file the model shows, so
- * the service never needs the repository. `bundle` is null when the map has errors.
- */
-/**
  * The commit a project is at, and whether its working tree has changes beyond it, so a later
  * re-map can list what changed since this upload; null outside git.
  */
@@ -268,6 +263,43 @@ export function revision(repo) {
   try { return { commit: git('rev-parse', 'HEAD'), dirty: git('status', '--porcelain') !== '' } } catch { return null }
 }
 
+/**
+ * Evidence that moved with the code: for each cited line whose text changed since `before` (what
+ * a file said when the map was last right, e.g. at the last commit), the one line in the current
+ * file that still reads exactly as the cited line did. Only exact, unique matches move; anything
+ * else is left for a person, with the reason. Returns the new map and what it did.
+ */
+export function followEvidence(repo, map, before) {
+  const moved = [], left = []
+  const now = new Map()
+  const current = file => now.get(file) ?? (now.set(file, existsSync(join(repo, file)) ? readFileSync(join(repo, file), 'utf8').split('\n') : null), now.get(file))
+  const renamed = new Map()
+  const links = (map.links ?? []).map(l => (!l.evidence ? l : { ...l, evidence: l.evidence.map(ev => {
+    const m = String(ev).match(/^(.+?):(\d+)(?:-(\d+))?$/)
+    if (!m) return ev
+    const [file, from, to] = [m[1], Number(m[2]), Number(m[3] ?? m[2])]
+    const old = before(file), cur = current(file)
+    if (!old || !cur || !old[from - 1]?.trim()) return ev
+    const was = old.slice(from - 1, to).map(s => s.trim()).join('\n')
+    if (cur.slice(from - 1, to).map(s => s.trim()).join('\n') === was) return ev
+    const hits = []
+    for (let k = 0; k + (to - from) < cur.length; k++) if (cur.slice(k, k + to - from + 1).map(s => s.trim()).join('\n') === was) hits.push(k + 1)
+    if (hits.length !== 1) { left.push(`${ev}: ${hits.length ? `${hits.length} lines read as it did` : 'no line reads as it did'}`); return ev }
+    const next = `${file}:${hits[0]}${to > from ? `-${hits[0] + to - from}` : ''}`
+    moved.push(`${ev} → ${next}`)
+    renamed.set(String(ev), next)
+    return next
+  }) }))
+  // A line accepted as read keeps its acceptance where it moved.
+  const accepted = map.accepted && Object.fromEntries(Object.entries(map.accepted).map(([k, v]) => [renamed.get(k) ?? k, v]))
+  return { map: { ...map, links, ...(accepted ? { accepted } : {}) }, moved, left }
+}
+
+/**
+ * What a mapped project uploads to the viewer service as model `name`: the map, the model, the
+ * Requests view when the code has endpoints, and the source of every file the model shows, so
+ * the service never needs the repository. `bundle` is null when the map has errors.
+ */
 export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
   // The viewer serves models/<name>.json only for plain names.
   if (!isName(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)

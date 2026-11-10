@@ -140,6 +140,12 @@ describe('buildGraph', () => {
     expect(edge('game/src/main.rs', 'engine/src/lib.rs').names).toEqual(['game_engine'])
   })
 
+  it('keeps the relative imports it could not follow, with their lines, so the map can say so', () => {
+    const m = buildGraph(join(import.meta.dirname, '../test/fixtures/misses'))
+    const misses = Object.fromEntries(m.files.filter(f => f.misses).map(f => [f.path, f.misses]))
+    expect(misses).toEqual({ 'src/main.ts': [{ line: 2, spec: './gone' }], 'tools/run.py': [{ line: 1, spec: '.helpers' }] })
+  })
+
   it('takes each file’s doc comment', () => {
     const doc = p => g.files.find(f => f.path === p).doc
     expect(doc('server/src/main/java/com/shop/orders/model/Order.java')).toBe('An order as stored.')

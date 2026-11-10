@@ -39,7 +39,7 @@
     { "from": "spike/scripts/graph.mjs", "to": "repo", "title": "reads files and git history",
       "evidence": ["spike/scripts/graph.mjs:47"] },
     { "from": "spike/scripts/zoom.mjs", "to": "spike/scripts/store.mjs", "title": "uploads bundles, pulls maps (/upload, /maps)",
-      "evidence": ["spike/scripts/zoom.mjs:55", "spike/scripts/zoom.mjs:216", "spike/scripts/zoom.mjs:220", "spike/vite.config.ts:55", "spike/vite.config.ts:80", "spike/vite.config.ts:89"] },
+      "evidence": ["spike/scripts/zoom.mjs:58", "spike/scripts/zoom.mjs:237", "spike/scripts/zoom.mjs:241", "spike/vite.config.ts:55", "spike/vite.config.ts:80", "spike/vite.config.ts:89"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
       "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:48"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",

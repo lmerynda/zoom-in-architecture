@@ -98,6 +98,8 @@ export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer
     ...(path.length ? [crumbs] : []),
     tags,
     ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
+    // What the scanner saw here but could not follow: the map has no arrow for it.
+    ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
     ...list('Outgoing', 'out', out, '→'),
     ...list('Incoming', 'in', inn, '←'),
     el('div', 'd-hint', 'Esc clears the selection'),
