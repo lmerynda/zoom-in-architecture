@@ -332,6 +332,18 @@ try {
     return labels
   })
   await shot('connections-landscape')
+  // Each card wears its rank in its corner, readable, not inside the small print.
+  // (An open card says it in its header instead.)
+  const badges = await page.evaluate(() => {
+    const s = window.__spike, rd = s.renderer, views = rd.views, top = s.tree.children[0]
+    const closed = top.filter(i => rd.open(i) <= 0)
+    return {
+      closed: closed.length,
+      badges: closed.map(i => views[i]?.rank).filter(b => b?.visible).map(b => b.text),
+      headers: top.filter(i => rd.open(i) > 0).map(i => views[i]?.meta?.text ?? ''),
+    }
+  })
+  check('Connections cards wear their rank as a badge', badges.badges.length === badges.closed && [...badges.badges, ...badges.headers.map(h => h.split(' ')[0])].includes('#1'), JSON.stringify(badges))
   check('the Connections landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })

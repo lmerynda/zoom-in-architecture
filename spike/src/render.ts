@@ -29,6 +29,8 @@ const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
 const IN = 0x22d3ee
+/** A card's rank badge in the Connections view. */
+const RANK = 0xfde68a
 const ROUTE = 0x4ade80
 const PIN = 0xf472b6
 const FLASH_MS = 3200
@@ -85,9 +87,15 @@ interface NodeView {
   inside?: BitmapText
   dossier?: BitmapText
   metric?: BitmapText
+  /** The card's rank in the Connections view, in its corner. */
+  rank?: BitmapText
+  /** An open container's kind, count and rank, right of its header title. */
+  meta?: BitmapText
   icon?: Sprite
-  /** Width per px of the full sub line, measured once, so cutting it never re-measures. */
+  /** Width per px of the full sub line, measured once per text, so cutting it never re-measures. */
   subEm?: number
+  /** The full sub line subEm was measured for. */
+  subFull?: string
   /** The same for the full title. */
   titleEm?: number
 }
@@ -393,7 +401,7 @@ export class Renderer {
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.title2, v.sub, v.desc, v.inside, v.dossier, v.metric, v.icon]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.title2, v.sub, v.desc, v.inside, v.dossier, v.metric, v.rank, v.meta, v.icon]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -580,7 +588,9 @@ export class Renderer {
         if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
         st.texts++
       }
-      const meta = (v.sub ??= this.text(`${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`, texts))
+      const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`
+      const meta = (v.meta ??= this.text(metaText, texts))
+      if (meta.text !== metaText) meta.text = metaText
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
       meta.scale.set(mpx / FONT_PX)
@@ -600,7 +610,20 @@ export class Renderer {
     const title = (v.title ??= this.text(full, texts))
     v.titleEm ??= em(title)
     const lead = glyph ? ICON + ICON_GAP : 0
-    const px = titlePx(Math.min(h * 0.15, 24), inner, v.titleEm + lead)
+    // In the Connections view a card's rank is its first fact: a badge in the corner, near title
+    // size, that the title leaves room for.
+    let rankRoom = 0, rankBadge: BitmapText | null = null
+    const rpx = Math.min(h * 0.15, 24) * 0.85
+    if (this.ranking && rpx >= 8) {
+      const label = `#${this.ranking.rank[i]}`
+      rankBadge = v.rank ??= this.text(label, texts)
+      if (rankBadge.text !== label) rankBadge.text = label
+      rankBadge.scale.set(rpx / FONT_PX)
+      if (rankBadge.width < inner * 0.3) rankRoom = rankBadge.width + rpx * 0.6
+      else rankBadge = null
+    }
+    const tInner = inner - rankRoom
+    const px = titlePx(Math.min(h * 0.15, 24), tInner, v.titleEm + lead)
     if (px < 6) return
     // Reading a file: it fills the screen and its top has scrolled under the top bar, and the
     // breadcrumb names it. A title held on screen there would sit on the code, so the card's text
@@ -612,10 +635,10 @@ export class Renderer {
     // A name of several words that would be cut takes two lines, larger, when the card has room.
     const level = Math.min(h * 0.15, 24)
     let tpx = px, two: BitmapText | null = null
-    if (/ /.test(full) && (v.titleEm + lead) * px > inner + 1 && h > level * 5) {
-      const want = Math.min(level, (1.8 * (inner - lead * level)) / v.titleEm)
+    if (/ /.test(full) && (v.titleEm + lead) * px > tInner + 1 && h > level * 5) {
+      const want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm)
       if (want > px * 1.12) {
-        const wrap = Math.round(((inner - lead * want) * FONT_PX) / want / 8) * 8
+        const wrap = Math.round(((tInner - lead * want) * FONT_PX) / want / 8) * 8
         two = v.title2 ??= this.text(full, texts, wrap)
         if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
         // Two lines or it is no help: past that, the one-line title, cut.
@@ -623,7 +646,7 @@ export class Renderer {
         else two = null
       }
     }
-    const shownTitle = fitText(full, v.titleEm, inner - lead * tpx, tpx)
+    const shownTitle = fitText(full, v.titleEm, tInner - lead * tpx, tpx)
     if (!two && title.text !== shownTitle) title.text = shownTitle
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
@@ -636,6 +659,13 @@ export class Renderer {
     shown.alpha = la
     // A title held on screen never sits under a panel (the folded details header): it waits.
     if (this.hud.some(([hx, hy, hw, hh]) => hw && bx < hx + hw && hx < bx + lead * tpx + shown.width && by < hy + hh && hy < by + tpx * 1.3)) shown.visible = false
+    if (rankBadge) {
+      rankBadge.visible = shown.visible
+      rankBadge.tint = RANK
+      rankBadge.position.set(Math.min(x + w - pad, bx + inner) - rankBadge.width, by + (tpx - rpx) * 0.6)
+      rankBadge.alpha = la
+      st.texts++
+    }
     st.texts++
     let cy = by + tpx * (two ? 2.55 : 1.3)
 
@@ -646,17 +676,18 @@ export class Renderer {
     // Rank, how much crosses its boundary, and how many of its siblings it reaches: a hub many use
     // and a part that talks to everything both rank high, and the last number tells them apart.
     const rk = this.ranking, sibs = this.tree.children[this.tree.parent[i]]?.length - 1
-    const place = rk ? `#${rk.rank[i]} · ${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}${sibs > 0 ? ` · ${rk.partners[i]} of ${sibs} siblings` : ''}` : ''
+    const place = rk ? `${rankBadge ? '' : `#${rk.rank[i]} · `}${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}${sibs > 0 ? ` · ${rk.partners[i]} of ${sibs} siblings` : ''}` : ''
     const subText = [place, kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
     const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity
     if (spx >= 6 && subText && cy + spx * 1.3 <= codeTop) {
       const sub = (v.sub ??= this.text(subText, texts))
-      v.subEm ??= em(sub)
+      if (v.subFull !== subText || v.subEm == null) { sub.text = subText; v.subEm = em(sub); v.subFull = subText }
+      const subEm = v.subEm
       // A long technology list is cut short rather than shrunk past reading; the panel has it all.
-      const s = Math.max(Math.min(spx, inner / v.subEm), Math.min(spx, SUB_MIN))
-      const shown = fitText(subText, v.subEm, inner, s)
+      const s = Math.max(Math.min(spx, inner / subEm), Math.min(spx, SUB_MIN))
+      const shown = fitText(subText, subEm, inner, s)
       if (sub.text !== shown) sub.text = shown
       sub.visible = true
       sub.scale.set(s / FONT_PX)
