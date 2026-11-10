@@ -158,6 +158,17 @@ try {
   await page.evaluate(() => window.__spike.fit(0))
   await sleep(2800)
   check('fit keeps the landscape clear of the breadcrumb and the minimap', Object.keys(clear).length === 0, JSON.stringify(clear))
+  // A one-file app opens no sooner than its siblings of the same size: its file is not blown up to fill it.
+  const even = await page.evaluate(() => {
+    const s = window.__spike, t = s.tree, r = s.world.rect, rd = s.renderer, top = t.children[0]
+    const lone = top.filter(i => t.children[i].length === 1)
+    return lone.map(i => {
+      const peers = top.filter(j => j !== i && t.children[j].length > 1 && Math.abs(r[j * 4 + 2] - r[i * 4 + 2]) < 1)
+      const child = t.children[i][0]
+      return { id: t.els[i].id, peers: peers.length, childW: r[child * 4 + 2], peerChildW: Math.max(0, ...peers.flatMap(j => t.children[j].map(c => r[c * 4 + 2]))) }
+    })
+  })
+  check('a one-file app shows its file no larger than its siblings show theirs', even.length > 0 && even.every(e => e.peers === 0 || e.childW <= e.peerChildW + 1), JSON.stringify(even))
   // At the landscape you are nowhere deeper, whatever card sits under the screen centre.
   check('the landscape is where the breadcrumb says you are', await page.evaluate(() => window.__spike.renderer.breadcrumb().length === 0))
   // The copy is not a git checkout: the map says it has no commit, and how old it is.

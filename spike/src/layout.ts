@@ -283,7 +283,9 @@ export function placeWorld(tree: Tree, local: Map<number, LocalLayout>): World {
       ox = 0; oy = 0; s = 1
     } else {
       const b = contentBox(rect[i * 4], rect[i * 4 + 1], rect[i * 4 + 2], rect[i * 4 + 3])
-      s = Math.min(b.w / L.w, b.h / L.h)
+      // No larger than a 2 × 2 grid's cards: a lone file would otherwise fill its app's card and
+      // open with it, long before the files of its siblings.
+      s = Math.min(b.w / L.w, b.h / L.h, b.w / (cardW(2) + 2 * GUTTER), b.h / (cardH(2) + 2 * GUTTER))
       ox = b.x + (b.w - L.w * s) / 2
       oy = b.y + (b.h - L.h * s) / 2
     }
