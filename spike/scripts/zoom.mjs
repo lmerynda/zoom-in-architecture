@@ -99,6 +99,8 @@ export function graphText(g, under = '') {
     lines.push(`  ${posix.basename(f.path)} · ${f.lines}${o.length ? ` · → ${cap(o, 12)}` : ''}${t.length ? ` · types → ${cap(t, 6)}` : ''}${i.length ? ` · ← ${i.length > 8 ? `${i.length} files` : i.map(short).join(', ')}` : ''}${f.doc ? ` · ${f.doc.slice(0, 120)}` : ''}`)
     for (const h of f.hints.slice(0, 16)) lines.push(`      :${h.line} ${h.kind} ${h.text}`)
     if (f.hints.length > 16) lines.push(`      … ${f.hints.length - 16} more`)
+    // What the scanner saw and could not follow: no arrow for it on the map.
+    for (const x of f.misses ?? []) lines.push(`      :${x.line} missed ${x.spec} (a relative import that resolves to no file)`)
   }
   return lines.join('\n')
 }

@@ -428,7 +428,10 @@ export class Renderer {
 
   private drawCard(i: number, x: number, y: number, w: number, h: number, alpha: number, labelAlpha: number, st: FrameStats) {
     st.nodes++
-    if (!(x <= 0 && y <= 0 && x + w >= this.cam.w && y + h >= this.cam.h)) st.inView++
+    // A card covering most of the screen is around the reader, not something in view, even with
+    // an edge of it showing; what is in view is anything smaller.
+    const covered = (Math.min(x + w, this.cam.w) - Math.max(x, 0)) * (Math.min(y + h, this.cam.h) - Math.max(y, 0)) / (this.cam.w * this.cam.h)
+    if (covered < 0.85) st.inView++
     const d = this.tree.depth[i]
     const v = (this.views[i] ??= {})
     const color = this.colors[i]
@@ -634,7 +637,9 @@ export class Renderer {
     const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${el.kind} · ${inside} inside` : el.kind
     const subText = [kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
-    if (spx >= 6 && subText) {
+    // On a small file card the size line would meet the code preview's top: the preview says it.
+    const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity
+    if (spx >= 6 && subText && cy + spx * 1.3 <= codeTop) {
       const sub = (v.sub ??= this.text(subText, texts))
       v.subEm ??= em(sub)
       // A long technology list is cut short rather than shrunk past reading; the panel has it all.

@@ -16,6 +16,9 @@ const base = process.env.SPIKE_URL ?? 'http://localhost:5180/'
 mkdirSync(outDir, { recursive: true })
 const repo = join(mkdtempSync(join(tmpdir(), 'zoom-')), 'shop')
 cpSync('test/fixtures/polyglot', repo, { recursive: true })
+// One import the scanner cannot follow, so the viewer's account of it is checked on screen.
+writeFileSync(join(repo, 'web/src/main.ts'), `${readFileSync(join(repo, 'web/src/main.ts'), 'utf8')}import { gone } from './gone'
+`)
 const scratch = join(repo, '..', 'map.json')
 // The commands run from the project's side: their own folder, the viewer only as a URL.
 const cli = join(import.meta.dirname, 'zoom.mjs')
@@ -126,6 +129,16 @@ try {
   // The copy is not a git checkout: the map says it has no commit, and how old it is.
   const stamp = await page.evaluate(() => document.querySelector('#crumbs .provenance')?.textContent ?? null)
   check('the breadcrumb says when and from what the map was built', stamp === 'no commit · just now', String(stamp))
+  // The file with the import the scanner could not follow names it in its details panel.
+  const missed = await page.evaluate(async () => {
+    const s = window.__spike, i = s.tree.els.findIndex(e => e.metadata?.path === 'web/src/main.ts')
+    s.select(i)
+    await new Promise(r => setTimeout(r, 300))
+    const p = document.querySelector('#details .d-missed')?.textContent ?? null
+    s.select(-1)
+    return { marks: s.tree.els[i]?.metadata?.marks ?? '', p }
+  })
+  check('a reference the scanner could not follow is named, not silent', /:missed/.test(missed.marks) && !!missed.p?.includes('./gone'), JSON.stringify(missed))
   // Picking a lens shows its legend below the bar; the bar itself keeps one line.
   const bar = await page.evaluate(async () => {
     const h = () => document.getElementById('top').getBoundingClientRect().height
