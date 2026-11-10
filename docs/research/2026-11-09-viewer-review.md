@@ -46,3 +46,23 @@ Two independent read-only reviews of main at `60f0005`, by Fable 5.1 and Fable 5
 4. **Make request paths true:** the steps a method really reaches (or marked "may reach"), ordered by call depth, the handler's code shown, and app-level callers not fanned onto every endpoint.
 5. **Earn trust:** provenance on screen, honest wording for "never invents" and "resolves every reference", secrets kept out of evidence, a token and size cap on `/upload`.
 6. **Decoration:** starfield, nebula and sound are a taste call for the owner.
+
+## Scored rounds
+
+After the six steps above, both reviewers scored main out of 10 (truthfulness, legibility, visual quality, interaction, overall) in rounds, each re-checking its own previous list and looking again from scratch. Fixes went in between rounds, each with a test where one could prove it.
+
+| Round | Fable 5.1 | Fable 5.2 | What the round's fixes were mostly about |
+|---|---|---|---|
+| 1 | 6 | 7 | (the six steps above) |
+| 2 | 7 | 8 | unbounded zoom, request steps following same-named methods, unopened containers drawn as blank tiles, edge counts hidden on busy screens or unattributable on shared trunks |
+| 3 | 8 | 7.5 | titles cut on open cards, hover on a container's background lighting every edge, lens values over text; 5.2 dropped because the new panel-clearing glide threw the selected card off screen (a view-rectangle bug) |
+| 4 | 8.5 | 8.5 | the glide fixed and tested on screen, chips under the minimap (one pass of overlay checks could lift a chip from the help line into the minimap), a double-click window before the glide, resize keeping the view |
+| 5 | 9 | 8.8 | names on the first screen, contents listed on closed cards, the details panel folding over code, quieter busy edges; 5.2 also found the double-click test passed without a double-click (puppeteer's `click({ clickCount: 2 })` fires no `dblclick`) |
+| 6 | 9 | 9 | names at full strength as boxes fade in, code previews on file cards at fit size, no title over code opened from its top |
+
+What both still name, none of it holding the score under 9:
+- Scanner misses are silent on the map.
+- Ten of the eleven imports predate the request-path fixes and show "age unknown" until their projects upload again.
+- At mid zoom into a file the code can sit under an empty band, and a drag inside a large card can leave a blank screen with only the minimap as a cue.
+- Four long component names are cut at the landscape.
+- `publish --watch` and `check` refusals were not exercised by either reviewer (the reviews were read-only).
