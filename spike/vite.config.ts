@@ -118,6 +118,9 @@ function liveModels(): Plugin {
 
 export default defineConfig({
   plugins: [liveModels()],
+  // Some tests build a real repository's graph: a few seconds alone, more on a busy machine, where
+  // the 5 s default failed them for no fault of the code.
+  test: { testTimeout: 30_000 },
   server: {
     // Extracted JSON is fetched by the viewer on its own schedule; changes must not reload the page.
     watch: { ignored: ['**/public/models/**', '**/shots/**', '**/imports/**', '**/test/fixtures/**'] },
