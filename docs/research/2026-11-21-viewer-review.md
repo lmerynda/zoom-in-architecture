@@ -54,7 +54,24 @@ Effort: S under a day, M a few days, L a week or more.
 
 Both reviews' bold ideas meet here. Pick a feature; the map stays put and lights only the cards that carry it, across apps, and the panel tells it top to bottom with evidence. Feature tags establish which cards take part, not the order. The trail has to come from evidenced calls, through untagged files where needed, and say where the evidence ends.
 
-## Open decisions for the owner
+## Status, 2026-11-22
+
+All twenty items are on main, each with black-box checks: `scripts/answers-test.mjs` (1-5, 10, 17), `scripts/controls-test.mjs` (6, 7, 14-16, 18), `scripts/place-test.mjs` (11-13, 20), plus the updated `publish-test.mjs` and `live-test.mjs` (19). The Requests builder fixes (1) came from a parallel branch, merged as is; stored Requests models change only when a project publishes again (knights-of-darkness was republished locally from its own checkout, same commit).
+
+Departures from the plan, and why:
+- The details panel became a permanent column on wide screens (18), and with nothing selected it is the keyboard outline of the level (16): one place for both, so the column is never empty and the map never resizes or slides.
+- Search keeps a feature as a result of its own: picking it frames the cards that carry it, a small first step toward the feature as the unit of navigation.
+- Not done: arrow-key selection between cards (16 said "after"), "Open in editor" (needs a configured checkout root), an in-place animated view switch (11 said "later").
+
+## Open decisions, taken as defaults
+
+The owner can reverse any of these; each is one change.
+- **Pins: removed.** URL places, browser history and the recent places in an empty search cover them; it keeps the control set small.
+- **Coupling lens: kept,** under Colour by. It costs no control of its own now, and Codex's point stands: it shows crossing volume in the map's own layout.
+- **Minimap: kept,** hidden while the whole map is in view and while reading code, its box clipped.
+- **Stale map: amber after 14 days.** The viewer never reads a project, so it cannot know of a newer commit; age is all it has.
+
+## Open decisions for the owner (as raised by the reviews)
 
 - **Pins:** Fable says remove them, since URL places and recent places cover them. Codex says keep one "Save place" action and a Saved group in Search, because a deliberate shortlist outlives recency.
 - **Coupling lens:** the merged plan dropped it as a duplicate of Connections. Codex points out that it shows crossing volume in the map's own layout, while the Connections rank also weighs reach.
