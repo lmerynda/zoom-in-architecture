@@ -2,8 +2,15 @@
 // The landscape holds who calls the backend, the backend, and the stores and services its
 // requests reach. Inside the backend sit its route groups, inside a group its endpoints, and
 // inside an endpoint the request's path as numbered steps: the handler, the files it uses, down to
-// the ones that reach a store, and the response. Built from code (routes.mjs) and the map's
-// placement and links; the agent writes nothing for it.
+// the ones that reach a store, and the response; beside them, unnumbered, the types the handler only
+// names, and, where it branches, each view and answer it may give. Built from code (routes.mjs) and
+// the map's placement and links; the agent writes nothing for it.
+//
+// Card contract (metadata, all strings): an endpoint has `method` and `route`. Inside it, `role` is
+// `step` (with `step`, its number, ids `<endpoint>.s<k>`), `type` (`.t<k>`), `view` (a branch's view,
+// `.v<k>`) or `response` (`.response`, or `.response-<k>` when it branches; `answer` is `view`,
+// `redirect` or `body`, with `view`, `redirect` or `model`). Steps, types and views carry `span`,
+// the 1-based inclusive lines they are about ("166-177"); the handler's route line is a `route` mark.
 import { posix } from 'node:path'
 import { endpoints } from './routes.mjs'
 
