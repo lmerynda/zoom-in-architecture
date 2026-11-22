@@ -10,6 +10,32 @@ export interface ModelDiff {
   changed: number[]
   /** New index → old index, for elements in both. */
   oldIndex: Int32Array
+  /** Arrows (relations, by their two ends and title) new and gone. */
+  arrowsAdded: number
+  arrowsRemoved: number
+  /** Arrows in both versions whose cited lines changed. */
+  evidenceChanged: number
+}
+
+/** Each relation by its ends and title, with its cited lines. */
+const arrows = (t: Tree) => {
+  const m = new Map<string, string>()
+  for (let k = 0; k < t.rels.length; k += 2) m.set(`${t.els[t.rels[k]].id}>${t.els[t.rels[k + 1]].id}>${t.relTitles[k >> 1]}`, JSON.stringify(t.relEvidence[k >> 1] ?? []))
+  return m
+}
+
+/** A live update in words: what was added, changed and removed, by name, arrows and citations too. */
+export function describeDiff(d: ModelDiff, next: Tree): string {
+  const names = (xs: string[]) => `${xs.slice(0, 3).join(', ')}${xs.length > 3 ? ` +${xs.length - 3}` : ''}`
+  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
+  return [
+    d.added.length && `added ${names(d.added.map(i => next.els[i].title))}`,
+    d.changed.length && `changed ${names(d.changed.map(i => next.els[i].title))}`,
+    d.removed.length && `removed ${names(d.removed.map(id => id.split('.').pop()!))}`,
+    d.arrowsAdded && `+${n(d.arrowsAdded, 'arrow')}`,
+    d.arrowsRemoved && `−${n(d.arrowsRemoved, 'arrow')}`,
+    d.evidenceChanged && `${n(d.evidenceChanged, 'citation')} moved`,
+  ].filter(Boolean).join(' · ') || 'nothing on the map changed'
 }
 
 const fields = (t: Tree, i: number) => {
@@ -30,7 +56,11 @@ export function diffModels(prev: Tree, next: Tree): ModelDiff {
     if (fields(prev, j) !== fields(next, i) || childIds(prev, j) !== childIds(next, i)) changed.push(i)
   }
   const removed = prev.els.slice(1).filter(e => !next.byId.has(e.id)).map(e => e.id)
-  return { added, removed, changed, oldIndex }
+  const a = arrows(prev), b = arrows(next)
+  let arrowsAdded = 0, arrowsRemoved = 0, evidenceChanged = 0
+  for (const [k, ev] of b) { if (!a.has(k)) arrowsAdded++; else if (a.get(k) !== ev) evidenceChanged++ }
+  for (const k of a.keys()) if (!b.has(k)) arrowsRemoved++
+  return { added, removed, changed, oldIndex, arrowsAdded, arrowsRemoved, evidenceChanged }
 }
 
 const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([

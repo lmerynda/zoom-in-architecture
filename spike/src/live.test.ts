@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { layoutJobs, placeWorld, type LocalLayout } from './layout'
-import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
+import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 
 const el = (id: string, parent: string | null, title = id) => ({ id, parent, title, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
@@ -32,6 +32,15 @@ describe('diffModels', () => {
     expect(d.removed).toEqual(['gone'])
     expect(ids(d.changed)).toEqual(['a.y', 'b'])
     expect(a.els[d.oldIndex[b.byId.get('b.z')!]].id).toBe('b.z')
+  })
+
+  it('counts arrows added and removed, and cited lines that moved, and says it all by name', () => {
+    const ev = (line: number) => [{ at: `x.ts:${line}`, line, code: 'call()' }]
+    const a = new Tree({ ...v1, relations: [{ source: 'a.x', target: 'b.z', title: 'calls', evidence: ev(3) }, { source: 'a.y', target: 'b.z', title: '' }] })
+    const b = new Tree({ ...v2, relations: [{ source: 'a.x', target: 'b.z', title: 'calls', evidence: ev(4) }, { source: 'b.new', target: 'a.x', title: '' }] })
+    const d = diffModels(a, b)
+    expect([d.arrowsAdded, d.arrowsRemoved, d.evidenceChanged]).toEqual([1, 1, 1])
+    expect(describeDiff(d, b)).toBe('added b.new · changed Y renamed, b · removed gone · +1 arrow · −1 arrow · 1 citation moved')
   })
 })
 

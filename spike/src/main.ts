@@ -9,7 +9,7 @@ import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
 import { renderModelTabs } from './models'
-import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
+import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 import { placeUrl, Places } from './places'
 import { Reader } from './reader'
@@ -415,8 +415,8 @@ async function main() {
     showDetails()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
-    const parts = [diff.added.length && `+${diff.added.length} added`, diff.changed.length && `${diff.changed.length} changed`, diff.removed.length && `−${diff.removed.length} removed (${diff.removed.slice(0, 3).map(id => id.split('.').pop()).join(', ')}${diff.removed.length > 3 ? '…' : ''})`].filter(Boolean)
-    controls.toast.show(`Model updated · ${parts.join(' · ') || 'no visible change'}`, `${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
+    controls.toast.show(`Map updated · ${describeDiff(diff, next)}`)
+    console.info(`live update: ${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
   }
   /** Advances the morph: positions and the camera move together from the old version to the new. */
   const stepMorph = (t: number) => {
