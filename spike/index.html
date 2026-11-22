@@ -6,7 +6,7 @@
   <title>Zoom spike</title>
   <link rel="icon" href="data:," />
   <style>
-    :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #64748b; --accent: #fbbf24; }
+    :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #8a99b0; --faint: #7c8aa1; --accent: #fbbf24; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
     #stage, #stage canvas { position: fixed; inset: 0; display: block; }
@@ -21,7 +21,7 @@
     .model-current:hover { background: rgba(148, 163, 184, 0.12); }
     .model-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 70vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; z-index: 30; background: #0b1220; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     .model-menu[hidden] { display: none; }
-    .model-menu .menu-head { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: #64748b; padding: 8px 9px 4px; }
+    .model-menu .menu-head { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); padding: 8px 9px 4px; }
     .model-menu a { color: var(--dim); text-decoration: none; padding: 6px 9px; border-radius: 7px; white-space: nowrap; }
     .model-menu a:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
     .model-menu a.on { color: var(--text); background: rgba(148, 163, 184, 0.16); }
@@ -43,7 +43,7 @@
     #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
     #crumbs button:hover { color: var(--text); }
     #crumbs button.here { color: var(--text); font-weight: 600; }
-    #crumbs .provenance { color: #64748b; font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
+    #crumbs .provenance { color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 40px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
@@ -97,11 +97,11 @@
     .code pre { font: 16px/1.45 ui-monospace, Consolas, monospace; color: #cbd5e1; }
     .code pre div { position: absolute; overflow: hidden; }
     .code pre span { display: block; white-space: pre; }
-    .code pre i { font-style: normal; color: #475569; margin-right: 1ch; }
+    .code pre i { font-style: normal; color: var(--faint); margin-right: 1ch; }
     .code pre em { font-style: normal; }
     .code pre .kw { color: #c4b5fd; }
     .code pre .str { color: #86efac; }
-    .code pre .com { color: #64748b; font-style: italic; }
+    .code pre .com { color: var(--dim); font-style: italic; }
     .code pre .num { color: #fdba74; }
     .code pre .ty { color: #7dd3fc; }
     /* Lines the graph marked: a cyan edge and their kind; lines a link cites: amber. */
@@ -117,9 +117,14 @@
     .d-ev pre { margin: 1px 0 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: #cbd5e1; white-space: pre; overflow-x: auto; }
     .d-ev .stale { border-left-color: #b45309; }
     .d-ev em { display: block; font-size: 11px; color: #f59e0b; }
-    .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
+    .d-hint { margin-top: 12px; color: var(--faint); font-size: 11px; }
     /* The controls a newcomer needs first: readable (AA contrast), not small print. */
-    #help { right: 12px; bottom: 12px; color: #94a3b8; font-size: 12px; position: fixed; }
+    #help { right: 12px; bottom: 12px; position: fixed; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+    #help:hover { border-color: rgba(251, 191, 36, 0.5); }
+    #stage canvas:focus { outline: none; }
+    #stage canvas:focus-visible { outline: 2px solid rgba(251, 191, 36, 0.6); outline-offset: -2px; }
+    /* Reduced motion: nothing slides, fades or flies. */
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
     /* Shown when the screen holds only empty space inside a card: how to get back. */
     /* First visit only: what the map is, beside the breadcrumb; gone at the first scroll, click or key. */
     #intro { min-width: 0; flex: 0 1 auto; height: 34px; display: block; line-height: 32px; padding: 0 14px; color: #cbd5e1; background: var(--panel); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 10px; font-size: 12.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.4s; }
@@ -145,61 +150,41 @@
     .toast { position: fixed; left: 50%; bottom: 96px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 22, 0.92); border: 1px solid rgba(251, 191, 36, 0.35); color: #e2e8f0; padding: 9px 14px; border-radius: 10px; font-size: 13px; transition: opacity 0.18s, transform 0.18s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
     /* Palette */
-    .palette { position: fixed; z-index: 30; left: 50%; top: 14vh; transform: translate(-50%, -8px) scale(0.98); width: min(680px, 90vw); opacity: 0; pointer-events: none; background: rgba(9, 12, 20, 0.96); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); transition: opacity 0.12s, transform 0.12s; overflow: hidden; }
-    .palette.open { opacity: 1; pointer-events: auto; transform: translate(-50%, 0) scale(1); }
+    .palette { position: fixed; z-index: 30; left: 50%; top: 14vh; transform: translate(-50%, 0); width: min(680px, 90vw); background: rgba(9, 12, 20, 0.97); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); overflow: hidden; }
+    .palette[hidden] { display: none; }
     .palette input { width: 100%; background: none; border: 0; border-bottom: 1px solid #1e293b; color: #f1f5f9; font: 17px 'Segoe UI', sans-serif; padding: 16px 18px; outline: none; }
     .palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
     .palette .row { display: grid; grid-template-columns: 86px auto 1fr; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
     .palette .row.on { background: rgba(251, 191, 36, 0.14); }
-    .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+    .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .palette .row b { color: #e2e8f0; font-weight: 600; }
-    .palette .row .sub { color: #475569; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .palette .row .sub { color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .palette .none { color: #94a3b8; font-size: 13px; padding: 10px 10px 8px; }
-    /* Radial command wheel */
-    .radial { position: fixed; z-index: 25; width: 0; height: 0; pointer-events: none; }
-    .radial .hub { position: absolute; left: -58px; top: -58px; width: 116px; height: 116px; border-radius: 50%; background: radial-gradient(circle, rgba(15, 23, 42, 0.95) 55%, rgba(15, 23, 42, 0.2)); border: 1px solid rgba(251, 191, 36, 0.4); color: #f1f5f9; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; text-align: center; padding: 14px; transform: scale(0.4); opacity: 0; transition: transform 0.16s, opacity 0.16s; }
-    .radial .item { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%) scale(0.5); opacity: 0; min-width: 104px; background: rgba(10, 14, 22, 0.95); border: 1px solid #334155; color: #cbd5e1; border-radius: 999px; padding: 7px 12px; font: inherit; display: flex; gap: 8px; justify-content: space-between; align-items: center; cursor: pointer; transition: transform 0.18s cubic-bezier(0.2, 1.4, 0.4, 1), opacity 0.14s, background 0.1s; white-space: nowrap; }
-    .radial.open { pointer-events: auto; }
-    .radial.open .hub { transform: scale(1); opacity: 1; }
-    .radial.open .item { opacity: 1; transform: translate(-50%, -50%) translate(var(--x), var(--y)) scale(1); }
-    .radial .item.hot, .radial .item:hover { background: var(--accent); color: #0b0f17; border-color: var(--accent); }
-    .radial .item.hot kbd, .radial .item:hover kbd { color: #0b0f17; border-color: rgba(11, 15, 23, 0.35); background: none; }
-    /* A greyed item is dim while the wheel is open, and gone with it when it closes. */
-    .radial.open .item.off { opacity: 0.35; cursor: default; }
     /* Tooltips */
-    .tip { position: fixed; z-index: 20; width: 300px; background: rgba(9, 12, 20, 0.96); border: 1px solid #334155; border-radius: 10px; padding: 11px 13px 13px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); font-size: 12px; animation: tipin 0.12s ease; }
-    .tip.locked { border-color: rgba(251, 191, 36, 0.55); }
+    /* Context menu */
+    .menu { z-index: 35; min-width: 180px; padding: 4px; display: flex; flex-direction: column; background: #0b1220; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+    .menu[hidden] { display: none; }
+    .menu-title { font-size: 11px; color: var(--dim); padding: 6px 10px 4px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .menu button { display: flex; justify-content: space-between; gap: 16px; background: none; border: 0; color: var(--text); font: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-align: left; }
+    .menu button:hover, .menu button:focus-visible { background: rgba(251, 191, 36, 0.16); outline: none; }
+    .tip { position: fixed; z-index: 20; width: 280px; pointer-events: none; background: rgba(9, 12, 20, 0.96); border: 1px solid #334155; border-radius: 10px; padding: 11px 13px 13px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); font-size: 12px; animation: tipin 0.12s ease; }
+    .tip[hidden] { display: none; }
     @keyframes tipin { from { opacity: 0; transform: translateY(4px); } }
-    .tip-kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; }
+    .tip-kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
     .tip-title { font-size: 15px; font-weight: 600; color: #f1f5f9; margin: 2px 0 6px; }
     .tip-desc { color: #94a3b8; line-height: 1.45; margin-bottom: 6px; }
-    .tip-counts { color: #64748b; font-size: 11px; margin-bottom: 4px; }
-    .tip-links { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; align-items: baseline; }
-    .tip-label { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #475569; margin-right: 2px; width: 100%; }
-    .tip-link { color: #fde68a; border-bottom: 1px dotted #a16207; cursor: pointer; margin-right: 6px; }
-    .tip-link:hover { color: #fff; }
-    .tip-lock { position: absolute; left: 10px; right: 10px; bottom: 5px; height: 2px; background: #1e293b; border-radius: 1px; overflow: hidden; }
-    .tip-lock::after { content: ''; position: absolute; inset: 0; background: var(--accent); transform-origin: left; animation: lock 0.9s linear forwards; }
-    @keyframes lock { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-    /* Route directions */
-    .routepanel { left: 160px; bottom: 108px; width: 300px; max-height: 40vh; overflow: auto; padding: 10px; }
-    .routepanel[hidden] { display: none; }
-    .rp-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-    .rp-head b { color: #4ade80; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
-    .rp-head span { color: #475569; font-size: 10px; }
-    .rp-stop { display: grid; grid-template-columns: 22px 1fr; width: 100%; text-align: left; background: none; border: 0; color: #cbd5e1; font: inherit; padding: 4px; border-radius: 6px; cursor: pointer; }
-    .rp-stop:hover, .rp-stop.on { background: rgba(74, 222, 128, 0.12); }
-    .rp-stop i { font: 700 10px ui-monospace, monospace; color: #052e16; background: #4ade80; border-radius: 50%; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; grid-row: span 2; }
-    .rp-stop span { color: #64748b; font-size: 11px; }
+    .tip-counts { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
     /* Controls screen */
-    .help-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(3, 5, 10, 0.82); backdrop-filter: blur(6px); display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
-    .help-overlay.open { opacity: 1; pointer-events: auto; }
+    .help-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(3, 5, 10, 0.85); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; overflow: auto; }
+    .help-overlay[hidden] { display: none; }
+    .help-box { display: flex; flex-direction: column; align-items: center; padding: 24px 0; }
+    .help-close { margin-top: 20px; background: rgba(148, 163, 184, 0.12); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 18px; border-radius: 8px; cursor: pointer; }
     .help-overlay h2 { font: 300 30px 'Segoe UI', sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: #f1f5f9; margin: 0 0 22px; }
-    .help-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 40px; max-width: 760px; padding: 0 24px; }
+    .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; max-width: 1040px; width: 100%; padding: 0 24px; }
     .help-col h3 { font: 600 11px ui-monospace, monospace; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
-    .help-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid #111827; color: #94a3b8; }
+    .help-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid #1e293b; color: #b6c2d3; }
+    .help-row b { color: var(--text); font-weight: 600; white-space: nowrap; }
     .help-row kbd { white-space: nowrap; }
-    .help-foot { margin-top: 24px; color: #475569; }
   </style>
 </head>
 <body>
@@ -218,8 +203,8 @@
   <div id="stats" class="panel">loading…</div>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
-  <div id="empty" hidden>Nothing here · Backspace goes back · Esc goes up a level · or click the minimap</div>
-  <div id="help">scroll to zoom · drag to pan · right-click: command wheel · Ctrl K: travel · ] [: look around · ⌫: back · ?: controls</div>
+  <div id="empty" hidden>Nothing here · Backspace goes back · Alt+↑ goes up a level · or click the minimap</div>
+  <button id="help" type="button" aria-haspopup="dialog"><kbd>?</kbd> Help</button>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

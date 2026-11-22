@@ -20,6 +20,11 @@ export class Camera {
   private vx = 0
   private vy = 0
   private fly: Flight | null = null
+  /**
+   * The longest a flight takes. Long enough to see where you went, short enough not to wait on;
+   * 0 (reduced motion) cuts straight to the destination.
+   */
+  maxFlightMs = 700
 
   /** A new window size keeps what was in view in view: the zoom scales with the window. */
   resize(w: number, h: number) {
@@ -87,7 +92,15 @@ export class Camera {
     this.anchor = null
     this.vx = this.vy = 0
     const f = flight(this.x, this.y, this.w / this.z, x + w / 2, y + h / 2, this.w / z1)
-    this.fly = { ...f, t0: now, dur: dur ?? Math.min(2600, Math.max(650, 420 + f.S * 260)) }
+    const ms = Math.min(this.maxFlightMs, dur ?? Math.max(350, 300 + f.S * 120))
+    if (ms <= 0) { const [cx, cy, vw] = f.at(f.S); this.set(cx, cy, this.w / vw); return }
+    this.fly = { ...f, t0: now, dur: ms }
+  }
+
+  /** Ends a flight or a glide where it is now. */
+  stop() {
+    if (this.fly) { this.fly = null; this.targetLogZ = Math.log(this.z) }
+    this.vx = this.vy = 0
   }
 
   /** Advances easing; returns true while the camera is still moving. */

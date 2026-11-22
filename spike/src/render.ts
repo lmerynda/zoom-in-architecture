@@ -1,10 +1,6 @@
 import { BitmapFont, BitmapText, BlurFilter, Container, Graphics, NineSliceSprite, Rectangle, Sprite, Texture, type Application } from 'pixi.js'
 import type { Camera } from './camera'
 import { EdgeRouter } from './edges'
-import { FlowParticles, type Flow } from './fx/particles'
-import { Starfield } from './fx/starfield'
-import { FlightSpeed } from './fx/warp'
-import type { Hop } from './controls/logic'
 import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
@@ -31,8 +27,6 @@ const OUT = 0xfbbf24
 const IN = 0x22d3ee
 /** A card's rank badge in the Connections view. */
 const RANK = 0xfde68a
-const ROUTE = 0x4ade80
-const PIN = 0xf472b6
 const FLASH_MS = 3200
 /** Icon size and the gap after it, in multiples of the title's font size. */
 const ICON = 1.05
@@ -107,8 +101,6 @@ export interface FrameStats {
   texts: number
   edges: number
   chips: number
-  /** Moving dots; only the focused card's edges carry them. */
-  particles: number
   /** Cards on screen that do not just surround it: 0 means the reader is looking at empty space. */
   inView: number
   cpuMs: number
@@ -120,10 +112,7 @@ const enum Kind { Thin, Mid, Thick, Out, In }
 export class Renderer {
   readonly stage = new Container()
   readonly router: EdgeRouter
-  private stars = new Starfield()
-  private warp = new FlightSpeed()
-  private particles = new FlowParticles()
-  /** Pulse rings and selection reticle, drawn above cards. */
+  /** The focus outlines, drawn above cards. */
   private fxG = new Graphics()
   private cardLayers: Container[] = []
   private textLayers: Container[] = []
@@ -158,24 +147,8 @@ export class Renderer {
   private soft!: Texture
   /** Animation clock in ms, from the app's (possibly manual) clock. */
   time = 0
-  private dt = 16
-  /** Per container: whether it was open last frame, to fire a pulse when it opens. */
-  private wasOpen: Uint8Array
-  private pulses: { node: number; t0: number }[] = []
-  /** When the current selection was made, for the lock-on animation. */
-  private selectedAt = 0
-  private lastSelected = -1
-  /** Called when a container opens on screen, for sound. */
-  onOpen: () => void = () => {}
   /** Secondary target, like an MMO's target-of-target: a neighbour of the selection being inspected. */
   target = -1
-  /** Route being shown, hop by hop, and the waypoint the camera is on. */
-  route: Hop[] | null = null
-  routeStep = -1
-  /** Pinned elements, like quest markers. */
-  pins: number[] = []
-  private routeG = new Graphics()
-  private markers: Chip[] = []
   /** Cards changed by a live model update glow for a while: green added, amber changed. */
   flash = new Map<number, { color: number; t0: number }>()
   /** Active lens, or null for the structure view. */
@@ -205,7 +178,6 @@ export class Renderer {
     this.related = new Int32Array(n).fill(-1)
     this.endpoint = new Int32Array(n).fill(-1)
     this.endKind = new Uint8Array(n)
-    this.wasOpen = new Uint8Array(n)
     this.colors = new Int32Array(n)
     for (let i = 0; i < n; i++) {
       const own = tree.els[i].color
@@ -213,9 +185,8 @@ export class Renderer {
     }
     this.glyphs = tree.els.map((e, i) => (i ? glyphOf(e) : null))
     this.makeTextures()
-    this.stage.addChild(this.stars.back)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.cardLayers.push(c); this.stage.addChild(c) }
-    this.stage.addChild(this.edgeG, this.hotEdgeG, this.routeG, this.particles.view, this.stars.front, this.fxG, this.chipLayer)
+    this.stage.addChild(this.edgeG, this.hotEdgeG, this.fxG, this.chipLayer)
     for (let d = 0; d <= tree.maxDepth; d++) { const c = new Container(); this.textLayers.push(c); this.stage.addChild(c) }
   }
 
@@ -361,18 +332,15 @@ export class Renderer {
 
   frame(now = performance.now()): FrameStats {
     const t0 = performance.now()
-    this.dt = Math.min(100, Math.max(1, now - this.time))
     this.time = now
     this.frameNo++
-    if (this.selected !== this.lastSelected) { this.lastSelected = this.selected; this.selectedAt = now }
-    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, particles: 0, inView: 0, cpuMs: 0 }
+    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, inView: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.hoverAt(this.pointer[0], this.pointer[1]) : -1
     this.here = this.breadcrumb()
     const focus = this.selected > 0 ? this.selected : this.hover
     const inFocus = focus > 0 ? (i: number) => i === focus || this.tree.isAncestor(focus, i) : undefined
     const edges = aggregateEdges(this.tree, i => this.rep(i), inFocus)
     const mark = (n: number) => { for (let a = n; a > 0 && this.related[a] !== this.frameNo; a = this.tree.parent[a]) this.related[a] = this.frameNo }
-    if (this.route) for (const h of this.route) { mark(h.from); mark(h.to) }
     if (this.target > 0) mark(this.target)
     if (focus > 0) {
       mark(focus)
@@ -387,7 +355,6 @@ export class Renderer {
         mark(e.s); mark(e.t)
       }
     }
-    this.stars.update(this.cam, now)
     this.fxG.clear()
     this.codeSlots = []
     const prev = this.shown
@@ -396,11 +363,7 @@ export class Renderer {
     this.visit(0, 1, 1, st)
     for (const i of prev) if (this.stamp[i] !== this.frameNo) this.hide(i)
     this.drawEdges(edges, focus, st)
-    this.warp.update(this.cam, this.dt)
-    this.drawRoute()
-    this.drawPulses()
-    this.drawReticles()
-    this.drawPins()
+    this.drawOutlines()
     st.cpuMs = performance.now() - t0
     return st
   }
@@ -423,12 +386,6 @@ export class Renderer {
     const kids = this.tree.children[i]
     if (!kids.length) return
     const t = this.open(i)
-    if (i > 0) {
-      if (t > 0.97 && !this.wasOpen[i]) {
-        this.wasOpen[i] = 1
-        if (w > 160) { this.pulses.push({ node: i, t0: this.time }); this.onOpen() }
-      } else if (t < 0.3) this.wasOpen[i] = 0
-    }
     // Children appear as the container starts to open, faint at first; they brighten and gain
     // labels as it opens, so detail grows in place instead of popping. Before that the container
     // is a closed card with a readable name, not a box of unlabelled tiles. The reveal runs as a
@@ -462,7 +419,7 @@ export class Renderer {
     const hot = i === this.hover
     const sel = i === this.selected
     // With a selection, cards unrelated to it fade back; their children decide for themselves.
-    const dim = (this.selected > 0 || this.route) && this.related[i] !== this.frameNo ? 0.32 : 1
+    const dim = this.selected > 0 && this.related[i] !== this.frameNo ? 0.32 : 1
     const ends = this.endpoint[i] === this.frameNo && !sel
     const endColor = this.endKind[i] === 2 ? IN : OUT
     const fl = this.flash.get(i)
@@ -518,20 +475,21 @@ export class Renderer {
     // An external system is periphery: its outline is the quietest on the map until it is in play.
     border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : outside ? 0.4 : isContainer ? 0.55 : 0.45) * dim
 
-    if (sel || ends || flashA > 0.02) {
+    // Only a live update glows, for a moment; selection and its ends are outlined (drawOutlines, borders).
+    if (flashA > 0.02) {
       const glow = v.glow!
       const sp = Math.min(26, Math.max(10, w * 0.06))
       glow.visible = true
       glow.position.set(x - sp, y - sp)
       glow.width = w + sp * 2; glow.height = h + sp * 2
-      glow.tint = sel ? 0xffffff : ends ? endColor : fl!.color
-      glow.alpha = alpha * (sel ? 0.75 : ends ? 0.6 : 0.85 * flashA * (0.75 + 0.25 * Math.sin(this.time / 120)))
+      glow.tint = fl!.color
+      glow.alpha = alpha * 0.85 * flashA
     }
 
     const texts = this.textLayers[d]
     // A name reads at full strength while its card fades in (alpha starts low as a container
     // opens): the box can arrive gently, the name must be legible from the start.
-    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (1 - this.warp.level * 0.9) * (outside && !hot && !sel && !ends ? 0.75 : 1)
+    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (outside && !hot && !sel && !ends ? 0.75 : 1)
     if (la < 0.02 || w < 44) return
 
     // Lens value badge in the bottom-right corner.
@@ -805,7 +763,6 @@ export class Renderer {
     const sel = this.selected > 0
 
     const drawn: { e: ShownEdge; kind: Kind; pts: number[]; sOn: boolean; tOn: boolean }[] = []
-    const flows: Flow[] = []
     for (const e of edges) {
       const sOn = this.onScreen(e.s), tOn = this.onScreen(e.t)
       if (!sOn && !tOn) continue
@@ -842,7 +799,6 @@ export class Renderer {
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
       strokes[kind][tier].push(clipped)
-      if (hot) flows.push({ pts: clipped, color: kind === Kind.Out ? OUT : IN, both: e.both })
       st.edges++
       const n = pts.length
       if (tOn) heads[kind][tier].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -891,135 +847,24 @@ export class Renderer {
       if (j.length) gg.fill({ color, alpha })
     }
 
-    st.particles = this.particles.update(flows, this.time)
     st.chips = this.drawChips(chipTargets, W, H)
     this.drawLabels(labelSpots)
   }
 
-  /** Expanding rings around containers that just opened: the map acknowledging a new level. */
-  private drawPulses() {
+  /**
+   * One thin outline per card in play: white around the selection, the edge colour around the card
+   * stepped to with ] or [, and a faint one around the card under the pointer.
+   */
+  private drawOutlines() {
     const g = this.fxG
-    this.pulses = this.pulses.filter(p => this.time - p.t0 < 750)
-    for (const p of this.pulses) {
-      const u = (this.time - p.t0) / 750
-      const e = 1 - (1 - u) ** 3
-      const [x, y, w, h] = this.screenRect(p.node)
-      const grow = 6 + e * 46
-      g.roundRect(x - grow, y - grow, w + grow * 2, h + grow * 2, 14 + grow * 0.5)
-      g.stroke({ width: 2.5 * (1 - u) + 0.5, color: 0x7dd3fc, alpha: (1 - u) * 0.8 })
-    }
-  }
-
-  /** Targeting brackets: hover gets a thin set, selection locks on with a snap and breathes. */
-  private drawReticles() {
-    const g = this.fxG
-    const corners = (i: number, pad: number, len: number, width: number, color: number, alpha: number) => {
+    const line = (i: number, pad: number, width: number, color: number, alpha: number) => {
       const [x, y, w, h] = this.screenRect(i)
       if (w < 8 || x + w < -50 || y + h < -50 || x > this.cam.w + 50 || y > this.cam.h + 50) return
-      const L = Math.min(len, w * 0.3, h * 0.3)
-      const x0 = x - pad, y0 = y - pad, x1 = x + w + pad, y1 = y + h + pad
-      g.moveTo(x0, y0 + L).lineTo(x0, y0).lineTo(x0 + L, y0)
-      g.moveTo(x1 - L, y0).lineTo(x1, y0).lineTo(x1, y0 + L)
-      g.moveTo(x1, y1 - L).lineTo(x1, y1).lineTo(x1 - L, y1)
-      g.moveTo(x0 + L, y1).lineTo(x0, y1).lineTo(x0, y1 - L)
-      g.stroke({ width, color, alpha, cap: 'square' })
+      g.roundRect(x - pad, y - pad, w + pad * 2, h + pad * 2, 12 + pad).stroke({ width, color, alpha })
     }
-    if (this.hover > 0 && this.hover !== this.selected) corners(this.hover, 5, 18, 1.5, 0xcbd5e1, 0.7)
-    if (this.target > 0 && this.target !== this.selected) corners(this.target, 7 + Math.sin(this.time / 180) * 2, 22, 2, IN, 0.95)
-    if (this.selected > 0) {
-      const u = Math.min(1, (this.time - this.selectedAt) / 280)
-      const snap = 1 - (1 - u) ** 3
-      const pad = 8 + (1 - snap) * 60 + Math.sin(this.time / 260) * 2 * snap
-      corners(this.selected, pad, 28, 2.5, 0xfbbf24, 0.35 + 0.65 * snap)
-    }
-  }
-
-  /** The route as a lit path through the gutters, with numbered waypoints on the cards it visits. */
-  private drawRoute() {
-    const g = this.routeG
-    g.clear()
-    if (!this.route) { for (const m of this.markers) m.bg.visible = m.text.visible = false; return }
-    const stops: number[] = [this.route[0].from, ...this.route.map(h => h.to)]
-    const paths: number[][] = []
-    for (const h of this.route) {
-      const a = this.rep(h.from), b = this.rep(h.to)
-      if (a === b || this.tree.isAncestor(a, b) || this.tree.isAncestor(b, a)) continue
-      const world = h.reversed ? this.router.route(b, a) : this.router.route(a, b)
-      paths.push(world ? this.toScreen(world) : straight(this.screenRect(a), this.screenRect(b)))
-    }
-    for (const [width, alpha] of [[9, 0.18], [3, 0.95]] as const) {
-      for (const p of paths) { g.moveTo(p[0], p[1]); for (let k = 2; k < p.length; k += 2) g.lineTo(p[k], p[k + 1]) }
-      g.stroke({ width, color: ROUTE, alpha, join: 'round', cap: 'round' })
-    }
-    // Waypoint numbers: one per stop, on the card that stands for it now.
-    let k = 0
-    const seen = new Set<number>()
-    stops.forEach((n, i) => {
-      const r = this.rep(n)
-      if (seen.has(r) || !this.onScreen(r)) return
-      seen.add(r)
-      const [x, y, w] = this.screenRect(r)
-      const m = (this.markers[k] ??= this.makeChip())
-      const label = `${i + 1}`
-      if (m.text.text !== label) m.text.text = label
-      m.text.scale.set(13 / FONT_PX)
-      const cw = Math.max(22, m.text.width + 12), ch = 22
-      const cx = Math.min(Math.max(x + w / 2 - cw / 2, SAFE.left), this.cam.w - cw - SAFE.right), cy = Math.max(y - ch / 2, SAFE.top)
-      m.bg.position.set(cx, cy)
-      m.bg.width = cw; m.bg.height = ch
-      m.bg.tint = i === this.routeStep ? 0xffffff : ROUTE
-      m.bg.alpha = 1
-      m.text.tint = 0x052e16
-      m.text.position.set(cx + (cw - m.text.width) / 2, cy + (ch - 13 * 1.25) / 2)
-      m.bg.visible = m.text.visible = true
-      k++
-    })
-    for (let j = k; j < this.markers.length; j++) this.markers[j].bg.visible = this.markers[j].text.visible = false
-  }
-
-  /** Pins: a marker on the card, or at the screen edge pointing the way when it is off screen. */
-  private drawPins() {
-    const g = this.fxG
-    const W = this.cam.w, H = this.cam.h
-    this.pins.forEach((p, i) => {
-      const r = this.rep(p)
-      const [x, y, w, h] = this.screenRect(r)
-      const label = this.tree.els[p].title
-      if (this.onScreen(r) && w > 6) {
-        const mx = x + w - 4, my = y + 4, s = 9
-        g.poly([mx, my - s, mx + s * 0.8, my, mx, my + s, mx - s * 0.8, my]).fill({ color: PIN }).stroke({ width: 1.5, color: 0x1f0614 })
-        if (w > 120) this.pinLabel(i, label, mx + 12, my - 9, false)
-        else this.pinLabel(i, '', 0, 0, true)
-      } else {
-        // Off screen: clamp the direction to the target onto the screen border.
-        const cx = W / 2, cy = H / 2, tx = x + w / 2, ty = y + h / 2
-        const dx = tx - cx, dy = ty - cy
-        const k = Math.min((W / 2 - 60) / Math.abs(dx || 1e-9), (H / 2 - 70) / Math.abs(dy || 1e-9))
-        const ex = cx + dx * k, ey = cy + dy * k
-        const a = Math.atan2(dy, dx)
-        g.poly([ex + Math.cos(a) * 14, ey + Math.sin(a) * 14, ex + Math.cos(a + 2.4) * 9, ey + Math.sin(a + 2.4) * 9, ex + Math.cos(a - 2.4) * 9, ey + Math.sin(a - 2.4) * 9]).fill({ color: PIN })
-        this.pinLabel(i, `◆ ${label}`, ex - Math.cos(a) * 18, ey - Math.sin(a) * 18, false, true)
-      }
-    })
-    for (let j = this.pins.length; j < this.pinChips.length; j++) this.pinChips[j].bg.visible = this.pinChips[j].text.visible = false
-  }
-
-  private pinChips: Chip[] = []
-  private pinLabel(i: number, label: string, x: number, y: number, hide: boolean, centred = false) {
-    const c = (this.pinChips[i] ??= this.makeChip())
-    if (hide || !label) { c.bg.visible = c.text.visible = false; return }
-    if (c.text.text !== label) c.text.text = shortText(label, 40)
-    c.text.scale.set(12 / FONT_PX)
-    const cw = c.text.width + 14, ch = 20
-    const px = Math.min(Math.max(centred ? x - cw / 2 : x, SAFE.left), this.cam.w - cw - SAFE.right)
-    const py = Math.min(Math.max(centred ? y - ch / 2 : y, SAFE.top), this.cam.h - ch - SAFE.bottom)
-    c.bg.position.set(px, py)
-    c.bg.width = cw; c.bg.height = ch
-    c.bg.tint = mix(PIN, BG, 0.25)
-    c.bg.alpha = 1
-    c.text.tint = 0x1f0614
-    c.text.position.set(px + 7, py + (ch - 12 * 1.25) / 2)
-    c.bg.visible = c.text.visible = true
+    if (this.hover > 0 && this.hover !== this.selected) line(this.hover, 2, 1, 0xcbd5e1, 0.6)
+    if (this.target > 0 && this.target !== this.selected) line(this.target, 3, 2, this.endKind[this.target] === 2 ? IN : OUT, 0.95)
+    if (this.selected > 0) line(this.selected, 3, 2, 0xffffff, 0.95)
   }
 
   /** Removes everything this renderer drew, when a new model version replaces it. */
@@ -1032,7 +877,7 @@ export class Renderer {
 
   /** Whether card i was drawn dimmed last frame (out of the selection's play). */
   dimmed(i: number): boolean {
-    return (this.selected > 0 || !!this.route) && this.related[i] !== this.frameNo
+    return this.selected > 0 && this.related[i] !== this.frameNo
   }
 
   /** Whether an arrow to or from the focus ended at card i last frame. */

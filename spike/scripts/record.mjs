@@ -132,7 +132,7 @@ const scenes = {
     await s.select(FILE)
     await s.hold(3200)
   }) },
-  // Far jumps between distant elements: pull back, glide, dive in, with warp streaks.
+  // Far jumps between distant elements: pull back, glide, dive in.
   'acme-warp': () => record('acme-warp', 'acme', async s => {
     await s.fly('acme.ordering.checkout')
     await s.land(200)
@@ -154,8 +154,8 @@ const scenes = {
     await s.land(1000)
     for (const l of ['size', 'coupling', 'churn', 'structure']) { await s.lens(l); await s.hold(1800) }
   }) },
-  // The game-style controls in use: palette travel, target cycling, walk, back, the command
-  // wheel, a route from the wheel with its waypoints, and the controls screen.
+  // The controls in use: search, stepping through what a card uses, walking there, back, the
+  // context menu and the controls screen.
   'acme-controls': () => record('acme-controls', 'acme', async s => {
     await s.hold(700)
     await s.key('k', ['Control'])
@@ -171,26 +171,8 @@ const scenes = {
     await s.move(rx, ry, 500)
     await s.click('right')
     await s.hold(400)
-    await s.move(rx + 92, ry - 40, 350)
     await s.hold(900)
     await s.key('Escape')
-    await s.select('acme.storefront.web')
-    await s.fly('acme'); await s.land(500)
-    const [dx, dy] = await s.at('acme.payments')
-    await s.move(dx, dy, 600)
-    await s.click('right')
-    await s.hold(500)
-    const [ix, iy] = await s.centreOf('.radial .item', 'Route here')
-    await s.move(ix, iy, 350)
-    await s.click()
-    await s.land(1600)
-    for (const k of [1, 2]) {
-      const [px, py] = await s.centreOf(`.rp-stop:nth-of-type(${k + 1})`)
-      await s.move(px, py, 300)
-      await s.click()
-      await s.land(1000)
-    }
-    await s.key('Escape'); await s.key('Escape')
     await s.key('?'); await s.hold(1800)
     await s.key('Escape'); await s.hold(400)
   }),

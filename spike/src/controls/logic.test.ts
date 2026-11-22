@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson } from '../model'
-import { elementScore, findRoute, fuzzy, History } from './logic'
+import { elementScore, fuzzy, History } from './logic'
 
 const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
 // web → api → db, and ops → api (so db reaches ops only against direction).
@@ -15,41 +15,6 @@ const model: ModelJson = {
 }
 const tree = new Tree(model)
 const id = (s: string) => tree.byId.get(s)!
-
-describe('findRoute', () => {
-  it('follows relations in their direction', () => {
-    const r = findRoute(tree, id('web'), id('svc.db'))!
-    expect(r.map(h => [tree.els[h.from].id, tree.els[h.to].id, h.title, h.reversed])).toEqual([
-      ['web', 'svc.api', 'calls', false],
-      ['svc.api', 'svc.db', 'queries', false],
-    ])
-  })
-
-  it('treats a container as everything inside it', () => {
-    expect(findRoute(tree, id('web'), id('svc'))!.length).toBe(1)
-  })
-
-  it('walks backwards only when no directed path exists', () => {
-    const r = findRoute(tree, id('svc.db'), id('ops'))!
-    expect(r.every(h => h.reversed)).toBe(true)
-    expect(r.length).toBe(2)
-  })
-
-  it('prefers a longer path along the arrows to a short one against them', () => {
-    const chain: ModelJson = {
-      name: 'c',
-      elements: ['x', 'y', 'z', 'w'].map(n => el(n, null)),
-      relations: [{ source: 'x', target: 'y', title: '' }, { source: 'y', target: 'z', title: '' }, { source: 'z', target: 'w', title: '' }, { source: 'w', target: 'x', title: '' }],
-    }
-    const t = new Tree(chain)
-    const r = findRoute(t, t.byId.get('x')!, t.byId.get('w')!)!
-    expect(r.map(h => h.reversed)).toEqual([false, false, false])
-  })
-
-  it('returns null when nothing connects', () => {
-    expect(findRoute(tree, id('web'), id('lone'))).toBeNull()
-  })
-})
 
 describe('History', () => {
   it('goes back and forward and drops forward on a new jump', () => {

@@ -6,9 +6,8 @@ import type { Minimap } from '../minimap'
 import type { Tree } from '../model'
 import type { PanelRows } from '../details'
 import type { Renderer } from '../render'
-import type { Sound } from '../sound'
-import { findRoute, History, same, type View } from './logic'
-import { Help, Palette, Radial, RoutePanel, Toast, Tooltips, type Command } from './ui'
+import { History, same, type View } from './logic'
+import { Help, Menu, Palette, Toast, Tooltip, type Command } from './ui'
 
 export interface Ctx {
   app: Application
@@ -17,9 +16,9 @@ export interface Ctx {
   cam: Camera
   renderer: Renderer
   minimap: Minimap
-  sound: Sound
   lenses: Lens[]
-  model: string
+  /** The Connections view: `.` and `,` walk a level by rank there. */
+  connections: boolean
   setLens: (name: LensName) => void
   select: (i: number) => void
   /** Flight to an element, framing it (no history; use `go`). */
@@ -34,23 +33,24 @@ export interface Ctx {
   now: () => number
 }
 
+/** Keys typed into a field, or into a dialog over the map, are not map shortcuts. */
+const notForMap = (e: KeyboardEvent) => {
+  const t = e.target as HTMLElement | null
+  return !!t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable || !!t.closest?.('[role=dialog], [role=menu]'))
+}
+
 /**
- * Game-style controls, kept to a few: the mouse and the command wheel, the palette, back, target
- * cycling and Esc. Routes and pins live behind the wheel and the palette rather than on keys.
+ * The controls, kept to a few: the mouse, search, Back and Parent, stepping through a selection's
+ * relations, and Esc. One action per key; everything else is in search.
  */
 export function installControls(c: Ctx) {
-  const { cam, sound } = c
+  const { cam } = c
   // The model can be swapped live; every closure below reads these, and swap() reassigns them.
   let tree = c.tree, world = c.world, renderer = c.renderer
   const toast = new Toast()
   const history = new History()
-  const help = new Help()
-  const radial = new Radial()
-  const routePanel = new RoutePanel(tree)
-  const pinKey = `zoom:pins:${c.model}`
-  const loadPins = () => { try { renderer.pins = (JSON.parse(localStorage.getItem(pinKey) ?? '[]') as string[]).map(id => tree.byId.get(id) ?? -1).filter(n => n > 0) } catch { /* none */ } }
-  loadPins()
-  const savePins = () => { try { localStorage.setItem(pinKey, JSON.stringify(renderer.pins.map(n => tree.els[n].id))) } catch { /* private mode */ } }
+  const help = new Help(c.connections)
+  const menu = new Menu()
 
   const view = (): View => ({ x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected > 0 ? tree.els[renderer.selected].id : null })
   /**
@@ -66,25 +66,47 @@ export function installControls(c: Ctx) {
   }
   /** Records the place being left: a pending trip's start first, then here. */
   const leave = () => { settle(true); history.push(view(), cam.w) }
-  /** Every jump records where you were, so Backspace brings you back. */
-  const go = (i: number) => {
-    leave()
-    c.fit(i)
-    sound.whoosh(cam.flightMs / 1000)
-  }
+  /** Every jump records where you were, so Back brings you back. */
+  const go = (i: number) => { leave(); c.fit(i) }
   /** Jump that also selects the destination; the view left behind keeps its own selection. */
-  const goSelect = (i: number) => {
-    leave()
-    c.select(i)
-    c.fit(i)
-    sound.whoosh(cam.flightMs / 1000)
+  const goSelect = (i: number) => { leave(); c.select(i); c.fit(i) }
+  const goView = (v: View) => {
+    cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
+    c.select(v.selected ? tree.byId.get(v.selected) ?? -1 : -1)
   }
+  const back = () => { settle(true); const v = history.goBack(view()); if (v) { goView(v); toast.show('Back', 'Alt+→ forward') } else toast.show('No earlier place') }
+  const forward = () => { const v = history.goForward(view()); if (v) goView(v) }
+  /** Up one level from where you are: the parent of the selection, else of the place on screen. */
+  const parent = () => {
+    const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0
+    const from = renderer.selected > 0 && !path.includes(renderer.selected) ? renderer.selected : here
+    if (from <= 0) return toast.show('This is the whole map')
+    const up = tree.parent[from]
+    goSelect(up)
+    if (up <= 0) c.select(-1)
+  }
+  /** Frames several elements at once. */
+  const frame = (nodes: number[]) => {
+    const r = world.rect
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    for (const n of nodes) { x0 = Math.min(x0, r[n * 4]); y0 = Math.min(y0, r[n * 4 + 1]); x1 = Math.max(x1, r[n * 4] + r[n * 4 + 2]); y1 = Math.max(y1, r[n * 4 + 1] + r[n * 4 + 3]) }
+    cam.flyTo(x0, y0, x1 - x0, y1 - y0, c.now(), 0.7)
+  }
+  /** Whether card n is wholly on screen, clear of the panels. */
+  const inView = (n: number) => {
+    const [x, y, w, h] = renderer.screenRectOf(n)
+    const panel = document.getElementById('details')
+    const right = panel && !panel.hidden ? panel.getBoundingClientRect().left : cam.w
+    return x >= 0 && y >= 0 && x + w <= right && y + h <= cam.h
+  }
+
   /**
-   * Walks a level from its most connected card to its least: `.` selects and frames the next by
-   * importance, `,` the one before. With nothing selected it starts at the #1 of the level on screen.
+   * Connections view: `.` selects the next card of the level by rank, `,` the one before, staying
+   * at the level; the toast says why it ranks there. With nothing selected it starts at the #1.
    */
   let rankOf: { tree: Tree; rank: Int32Array; weight: Float64Array } | null = null
   const byImportance = (step: 1 | -1) => {
+    if (!c.connections) return toast.show('. and , step through a level by connections in the Connections view')
     if (rankOf?.tree !== tree) rankOf = { tree, weight: importance(tree), rank: ranks(tree, rankKey(tree)) }
     const { rank, weight } = rankOf
     const sel = renderer.selected
@@ -94,38 +116,17 @@ export function installControls(c: Ctx) {
     if (!siblings.length) return
     const at = sel > 0 ? siblings.indexOf(sel) : -1
     const next = siblings[at < 0 ? 0 : (at + step + siblings.length) % siblings.length]
-    goSelect(next)
+    leave()
+    c.select(next)
+    if (!inView(next)) frame([next])
     toast.show(`#${rank[next]} of ${siblings.length} · ${tree.els[next].title} · ${weight[next]} relation${weight[next] === 1 ? '' : 's'}`, '. next · , back')
   }
-  const goView = (v: View) => {
-    cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
-    sound.whoosh(cam.flightMs / 1000)
-    c.select(v.selected ? tree.byId.get(v.selected) ?? -1 : -1)
-  }
-  const back = () => { settle(true); const v = history.goBack(view()); if (v) { goView(v); toast.show('Back', 'Alt+→ forward') } else toast.show('No earlier place') }
-  const forward = () => { const v = history.goForward(view()); if (v) goView(v) }
-  /** Frames several elements at once. */
-  const frame = (nodes: number[]) => {
-    const r = world.rect
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    for (const n of nodes) { x0 = Math.min(x0, r[n * 4]); y0 = Math.min(y0, r[n * 4 + 1]); x1 = Math.max(x1, r[n * 4] + r[n * 4 + 2]); y1 = Math.max(y1, r[n * 4 + 1] + r[n * 4 + 3]) }
-    cam.flyTo(x0, y0, x1 - x0, y1 - y0, c.now(), 0.7)
-  }
-  /** The element commands act on: the selection, else what is under the screen centre. */
-  const subject = () => (renderer.selected > 0 ? renderer.selected : renderer.pick(cam.w / 2, cam.h / 2))
 
-  // --- Target cycling: walk the details panel's rows without losing the selection.
+  // --- Stepping through the details panel's rows without losing the selection.
   let cycle: { dir: 'out' | 'in'; list: number[]; k: number } | null = null
-  /** Whether card n is wholly on screen, clear of the panels. */
-  const inView = (n: number) => {
-    const [x, y, w, h] = renderer.screenRectOf(n)
-    const panel = document.getElementById('details')
-    const right = panel && !panel.hidden ? panel.getBoundingClientRect().left : cam.w
-    return x >= 0 && y >= 0 && x + w <= right && y + h <= cam.h
-  }
   const cycleTarget = (dir: 'out' | 'in', step: number) => {
     const sel = renderer.selected
-    if (sel <= 0) return toast.show('Select a card first: ] and [ walk what it uses and what uses it')
+    if (sel <= 0) return toast.show('Select a card first: ] and [ step through what it uses and what uses it')
     const rows = c.rows(), list = dir === 'out' ? rows.uses : rows.usedBy
     if (!list.length) return toast.show(dir === 'out' ? `${tree.els[sel].title} uses nothing on this map` : `Nothing on this map uses ${tree.els[sel].title}`)
     cycle = cycle && cycle.dir === dir && cycle.list.join() === list.join() ? cycle : { dir, list, k: -1 }
@@ -135,75 +136,29 @@ export function installControls(c: Ctx) {
     rows.mark(dir === 'out' ? 'uses' : 'usedBy', cycle.k)
     // Both cards already in view: the camera stays, the panel row and the card light up.
     if (!inView(sel) || !inView(n)) frame([sel, n])
-    sound.blip(dir === 'out' ? 740 : 520, 0.05)
     toast.show(`${dir === 'out' ? 'Uses' : 'Used by'} ${cycle.k + 1}/${list.length} · ${tree.els[n].title}`, 'Enter goes there')
   }
   const clearTarget = () => { if (cycle) c.rows().mark(cycle.dir === 'out' ? 'uses' : 'usedBy', -1); renderer.target = -1; cycle = null }
 
-  // --- Routes: pick a destination, then step along waypoints.
-  const showRoute = () => routePanel.show(renderer.route, renderer.routeStep)
-  const routeTo = (from: number, to: number) => {
-    const hops = findRoute(tree, from, to)
-    if (!hops) return toast.show(`No path from ${tree.els[from].title} to ${tree.els[to].title}`)
-    renderer.route = hops
-    renderer.routeStep = -1
-    clearTarget()
-    showRoute()
-    frame([hops[0].from, ...hops.map(h => h.to)])
-    toast.show(`Route: ${hops.length} hop${hops.length === 1 ? '' : 's'}${hops.some(h => h.reversed) ? ' (some against the arrows)' : ''}`, 'click a stop to go there')
-  }
-  const stepRoute = (k: number) => {
-    const r = renderer.route
-    if (!r) return
-    const stops = [r[0].from, ...r.map(h => h.to)]
-    renderer.routeStep = Math.max(0, Math.min(stops.length - 1, k))
-    showRoute()
-    go(stops[renderer.routeStep])
-  }
-  routePanel.onStep = stepRoute
-  const clearRoute = () => { renderer.route = null; renderer.routeStep = -1; showRoute() }
-  // --- Pins.
-  const togglePin = (n: number) => {
-    if (n <= 0) return
-    const existing = renderer.pins.indexOf(n)
-    if (existing >= 0) renderer.pins.splice(existing, 1)
-    else { renderer.pins.push(n); sound.blip(980, 0.06) }
-    savePins()
-    if (existing >= 0) toast.show(`Unpinned ${tree.els[n].title}`)
-    else toast.show(`Pinned ${tree.els[n].title}`, 'Ctrl+K finds it again')
-  }
-
-  // --- Palette.
+  // --- Search.
   const commands = (): Command[] => [
-    ...renderer.pins.map(n => ({ name: `Pin: ${tree.els[n].title}`, hint: 'jump', run: () => go(n) })),
-    ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Lens: ${name[0].toUpperCase()}${name.slice(1)}`, run: () => c.setLens(name as LensName) })),
+    ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Colour by ${name === 'structure' ? 'structure' : name}`, run: () => c.setLens(name as LensName) })),
     { name: 'Whole map', run: () => go(0) },
     { name: 'Back', hint: 'Backspace', run: back },
-    { name: 'Clear route', hint: 'Esc', run: clearRoute },
-    { name: 'Next by importance (.)', run: () => byImportance(1) },
-    { name: 'Previous by importance (,)', run: () => byImportance(-1) },
-    { name: 'Toggle sound', run: () => { sound.toggle() } },
-    { name: 'Toggle frame stats', run: () => { const e = document.getElementById('stats'); if (e) e.hidden = !e.hidden } },
+    { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
-  const palette = new Palette(tree, commands, (i, shift) => {
-    if (shift && renderer.selected > 0) return routeTo(renderer.selected, i)
-    goSelect(i)
-  })
-
+  const palette = new Palette(tree, commands, i => goSelect(i))
   document.getElementById('travel')?.addEventListener('click', () => palette.open())
-  const tooltips = new Tooltips(tree, i => renderer.relationsOf(i), goSelect, c.now)
+  document.getElementById('help')?.addEventListener('click', () => help.toggle(true))
+  const tooltip = new Tooltip(tree, i => { const r = renderer.relationsOf(i); return { uses: new Set(r.out.map(x => x.other)).size, usedBy: new Set(r.inn.map(x => x.other)).size } })
 
   // --- Mouse.
   const canvas = c.app.canvas
-  let wheeledAt: { x: number; y: number } | null = null
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
-    radial.close()
-    // A tooltip is about the card under a still cursor; zooming moves on from it, and none opens
-    // until the pointer moves again.
-    tooltips.closeAll()
-    wheeledAt = { x: e.offsetX, y: e.offsetY }
+    menu.close()
+    tooltip.close()
     moved()
     const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
     // Over a file that fills much of the screen the wheel goes faster: between there and readable
@@ -213,11 +168,12 @@ export function installControls(c: Ctx) {
     cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * (intoCode && d < 0 ? 0.0038 : 0.0022)), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
   }, { passive: false })
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
-  let rightHold: { x: number; y: number; t: number } | null = null
   canvas.addEventListener('pointerdown', e => {
+    // Any press ends a flight where it is: the reader has taken over.
+    cam.stop()
+    canvas.focus({ preventScroll: true })
     if (e.button === 3) { e.preventDefault(); return back() }
     if (e.button === 4) { e.preventDefault(); return forward() }
-    if (e.button === 2) { rightHold = { x: e.clientX, y: e.clientY, t: performance.now() }; return }
     if (e.button !== 0) return
     canvas.setPointerCapture(e.pointerId)
     drag = { x: e.clientX, y: e.clientY, t: performance.now(), vx: 0, vy: 0, moved: 0 }
@@ -235,45 +191,31 @@ export function installControls(c: Ctx) {
     drag.x = e.clientX; drag.y = e.clientY; drag.t = t
   })
   window.addEventListener('pointerup', e => {
-    if (e.button === 2 && rightHold && radial.isOpen && performance.now() - rightHold.t > 250) radial.release(e.clientX, e.clientY)
-    if (e.button === 2) rightHold = null
     if (e.button !== 0 || !drag) return
     if (drag.moved < 5) {
-      const hit = renderer.pick(e.offsetX, e.offsetY)
       clearTarget()
-      // Clicking the selection keeps it (it is usually what travel just brought you to); Esc or empty space clears.
-      // The details panel now says what the tooltip said; it goes.
-      tooltips.closeAll()
-      c.select(hit)
+      tooltip.close()
+      c.select(renderer.pick(e.offsetX, e.offsetY))
     } else if (performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
   })
   canvas.addEventListener('pointerleave', () => { renderer.pointer = null })
-  // Double-click flies into a card; into a file, straight to its code at a size that reads.
-  canvas.addEventListener('dblclick', e => {
-    const n = renderer.pick(e.offsetX, e.offsetY)
+  /** Go into a card; a file opens its code. Double-click, Enter and the panel's buttons do the same. */
+  const enter = (n: number) => {
     if (n > 0 && !tree.children[n].length && tree.els[n].metadata?.path) c.read(n)
     else go(n)
-  })
+  }
+  canvas.addEventListener('dblclick', e => enter(renderer.pick(e.offsetX, e.offsetY)))
   canvas.addEventListener('contextmenu', e => {
     e.preventDefault()
-    tooltips.closeAll()
+    tooltip.close()
     const n = renderer.pick(e.offsetX, e.offsetY)
-    if (n <= 0) return radial.open(e.clientX, e.clientY, 'Map', [
-      { label: 'Whole map', run: () => go(0) },
-      { label: 'Back', key: '⌫', run: back },
-      { label: 'Travel to…', key: 'Ctrl K', run: () => palette.open() },
-      { label: 'Controls', key: '?', run: () => help.toggle(true) },
-    ])
-    const sel = renderer.selected
-    const pinned = renderer.pins.includes(n)
-    radial.open(e.clientX, e.clientY, tree.els[n].title, [
-      { label: 'Fly in', key: '2× click', run: () => go(n) },
-      { label: sel === n ? 'Deselect' : 'Select', key: 'Click', run: () => c.select(sel === n ? -1 : n) },
-      { label: 'Calls…', key: ']', run: () => { c.select(n); cycleTarget('out', 1) } },
-      { label: 'Route here', disabled: sel <= 0 || sel === n, run: () => routeTo(sel, n) },
-      { label: 'Called by…', key: '[', run: () => { c.select(n); cycleTarget('in', 1) } },
-      { label: pinned ? 'Unpin' : 'Pin', run: () => togglePin(n) },
+    if (n <= 0) return menu.open(e.clientX, e.clientY, tree.els[0].title, [{ label: 'Whole map', run: () => go(0) }, { label: 'Back', key: '⌫', run: back }])
+    c.select(n)
+    const file = tree.els[n].metadata?.path
+    menu.open(e.clientX, e.clientY, tree.els[n].title, [
+      { label: file ? 'Read code' : 'Go in', key: 'Enter', run: () => enter(n) },
+      ...(file ? [{ label: 'Copy path', run: () => void navigator.clipboard?.writeText(file).then(() => toast.show(`Copied ${file}`), () => {}) }] : []),
     ])
   })
   c.minimap.onPick = (wx, wy) => { leave(); cam.flyTo(wx - cam.w / cam.z / 2, wy - cam.h / cam.z / 2, cam.w / cam.z, cam.h / cam.z, c.now(), 1) }
@@ -281,74 +223,70 @@ export function installControls(c: Ctx) {
 
   // --- Keyboard.
   const held = new Set<string>()
-  const typing = (e: KeyboardEvent) => e.target instanceof HTMLInputElement
   window.addEventListener('keydown', e => {
-    if (typing(e)) return
+    if (notForMap(e) || help.isOpen) return
     const k = e.key.toLowerCase()
-    held.add(k)
     if ((e.ctrlKey || e.metaKey) && k === 'k') { e.preventDefault(); return palette.open() }
+    if (e.ctrlKey || e.metaKey) return
+    if (k === 'escape') {
+      // One layer at a time: a menu, a stepped-to card, then the selection. Never a move.
+      if (menu.isOpen) return menu.close()
+      if (renderer.target > 0) return clearTarget()
+      if (renderer.selected > 0) return c.select(-1)
+      return
+    }
+    // The rest are map keys: they act only when focus is on the map, not on a button or the panel.
+    const t = e.target as HTMLElement | null
+    if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') return
+    held.add(k)
     if (k === '/') { e.preventDefault(); return palette.open() }
-    if (k === '?') return help.toggle()
+    if (k === '?') return help.toggle(true)
     if (k === 'backspace' || (e.altKey && k === 'arrowleft')) { e.preventDefault(); return back() }
     if (e.altKey && k === 'arrowright') { e.preventDefault(); return forward() }
+    if (e.altKey && k === 'arrowup') { e.preventDefault(); return parent() }
     if (k === '.' || k === ',') return byImportance(k === '.' ? 1 : -1)
     if (k === ']') return cycleTarget('out', e.shiftKey ? -1 : 1)
     if (k === '[') return cycleTarget('in', e.shiftKey ? -1 : 1)
     if (k === 'enter') {
-      if (renderer.target > 0) { const t = renderer.target; clearTarget(); goSelect(t); return toast.show(`Walked to ${tree.els[t].title}`, '] [ to look around') }
-      const cur = subject(); if (cur > 0) go(cur)
-      return
-    }
-    if (k === 'escape') {
-      // One layer at a time, outermost first.
-      if (radial.isOpen) return radial.close()
-      if (help.isOpen) return help.toggle(false)
-      if (renderer.target > 0) return clearTarget()
-      if (renderer.route) return clearRoute()
-      if (renderer.selected > 0) return c.select(-1)
-      const path = renderer.breadcrumb()
-      return go(path.length > 1 ? path[path.length - 2] : 0)
+      if (renderer.target > 0) { const n = renderer.target; clearTarget(); return goSelect(n) }
+      if (renderer.selected > 0) enter(renderer.selected)
     }
   })
   window.addEventListener('keyup', e => held.delete(e.key.toLowerCase()))
   window.addEventListener('blur', () => held.clear())
 
-  /** Held arrow keys move the camera with a little acceleration, like a ship; + and - zoom. */
+  /** Held arrow keys move the camera with a little acceleration; + and - zoom. */
   let thrust = 0
   const steer = (dt: number) => {
+    if (held.has('alt')) return
     const ax = (held.has('arrowright') ? 1 : 0) - (held.has('arrowleft') ? 1 : 0)
     const ay = (held.has('arrowdown') ? 1 : 0) - (held.has('arrowup') ? 1 : 0)
     const az = (held.has('+') || held.has('=') ? 1 : 0) - (held.has('-') ? 1 : 0)
     thrust = ax || ay || az ? Math.min(1, thrust + dt / 350) : 0
-    if (ax || ay || az) moved()
+    if (ax || ay || az) { moved(); cam.stop() }
     if (ax || ay) cam.panBy(-ax * 900 * thrust * dt / 1000, -ay * 900 * thrust * dt / 1000)
     if (az) cam.zoomAt(cam.w / 2, cam.h / 2, Math.exp(az * 1.8 * thrust * dt / 1000), c.zoomLimit(cam.w / 2, cam.h / 2), c.zoomFloor())
   }
 
   return {
-    /** Per frame: steering and tooltips. */
+    /** Per frame: steering, settling a hand-driven trip, and the preview of a card too small to read. */
     tick(dt: number, now: number) {
       steer(dt)
       settle()
-      const p = renderer.pointer
-      // A tooltip sums a card up from outside; once you are inside one (it fills most of the screen) it only covers it.
-      const inside = renderer.hover > 0 && world.rect[renderer.hover * 4 + 2] * cam.z > cam.w * 0.8
-      // The selected card has the details panel; a tooltip on it would only repeat it.
-      const selected = renderer.hover > 0 && renderer.hover === renderer.selected
-      if (wheeledAt && p && Math.hypot(p[0] - wheeledAt.x, p[1] - wheeledAt.y) > 6) wheeledAt = null
-      tooltips.update(p ? renderer.hover : -1, p ? p[0] : 0, p ? p[1] : 0, now, !!drag || radial.isOpen || palette.isOpen || cam.flying || inside || selected || !!wheeledAt)
+      const p = renderer.pointer, h = renderer.hover
+      // Only a card too small to carry its own name and counts gets a preview.
+      const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
+      tooltip.update(p && small && !drag && !cam.flying && !palette.isOpen && !menu.isOpen ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
-    go, goSelect, back, forward, routeTo, stepRoute, cycleTarget, togglePin, palette, radial, help, toast,
-    /** Flies to a view (a camera and a selection), recording where you were so Backspace returns. */
+    go, goSelect, back, forward, parent, cycleTarget, palette, help, menu, toast,
+    /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },
-    /** Points every control at a new model version; the caller carries selection, route and target over. */
+    /** Points every control at a new model version; the caller carries the selection over. */
     swap(next: { tree: typeof tree; world: typeof world; renderer: typeof renderer }) {
       tree = next.tree; world = next.world; renderer = next.renderer
-      palette.tree = tree; tooltips.tree = tree; routePanel.tree = tree
-      tooltips.closeAll()
-      loadPins()
+      palette.tree = tree; tooltip.tree = tree
+      tooltip.close()
       cycle = null
-      routePanel.show(renderer.route, renderer.routeStep)
     },
   }
 }

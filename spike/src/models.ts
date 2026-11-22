@@ -52,4 +52,9 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
 // One listener for the page: a click elsewhere or Esc closes the model menu.
 const close = () => { for (const m of document.querySelectorAll<HTMLElement>('.model-menu')) m.hidden = true }
 addEventListener('click', e => { if (!(e.target as Element).closest?.('.model-menu')) close() })
-addEventListener('keydown', e => { if (e.key === 'Escape') close() })
+// Esc closes an open menu and nothing else: it does not also clear the map's selection.
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || ![...document.querySelectorAll<HTMLElement>('.model-menu')].some(m => !m.hidden)) return
+  close()
+  e.stopImmediatePropagation()
+}, true)

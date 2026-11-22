@@ -27,7 +27,7 @@ export class LensBar {
     ramp.style.background = `linear-gradient(90deg, ${[0, 0.2, 0.4, 0.6, 0.8, 1].map(v => hex(heatColor(v))).join(', ')})`
     this.legend.append(el('span', 'lens-label'), ramp, el('span', 'lens-range'))
     this.root.append(this.legend)
-    document.getElementById('top')!.insertBefore(this.root, document.getElementById('sound'))
+    document.getElementById('top')!.append(this.root)
   }
 
   show(active: Lens | null) {

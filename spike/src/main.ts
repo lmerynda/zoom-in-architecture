@@ -12,7 +12,6 @@ import { renderModelTabs } from './models'
 import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 import { OPEN_A, Renderer } from './render'
-import { Sound } from './sound'
 import { synthetic } from './synthetic'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -112,6 +111,9 @@ async function main() {
   const app = new Application()
   await app.init({ resizeTo: window, background: '#04060c', antialias: true, autoDensity: true, resolution: devicePixelRatio, preference: 'webgl' })
   $('stage').appendChild(app.canvas)
+  // The map takes keyboard focus like any control, so its keys act only when it has it.
+  app.canvas.tabIndex = 0
+  app.canvas.setAttribute('aria-label', 'Map: arrow keys move, + and − zoom, ? lists the controls')
   Renderer.installFont()
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
@@ -123,8 +125,11 @@ async function main() {
   const minimap = new Minimap(minimapEl, tree, world)
   showIntro()
   const code = new CodeView($('code'), modelName, tree)
-  const sound = new Sound()
-  renderer.onOpen = () => sound.chime()
+  // Reduced motion: no flights, the view cuts to where it goes.
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  const motion = () => { cam.maxFlightMs = reduced.matches ? 0 : 700 }
+  motion()
+  reduced.addEventListener('change', motion)
 
   // The clock: real time normally; a recorder can switch to manual and step frames exactly.
   let manual = false, simNow = performance.now()
@@ -253,7 +258,6 @@ async function main() {
   const showDetails = () => { rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected)) }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
-    if (i > 0) sound.select()
     showDetails()
     // The panel opens on the right; a selected card under it glides left to clear it, at the same
     // zoom. It waits out a double-click, so a second click still lands on the card it aimed at.
@@ -280,7 +284,7 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows })
   resize()
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
@@ -318,15 +322,10 @@ async function main() {
     const remap = (i: number) => (i > 0 ? next.byId.get(tree.els[i].id) ?? -1 : -1)
     const nextRenderer = new Renderer(app, next, live, cam)
     nextRenderer.ranking = rankFor(next)
-    nextRenderer.onOpen = () => sound.chime()
     nextRenderer.hud = prev.hud
     nextRenderer.pointer = prev.pointer
     nextRenderer.selected = remap(prev.selected)
     nextRenderer.target = remap(prev.target)
-    if (prev.route) {
-      const hops = prev.route.map(h => ({ ...h, from: remap(h.from), to: remap(h.to) }))
-      if (hops.every(h => h.from > 0 && h.to > 0)) { nextRenderer.route = hops; nextRenderer.routeStep = prev.routeStep }
-    }
     const t = now()
     for (const i of diff.changed) nextRenderer.flash.set(i, { color: 0xfbbf24, t0: t })
     for (const i of diff.added) nextRenderer.flash.set(i, { color: 0x4ade80, t0: t })
@@ -426,8 +425,8 @@ async function main() {
     measureHud()
   }, 250)
 
-  // Frame stats are for developers: shown while loading, then behind the palette's Toggle frame stats.
-  $('stats').hidden = true
+  // Frame stats are for developers: shown while loading, then only with ?stats in the address.
+  $('stats').hidden = !new URLSearchParams(location.search).has('stats')
   const gl = (app.renderer as unknown as { gl?: WebGL2RenderingContext }).gl
   const dbg = gl?.getExtension('WEBGL_debug_renderer_info')
   Object.assign(window, {

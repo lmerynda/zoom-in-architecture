@@ -100,22 +100,22 @@ Two scripts check this end to end:
 
 ## Controls
 
-Controls borrow from games. Press `?` in the app for the full sheet.
-
-Six keys plus the mouse; everything else is in the command wheel or the palette.
+A few controls, each doing one thing. Press `?` or the Help button in the app for the full sheet and what the colours mean.
 
 | Control | Does |
 |---|---|
-| Wheel, drag, click, double-click | Zoom at the cursor, pan, select (out in amber, in in cyan), fly in |
-| Right-click a card | Command wheel: fly in, select, calls, called by, route here (from the selection), pin; or hold right, flick, release |
-| `Ctrl+K` or `/` | Travel to any element (by title, id, feature, then description or file path), pin or command (lenses, sound, clear route); `Shift+Enter` routes there from the selection; finding nothing, it offers the map's features |
-| `Backspace` | Back to the last place; `Alt+→` and the mouse buttons go back and forward |
-| `]` / `[` | Look at what the selection calls / what calls it, with both framed; `Enter` goes there |
-| `.` / `,` | Next / previous card in the level by importance (relations crossing its boundary), most connected first |
-| `Esc` | Closes the innermost thing first: wheel, help, target, route, selection, then goes up a level |
-| `?` | The controls screen |
+| Wheel, drag, click | Zoom at the pointer, pan, select (what it uses in amber, what uses it in cyan) |
+| Double-click, `Enter` | Go into a card; on a file, read its code where its part starts |
+| Right-click a card | A short menu: go in or read code, copy the file's path |
+| `Ctrl+K` or `/` | Search the map by title, id or feature, then description or file path; `>` lists commands (colour by a lens, whole map, back, controls) |
+| `Backspace` or `Alt+←` | Back to the previous place, including where a wheel, drag or arrow-key trip started; `Alt+→` and the mouse buttons go forward |
+| `Alt+↑` | Up to the parent |
+| `]` / `[` | Step through the details panel's Uses / Used by rows, in its order; the camera moves only if a card is out of view; `Enter` goes there |
+| `.` / `,` | Connections view only: next / previous card of the level by rank, with why it ranks there |
+| `Esc` | Closes the top layer (a menu, the card stepped to), then clears the selection; it never moves the view |
+| `?` | The controls sheet, a dialog |
 
-Also: hovering and holding still locks a tooltip whose names open their own tooltips; a route's stops are clickable in its panel; zooming past a file card shows its source (the wheel stops once it reads comfortably), coloured, with cited lines in amber and the graph's marked lines tagged with their kind; a relation that a map link backs lists its cited code lines (two, then "+N more"), and clicking one opens its file at that line, and one whose line no longer resolves says so; pinned cards point the way from the screen edge; the minimap clicks and drags; arrow keys and `+` / `-` move the camera; the lens bar and sound button are in the top bar.
+Also: the details panel lists every relation of the selection, one line each; a line backed by a map link opens its cited code lines on click, identical lines shown once, and clicking one opens its file at that line, in the card nearest the selection; a file's panel has its path, line count, Read code and Copy path. A card too small to show its name gets a short preview on hover. Zooming past a file card shows its source (the wheel stops once it reads comfortably), coloured, with cited lines in amber and the graph's marked lines tagged with their kind. The minimap clicks and drags; arrow keys and `+` / `-` move the camera. Flights last at most 0.7 s and any press ends one; with reduced motion set in the system, the view cuts instead. Frame statistics show with `?stats` in the address.
 
 ## Measuring
 
@@ -127,6 +127,8 @@ DPR=2 node scripts/probe.mjs "model=synthetic&n=10000"    # same at device pixel
 node scripts/layout-bench.mjs 1000                         # ELK option sets: card fill and time
 DPR=2 node scripts/tour.mjs                                # screenshot walkthrough into shots/tour/
 node scripts/ux-tour.mjs                                   # drives every control with real input into shots/ux/
+node scripts/answers-test.mjs                              # checks the map's answers: panel vs map, Back, opening code
+node scripts/controls-test.mjs                             # checks the controls: dialogs, Esc, menu, motion, contrast
 node scripts/live-test.mjs                                 # edits a model while the map is open, checks the live update
 node scripts/publish-test.mjs                              # publishes a map like an agent, edits the repo, checks the map follows
 node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s into shots/video/ (code-* scenes use this repo's map)
@@ -147,7 +149,7 @@ node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s in
 - `src/icons.ts` — which icon each element gets, and the icons themselves.
 - `src/code.ts` — the code view: a file card's source, flowed into columns and scaled with the card, served by the dev server's `/source` endpoint from the uploaded sources.
 - `src/live.ts`, `vite.config.ts` — live mode: model diff, layout reuse and stable child order; the dev-server watcher.
-- `src/controls/` — game-style controls: palette, history, target cycling, wheel, routes, pins, tooltips.
+- `src/controls/` — controls: search, history, stepping through relations, context menu, previews, help.
 - `model/acme/` — the realistic sample model.
 - `scripts/graph.mjs` — the application file graph; `scripts/map.mjs` — map checks, the viewer model and the upload bundle; `scripts/store.mjs` — the viewer service's side: storing bundles, `index.json`, serving stored maps and sources; `scripts/zoom.mjs` — the agent's commands, including the upload; `scripts/self-import.mjs` — this repo from its map, for tours.
 - `src/models.ts` — the model tabs.

@@ -17,10 +17,10 @@
     { "id": "viewer.shell", "kind": "component", "title": "App shell", "description": "Loads a model, runs the frame loop, swaps live updates in, and shows the HUD, details panel and model tabs.", "files": ["spike/src/main.ts", "spike/src/models.ts", "spike/src/details.ts", "spike/src/hud.ts"] },
     { "id": "viewer.model", "kind": "component", "title": "Model", "description": "The element tree with relations rolled up per level, synthetic landscapes, and the diff that lets a new version morph in place.", "files": ["spike/src/model.ts", "spike/src/synthetic.ts", "spike/src/live.ts"] },
     { "id": "viewer.layout", "kind": "component", "title": "Layout and routing", "description": "Packs each container's children in worker threads and routes edges through the gutters between cards.", "files": ["spike/src/layout.ts", "spike/src/layoutPool.ts", "spike/src/layout.worker.ts", "spike/src/route.ts", "spike/src/edges.ts"] },
-    { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn) and flight effects.", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/fx/**", "spike/src/icons.ts"] },
+    { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn).", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/icons.ts"] },
     { "id": "viewer.code", "kind": "component", "title": "Code view", "description": "Past a file card, its own source: a minimap first, then coloured, readable lines with the graph's marked and cited lines.", "files": ["spike/src/code.ts", "spike/src/syntax.ts"] },
     { "id": "viewer.recorder", "kind": "component", "title": "Video recorder", "description": "A second page that encodes frames sent by the recording script into a video with WebCodecs.", "files": ["spike/src/recorder.ts"] },
-    { "id": "viewer.controls", "kind": "component", "title": "Controls", "description": "Game-style controls: palette, radial menu, target cycling, routes, pins, minimap and sound.", "files": ["spike/src/controls/**", "spike/src/minimap.ts", "spike/src/sound.ts"] }
+    { "id": "viewer.controls", "kind": "component", "title": "Controls", "description": "The controls: search, Back and Parent, stepping through a selection's relations, a context menu and the minimap.", "files": ["spike/src/controls/**", "spike/src/minimap.ts"] }
   ],
   "features": [
     { "title": "Map a repository", "nodes": ["mapper.graph", "mapper.publish", "mapper.cli"] },
@@ -41,12 +41,12 @@
     { "from": "spike/scripts/zoom.mjs", "to": "spike/scripts/store.mjs", "title": "uploads bundles, pulls maps (/upload, /maps)",
       "evidence": ["spike/scripts/zoom.mjs:58", "spike/scripts/zoom.mjs:242", "spike/scripts/zoom.mjs:246", "spike/vite.config.ts:55", "spike/vite.config.ts:80", "spike/vite.config.ts:89"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:50"] },
+      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:49"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
       "evidence": ["spike/scripts/store.mjs:25", "spike/src/models.ts:13"] },
     { "from": "spike/src/code.ts", "to": "spike/scripts/store.mjs", "title": "reads a file's uploaded source (/source)",
       "evidence": ["spike/src/code.ts:227", "spike/vite.config.ts:106"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:50"] }
+      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:49"] }
   ]
 }
