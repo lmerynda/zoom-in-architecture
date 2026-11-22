@@ -360,7 +360,8 @@ export function endpoints(graph) {
       // named by what the file imported it as (const service = require('./orders.service')).
       const local = hc.lang === 'js' ? importsOf(hp, hc.whole, out.get(hp) ?? []) : new Map()
       const namesOf = e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)]
-      const at = e => Math.min(...namesOf(e).filter(n => used.has(n)).map(n => text.search(new RegExp(`\\b${n}\\b`))).filter(x => x >= 0), Infinity)
+      // A field counts as naming its type (this.owners names OwnerRepository) here too.
+      const at = firstUse(hp, text)
       const views = [], direct = []
       for (const e of out.get(hp) ?? []) {
         const t = byPath.get(e.to)

@@ -59,6 +59,13 @@ class OwnerController {
 		return "redirect:/owners/" + owner.getId();
 	}
 
+	@PostMapping("/owners/greet")
+	public String greet(Owner owner) {
+		this.mailer.welcome(owner);
+		this.clinic.register(owner.getLastName());
+		return "redirect:/owners";
+	}
+
 	@GetMapping("/owners/{ownerId}/edit")
 	public String initUpdateOwnerForm() {
 		return VIEWS_OWNER_FORM;

@@ -63,6 +63,12 @@ describe('endpoints', () => {
     expect(brief([create])).toEqual(['POST /owners/new processCreationForm: OwnerController.java > ClinicService.java > OwnerRepository.java > Mailer.java + OwnerForm.java, Owner.java'])
   })
 
+  it('orders the handler\'s calls by where its body first uses each field, not by where the fields are declared', () => {
+    const greet = endpoints(fixture('clinic')).find(e => e.path === '/owners/greet')
+    // The controller declares clinic before mailer; greet() calls mailer first.
+    expect(brief([greet])).toEqual(['POST /owners/greet greet: OwnerController.java > Mailer.java > ClinicService.java > OwnerRepository.java + Owner.java'])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([
