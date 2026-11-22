@@ -57,6 +57,7 @@
     #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
     #minimap.faint { opacity: 0.3; }
+    #minimap.whole { visibility: hidden; }
     #minimap.faint:hover { opacity: 1; }
     /* Narrow: the details are a bottom sheet over the map, the minimap steps aside while it is up. */
     #details { left: 0; right: 0; bottom: 0; max-height: 45vh; overflow: auto; padding: 14px 16px 12px; border-radius: 10px 10px 0 0; z-index: 14; }
@@ -127,6 +128,8 @@
     #code { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
     .code[hidden] { display: none; }
+    .code-cap { position: absolute; padding: 4px 10px; border-radius: 6px; background: rgba(9, 12, 20, 0.92); border: 1px solid var(--line); color: var(--text); font: 12px ui-monospace, Consolas, monospace; white-space: nowrap; }
+    .code-cap[hidden] { display: none; }
     /* Both are laid out at 16 px from the card's top-left and scaled; columns sit where the code view puts them. */
     .code pre, .code canvas { position: absolute; left: 0; top: 0; margin: 0; transform-origin: 0 0; }
     .code pre[hidden] { display: none; }

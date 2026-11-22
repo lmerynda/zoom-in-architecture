@@ -44,6 +44,15 @@ try {
   check('an unknown map says so and offers the maps there are', /No map named/.test(failedText.h) && failedText.maps > 0, JSON.stringify(failedText))
   await open('model=knights-of-darkness')
 
+  // The minimap waits while the whole map is in view, and shows once you go in.
+  await sleep(600)
+  const wholeHidden = await page.evaluate(() => getComputedStyle(document.getElementById('minimap')).visibility === 'hidden')
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend')))
+  await landed()
+  await sleep(400)
+  const inShown = await page.evaluate(() => getComputedStyle(document.getElementById('minimap')).visibility !== 'hidden')
+  check('the minimap hides on the whole map and shows inside it', wholeHidden && inShown, JSON.stringify({ wholeHidden, inShown }))
+
   // Gone: the command wheel, routes, pins, sound, the shortcut sentence.
   const gone = await page.evaluate(() => ({ radial: !!document.querySelector('.radial'), route: !!document.querySelector('.routepanel'), help: document.getElementById('help').tagName }))
   check('no command wheel or route panel; Help is a button', !gone.radial && !gone.route && gone.help === 'BUTTON', JSON.stringify(gone))

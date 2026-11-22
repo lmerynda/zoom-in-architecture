@@ -161,7 +161,7 @@ interface Source {
   copies: Map<string, HTMLCanvasElement>
 }
 
-interface Shown { wrap: HTMLDivElement; pre: HTMLPreElement; map: HTMLCanvasElement | null; key: string; win: Window | null }
+interface Shown { wrap: HTMLDivElement; pre: HTMLPreElement; map: HTMLCanvasElement | null; key: string; win: Window | null; cap?: HTMLDivElement }
 
 /**
  * Puts a file's minimap canvas in the box showing that file. A canvas is one element, and boxes
@@ -349,11 +349,19 @@ export class CodeView {
         used.set(map as HTMLCanvasElement, n + 1)
         const canvas = n ? copyOf(src, `${columns}:${n}`, map as HTMLCanvasElement) : (map as HTMLCanvasElement)
         holdMinimap(s, canvas)
+        // A file that fills the screen but is still too small to read says what it is, and how to read it.
+        const cap = (s.cap ??= (() => { const d = document.createElement('div'); d.className = 'code-cap'; s.wrap.after(d); return d })())
+        cap.hidden = x1 - x0 < W * 0.5
+        if (!cap.hidden) {
+          cap.style.cssText = `left:${x0 + 8}px;top:${y0 + 8}px`
+          cap.textContent = `${path} · ${src.lines.length} lines${src.cited.size || src.marks.size ? ` · ${new Set([...src.cited, ...src.marks.keys()]).size} marked` : ''} · Enter to read`
+        }
         canvas.style.transform = transform
         s.pre.hidden = true
         continue
       }
       if (s.map) { if (s.map.parentElement === s.wrap) s.map.remove(); s.map = null }
+      if (s.cap) s.cap.hidden = true
       s.pre.hidden = false
       s.pre.style.transform = transform
       // Text: only the lines in view (and a margin) are in the page, re-rendered when the view leaves them.
@@ -376,7 +384,7 @@ export class CodeView {
         s.win = win
       }
     }
-    for (let j = k; j < this.shown.length; j++) this.shown[j].wrap.hidden = true
+    for (let j = k; j < this.shown.length; j++) { this.shown[j].wrap.hidden = true; if (this.shown[j].cap) this.shown[j].cap!.hidden = true }
   }
 
   private make(): Shown {

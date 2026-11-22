@@ -761,7 +761,7 @@ export class Renderer {
     const els = this.tree.els
     const cut = (a: string[]) => (a.length > 8 ? [...a.slice(0, 8), `  … ${a.length - 8} more`] : a)
     const o = out.map(r => `→ ${els[r.other].title} · ${r.title}`), n = inn.map(r => `← ${els[r.other].title} · ${r.title}`)
-    return [...(o.length ? ['OUTGOING', ...cut(o), ''] : []), ...(n.length ? ['INCOMING', ...cut(n)] : [])].join('\n')
+    return [...(o.length ? ['USES', ...cut(o), ''] : []), ...(n.length ? ['USED BY', ...cut(n)] : [])].join('\n')
   }
 
   private drawEdges(edges: ShownEdge[], focus: number, st: FrameStats) {

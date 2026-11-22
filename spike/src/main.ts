@@ -512,7 +512,10 @@ async function main() {
       `fps ${(1000 / (d.reduce((a, b) => a + b, 0) / (d.length || 1))).toFixed(0)} · frame p50 ${pct(c, 0.5).toFixed(1)} ms · p95 ${pct(c, 0.95).toFixed(1)} ms`,
       `drawn ${last.nodes} cards · ${last.texts} labels · ${last.edges} edges · ${last.chips} off-screen`,
     ].join('\n')
-    minimap.draw(cam)
+    // The minimap is for finding your way once the whole map is no longer in view.
+    const whole = renderer.breadcrumb().length === 0 && cam.z <= (frameFor(0).z * 1.15)
+    minimapEl.classList.toggle('whole', whole)
+    if (!whole) minimap.draw(cam)
     if (!cam.flying) { places.update(controls.view()); viewLinks() }
     measureHud()
   }, 250)

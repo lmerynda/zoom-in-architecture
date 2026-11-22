@@ -158,6 +158,17 @@ try {
   check('the wheel at its limit over a file says how to read it', /read/i.test(said), said)
   void fx; void fy
 
+  // A long file filling the screen while its code is only a thumbnail says what it is and how to read it.
+  const cap = await page.evaluate(async () => {
+    const s = window.__spike, t = s.tree, r = s.world.rect
+    const i = t.els.findIndex(e => Number(e.metadata?.lines) > 500)
+    s.select(-1)
+    s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] * 0.7, (s.cam.w * 0.8) / r[i * 4 + 2])
+    for (let k = 0; k < 120 && ![...document.querySelectorAll('.code-cap')].some(c => !c.hidden); k++) await new Promise(r => setTimeout(r, 50))
+    return [...document.querySelectorAll('.code-cap')].find(c => !c.hidden)?.textContent ?? null
+  })
+  check('a file too small to read names its path, size and how to read it', !!cap && /lines/.test(cap) && /Enter to read/.test(cap), String(cap))
+
   // Empty space offers a way back to the whole map.
   await page.evaluate(() => { const s = window.__spike, c = s.cam; c.set(c.x + 1e6, c.y + 1e6, c.z) })
   await sleep(500)

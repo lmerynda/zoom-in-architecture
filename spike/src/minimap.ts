@@ -44,6 +44,9 @@ export class Minimap {
     const [wx0, wy0] = cam.toWorld(0, 0), [wx1, wy1] = cam.toWorld(cam.w, cam.h)
     const vx = this.ox + wx0 * this.scale, vy = this.oy + wy0 * this.scale
     const vw = (wx1 - wx0) * this.scale, vh = (wy1 - wy0) * this.scale
+    // The view's box is clipped to the minimap: zoomed far out it is the minimap's own edge, not a line off it.
+    g.save()
+    g.beginPath(); g.rect(1, 1, W - 2, H - 2); g.clip()
     g.strokeStyle = '#fbbf24'
     g.lineWidth = 1.5
     if (vw < 6) {
@@ -53,5 +56,6 @@ export class Minimap {
     } else {
       g.strokeRect(vx, vy, vw, vh)
     }
+    g.restore()
   }
 }
