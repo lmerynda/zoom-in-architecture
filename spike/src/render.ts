@@ -20,7 +20,7 @@ const PIP = 30
 const DESC_WRAP = 500
 /** Screen insets the HUD covers; sticky labels and edge chips stay inside them. */
 // Below the top bar and the breadcrumb, so sticky titles and chips never sit under them.
-const SAFE = { top: 104, left: 12, right: 12, bottom: 14 }
+const SAFE = { top: 60, left: 12, right: 12, bottom: 14 }
 const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
@@ -35,8 +35,10 @@ const ICON = 1.05
 const ICON_GAP = 0.4
 /** The smallest the kind and technology line may get before it is cut short instead. */
 const SUB_MIN = 10
-/** How far a long title may shrink below its level's size before it is cut with an ellipsis... */
-const TITLE_SHRINK = 0.45
+/** No line under a title is drawn smaller than this, in px: smaller is not read, only seen as noise. */
+const MIN_TEXT = 9
+/** How far a long title may shrink below its level's size before it is cut or wrapped: siblings' names read near one size. */
+const TITLE_SHRINK = 0.75
 /** ...but never below this, in px: a whole name smaller than this is not read. */
 const TITLE_MIN = 9
 
@@ -88,6 +90,8 @@ interface NodeView {
   /** An open container's kind, count and rank, right of its header title. */
   meta?: BitmapText
   icon?: Sprite
+  /** Under a lens, the heat as a stripe down the card's left edge. */
+  stripe?: Sprite
   /** Width per px of the full sub line, measured once per text, so cutting it never re-measures. */
   subEm?: number
   /** The full sub line subEm was measured for. */
@@ -373,7 +377,7 @@ export class Renderer {
   private hide(i: number) {
     const v = this.views[i]
     if (!v) return
-    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.title2, v.sub, v.desc, v.inside, v.dossier, v.metric, v.rank, v.meta, v.icon]) if (o) o.visible = false
+    for (const o of [v.pip, v.shadow, v.fill, v.border, v.glow, v.header, v.headerSq, v.title, v.title2, v.sub, v.desc, v.inside, v.dossier, v.metric, v.rank, v.meta, v.icon, v.stripe]) if (o) o.visible = false
   }
 
   private visit(i: number, alpha: number, labelAlpha: number, st: FrameStats) {
@@ -462,14 +466,21 @@ export class Renderer {
     fill.visible = true
     fill.position.set(x, y)
     fill.width = w; fill.height = h
-    // Under a lens the heat sits on the cards you are looking at: closed ones carry the colour,
-    // deep enough that white titles stay readable on the hot (pale yellow) end; open containers
-    // fade to a dark frame so their children carry it.
-    fill.tint = heat >= 0
-      ? mix(heat, BG, isContainer ? 0.32 + 0.6 * t : hot || sel ? 0.45 : 0.58)
-      : isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
+    // Under a lens the card keeps its own colour and text; the heat is a stripe down its left
+    // edge, never under its words (a closed card's whole height, an open one's header).
+    fill.tint = isContainer ? mix(color, BG, 0.86 - 0.04 * t) : mix(color, BG, hot || sel ? 0.5 : 0.66)
     // An external system is outside what was mapped: an outline over the background.
-    fill.alpha = alpha * dim * (outside && heat < 0 && !hot && !sel ? 0.3 : 1)
+    fill.alpha = alpha * dim * (outside && !hot && !sel ? 0.3 : 1)
+    if (heat >= 0) {
+      // On the text layer: above the card and its header, left of where any text starts.
+      const stripe = (v.stripe ??= (() => { const sp = new Sprite(Texture.WHITE); this.textLayers[d].addChild(sp); return sp })())
+      const sw = Math.max(4, Math.min(14, w * 0.04)), sh = isContainer && t > 0 ? Math.max(HEADER * h, 28) : h
+      stripe.visible = true
+      stripe.position.set(x, y + Math.min(8, sh * 0.15))
+      stripe.width = sw; stripe.height = sh - Math.min(16, sh * 0.3)
+      stripe.tint = heat
+      stripe.alpha = alpha * dim
+    }
 
     border.visible = true
     border.position.set(x, y)
@@ -503,7 +514,7 @@ export class Renderer {
       const bpx = Math.min(h * 0.1, 14)
       badge.scale.set(bpx / FONT_PX)
       // A value wider than its card would be cut ("37 relatio"); it waits until the card has room.
-      if (bpx >= 7 && badge.width <= w * 0.88) {
+      if (bpx >= MIN_TEXT && badge.width <= w * 0.88) {
         badge.visible = true
         badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
         // Inside the card and inside the screen: a card running off the edge keeps its value in view.
@@ -529,7 +540,7 @@ export class Renderer {
       header.width = w; header.height = Math.max(hh, 28)
       sq.position.set(x, y + hh / 2)
       sq.width = w; sq.height = hh / 2
-      header.tint = sq.tint = heat >= 0 ? mix(heat, BG, 0.3 + 0.35 * t) : mix(color, BG, 0.62)
+      header.tint = sq.tint = mix(color, BG, 0.62)
       header.alpha = sq.alpha = alpha * dim
       if (hh < 28) { header.height = hh; header.visible = false; sq.position.set(x, y); sq.height = hh }
 
@@ -563,7 +574,7 @@ export class Renderer {
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
       meta.scale.set(mpx / FONT_PX)
-      if (mpx >= 6 && w > 160 && roomy && titleRight + 16 < x + w - pad - meta.width) {
+      if (mpx >= MIN_TEXT && w > 160 && roomy && titleRight + 16 < x + w - pad - meta.width) {
         meta.visible = true
         meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
         meta.alpha = la * 0.6
@@ -650,7 +661,7 @@ export class Renderer {
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
     const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity
-    if (spx >= 6 && subText && cy + spx * 1.3 <= codeTop) {
+    if (spx >= MIN_TEXT && subText && cy + spx * 1.3 <= codeTop) {
       const sub = (v.sub ??= this.text(subText, texts))
       if (v.subFull !== subText || v.subEm == null) { sub.text = subText; v.subEm = em(sub); v.subFull = subText }
       const subEm = v.subEm
@@ -960,6 +971,19 @@ export class Renderer {
       }
       x = Math.min(Math.max(x, SAFE.left), W - cw - SAFE.right)
       y = Math.min(Math.max(y, SAFE.top), H - ch - SAFE.bottom)
+      // Never on a card's text: slide along the screen edge to the nearest clear spot, or wait.
+      const onText = (cx: number, cy: number) => this.shown.some(n => {
+        if (this.tree.children[n].length && this.open(n) > 0) return false
+        const [nx, ny, nw, nh] = this.screenRect(n)
+        return nw > 44 && cx < nx + nw && nx < cx + cw && cy < ny + nh && ny < cy + ch
+      })
+      if (onText(x, y)) {
+        const vertical = x <= SAFE.left + 1 || x >= W - cw - SAFE.right - 1
+        const tries = [1, -1, 2, -2, 3, -3, 4, -4].map(k => (vertical ? [x, y + k * (ch + 6)] : [x + k * (cw + 6), y]))
+        const free = tries.find(([tx, ty]) => tx >= SAFE.left && ty >= SAFE.top && tx + cw <= W - SAFE.right && ty + ch <= H - SAFE.bottom && !onText(tx, ty))
+        if (!free) continue
+        ;[x, y] = free
+      }
       if (placed.some(([px2, py2, w2, h2]) => x < px2 + w2 && px2 < x + cw && y < py2 + h2 && py2 < y + ch)) continue
       placed.push([x, y, cw, ch])
       chip.bg.position.set(x, y)

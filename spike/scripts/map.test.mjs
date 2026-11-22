@@ -407,8 +407,9 @@ describe('this repo\'s own map', () => {
   it('still checks clean against the code', () => {
     const self = JSON.parse(readFileSync(join(import.meta.dirname, '../maps/zoom-in-architecture.json'), 'utf8'))
     const r = buildModel(buildGraph(join(import.meta.dirname, '../..')), self, { name: 'self' })
-    expect(r.errors).toEqual([])
-    expect(r.warnings).toEqual([])
+    // A cited line that only moved: `node scripts/zoom.mjs follow .. maps/zoom-in-architecture.json` moves it.
+    expect(r.errors, 'evidence drifted? run: node scripts/zoom.mjs follow .. maps/zoom-in-architecture.json').toEqual([])
+    expect(r.warnings, 'evidence drifted? run: node scripts/zoom.mjs follow .. maps/zoom-in-architecture.json').toEqual([])
     expect(r.unplaced).toEqual([])
   })
 })

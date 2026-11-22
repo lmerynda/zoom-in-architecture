@@ -77,6 +77,7 @@ const EMPTY: PanelRows = { uses: [], usedBy: [], mark: () => {} }
  * relation it has as one line each, Uses then Used by. A line's cited code opens on click.
  */
 export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, i: number, act: PanelActions, rank?: string): PanelRows {
+  panel.classList.remove('outline')
   if (i <= 0) { panel.hidden = true; panel.replaceChildren(); return EMPTY }
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const e = tree.els[i]
@@ -231,4 +232,50 @@ function proof(evidence: EvidenceJson[], files: Set<string>, open: (path: string
     box.append(div)
   }
   return box
+}
+
+/**
+ * With nothing selected, the panel is an outline of the place you are in: each card of the level
+ * as a button saying what it is, what it holds, and how much it uses and is used, in the order
+ * the map ranks them (the busiest first). Arrow keys move along it; Enter selects. It is how a
+ * keyboard or a screen reader walks the map.
+ */
+export function renderOutline(panel: HTMLElement, tree: Tree, here: number, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, select: (i: number) => void) {
+  const e = tree.els[here]
+  const head = el('div', 'd-head')
+  head.append(el('span', 'd-kind', here > 0 ? kindWord(tree, here) : 'Whole map'), el('h2', '', e.title))
+  if (here > 0) {
+    // The place itself can be selected too, to see what it uses and what uses it.
+    const actions = el('div', 'd-actions')
+    const show = el('button', 'primary', 'Show what it uses')
+    show.onclick = () => select(here)
+    actions.append(show)
+    head.append(actions)
+  }
+  const kids = tree.children[here]
+  const count = (i: number) => { const r = relationsOf(i); return { uses: new Set(r.out.map(x => x.other)).size, usedBy: new Set(r.inn.map(x => x.other)).size } }
+  const rows = kids.map(k => ({ k, ...count(k) })).sort((a, b) => b.uses + b.usedBy - a.uses - a.usedBy || tree.els[a.k].title.localeCompare(tree.els[b.k].title))
+  const box = el('section', 'd-outline')
+  box.append(el('h3', '', `Inside · ${kids.length}`))
+  const ul = el('ul')
+  ul.setAttribute('aria-label', `Cards inside ${e.title}`)
+  for (const r of rows) {
+    const li = el('li')
+    const b = el('button', 'd-rel')
+    const k = tree.els[r.k]
+    const inside = tree.children[r.k].length
+    b.append(el('b', '', k.title), el('span', '', [kindWord(tree, r.k).replace(/ · \d+ inside$/, ''), inside ? `${inside} inside` : '', `uses ${r.uses}`, `used by ${r.usedBy}`].filter(Boolean).join(' · ')))
+    b.onclick = () => select(r.k)
+    li.append(b)
+    ul.append(li)
+  }
+  ul.addEventListener('keydown', ev => {
+    const items = [...ul.querySelectorAll('button')], at = items.indexOf(document.activeElement as HTMLButtonElement)
+    if (ev.key === 'ArrowDown') { items[Math.min(items.length - 1, at + 1)]?.focus(); ev.preventDefault() }
+    if (ev.key === 'ArrowUp') { items[Math.max(0, at - 1)]?.focus(); ev.preventDefault() }
+  })
+  box.append(ul)
+  panel.replaceChildren(head, ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []), el('p', 'd-hint', 'Nothing selected: click a card, or pick one here, to see what it uses and what uses it.'), box)
+  panel.classList.add('outline')
+  panel.hidden = false
 }

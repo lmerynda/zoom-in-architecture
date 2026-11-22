@@ -154,6 +154,41 @@ try {
   check('reduced motion cuts instead of flying', cut === false)
   await page.emulateMediaFeatures([])
 
+  // Keyboard only: find War, name what it uses, open a cited line, return to War.
+  await open('model=knights-of-darkness')
+  await focusMap()
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await page.keyboard.type('War')
+  await page.keyboard.press('Enter')
+  await landed()
+  const tabTo = async (test, max = 80) => {
+    for (let k = 0; k < max; k++) {
+      await page.keyboard.press('Tab')
+      if (await page.evaluate(test)) return true
+    }
+    return false
+  }
+  const title = await page.evaluate(() => document.title)
+  const reachedShow = await tabTo(() => document.activeElement?.textContent === 'Show what it uses')
+  await page.keyboard.press('Enter')
+  await landed()
+  const sel = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.title)
+  const reachedCite = await tabTo(() => document.activeElement?.classList.contains('d-cite'))
+  const dependency = await page.evaluate(() => document.activeElement.closest('li').querySelector('b').textContent)
+  await page.keyboard.press('Enter')
+  const reachedLine = await tabTo(() => document.activeElement?.classList.contains('cite'), 10)
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => !document.querySelector('.reader').hidden, { timeout: 15000 }).catch(() => {})
+  const reading = await page.evaluate(() => !document.querySelector('.reader').hidden)
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Backspace')
+  await sleep(300)
+  await landed()
+  const backTo = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.title)
+  const kb = { title, reachedShow, sel, reachedCite, dependency, reachedLine, reading, backTo }
+  check('keyboard only: find War, name a dependency, open its citation, return to War', /^War · /.test(title) && reachedShow && sel === 'War' && reachedCite && !!dependency && reachedLine && reading && backTo === 'War', JSON.stringify(kb))
+  await shot('04-keyboard')
+
   // Small text reads at AA contrast on the panels.
   const contrast = await page.evaluate(() => {
     const lum = c => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }

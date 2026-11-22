@@ -99,7 +99,7 @@ try {
   check('a smaller window keeps the landscape in view', small.x >= -2 && small.y >= -2 && small.x2 <= small.w + 2 && small.y2 <= small.h + 2, JSON.stringify(small))
   await page.setViewport({ width: 1600, height: 1000 })
   await sleep(300)
-  const view = await page.evaluate(() => ({ w: window.__spike.cam.w, h: window.__spike.cam.h, iw: innerWidth, ih: innerHeight }))
+  const view = await page.evaluate(() => { const e = document.getElementById('stage'); return { w: window.__spike.cam.w, h: window.__spike.cam.h, iw: e.clientWidth, ih: e.clientHeight } })
   check('a resized window is drawn in full', view.w === view.iw && view.h === view.ih, JSON.stringify(view))
   // Flying into a file passes many file cards: every code box left showing holds its file.
   await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.orders.orderController')) })
@@ -243,28 +243,19 @@ try {
   const read = await page.evaluate(() => ({ dblclicks: window.__dblclicks, sel: window.__spike.renderer.selected, text: document.querySelectorAll('.reader pre > span').length }))
   check('double-clicking a file opens its code to read', fileAt.under === fileAt.f && read.dblclicks === 1 && read.sel === fileAt.f && read.text > 0, JSON.stringify({ ...fileAt, ...read }))
   await page.keyboard.press('Escape')
-  // Selecting a card the details panel would cover glides it clear, and it stays on screen.
-  const cleared = await page.evaluate(async () => {
-    const s = window.__spike, r = s.world.rect, wait = ms => new Promise(res => setTimeout(res, ms))
+  // On a wide screen the details panel is a column beside the map: it never covers a card, so
+  // selecting one moves nothing.
+  const column = await page.evaluate(async () => {
+    const s = window.__spike, wait = ms => new Promise(res => setTimeout(res, ms))
     s.select(-1); s.unhover(); s.fit(0)
     await wait(1500)
+    const before = [s.cam.x, s.cam.y, s.cam.z]
     s.select(1)
-    await wait(200)
-    const panelLeft = document.getElementById('details').getBoundingClientRect().x
-    const rect = i => { const [x, y] = s.cam.toScreen(r[i * 4], r[i * 4 + 1]); return [x, y, r[i * 4 + 2] * s.cam.z, r[i * 4 + 3] * s.cam.z] }
-    // Fit keeps the map clear of the panels, so move a landscape card under the panel's edge first.
-    const under = s.tree.children[0].find(i => rect(i)[2] < panelLeft / 2)
-    if (under == null) return { under: null }
-    s.cam.set(r[under * 4] + r[under * 4 + 2] / 2 - (panelLeft - s.cam.w / 2) / s.cam.z, s.cam.y, s.cam.z)
-    await wait(100)
-    const [ux, , uw] = rect(under)
-    if (!(ux < panelLeft && ux + uw > panelLeft)) return { under: null, ux, uw, panelLeft }
-    s.select(under)
-    await wait(2000)
-    const [x, y, w, h] = rect(under)
-    return { under: s.tree.els[under].id, x, y, w, h, panelLeft, W: s.cam.w, H: s.cam.h }
+    await wait(800)
+    const panel = document.getElementById('details').getBoundingClientRect(), canvas = document.querySelector('#stage canvas').getBoundingClientRect()
+    return { panelLeft: panel.x, mapRight: canvas.right, still: [s.cam.x, s.cam.y, s.cam.z].every((v, k) => v === before[k]) }
   })
-  check('selecting a card under the panel glides it clear and keeps it on screen', cleared.under != null && cleared.x >= 0 && cleared.y >= 0 && cleared.x + cleared.w <= cleared.panelLeft && cleared.y + cleared.h <= cleared.H, JSON.stringify(cleared))
+  check('the details panel is beside the map, and selecting moves nothing', column.panelLeft >= column.mapRight && column.still, JSON.stringify(column))
   // Empty space says how to get back: deep in a card's empty corner a hint shows, and goes on the way out.
   const empty = await page.evaluate(async () => {
     const s = window.__spike, r = s.world.rect, i = s.id('server'), wait = ms => new Promise(res => setTimeout(res, ms))

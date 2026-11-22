@@ -126,7 +126,8 @@ export class Palette {
       groups.push(['Features of this map', this.allFeatures().map(([f, n]) => this.featureItem(f, n))])
     } else {
       const found = searchMap(this.tree.els, q)
-      const parts = [...found.features.map(f => ({ score: f.score, item: this.featureItem(f.name, f.cards.length) })), ...found.parts.map(p => ({ score: p.score, item: this.element(p.i) }))]
+      // A part and a feature of one name: the part, a place to go, comes first.
+      const parts = [...found.features.map(f => ({ score: f.score - 0.5, item: this.featureItem(f.name, f.cards.length) })), ...found.parts.map(p => ({ score: p.score, item: this.element(p.i) }))]
         .sort((a, b) => b.score - a.score).map(x => x.item)
       // An exact file path outranks the parts: it is what was asked for.
       const exact = found.files.filter(f => f.score >= 110)

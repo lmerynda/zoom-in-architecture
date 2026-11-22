@@ -2,7 +2,7 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
-import { renderDetails, type PanelActions, type PanelRows } from './details'
+import { renderDetails, renderOutline, type PanelActions, type PanelRows } from './details'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -26,8 +26,6 @@ const coupling = view === 'connections'
 const modelFile = view && !coupling ? `${modelName}.${view}` : modelName
 /** The largest on-screen font size the wheel zooms code on the map to. */
 const MAX_READ_PX = 28
-/** Longer than a double-click: a click that may be the first of two waits this long before moving the view. */
-const DOUBLE_CLICK_MS = 350
 
 /** After the breadcrumb, what an uploaded map was built from, so an old map does not pass for a current one. */
 function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[] {
@@ -42,8 +40,16 @@ function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[]
   }
   s.textContent = [p.commit ? `${p.commit.slice(0, 7)}${p.dirty ? '+' : ''}` : 'no commit', ago(p.at)].filter(Boolean).join(' · ')
   s.title = `Uploaded ${new Date(p.at).toLocaleString()} from ${p.commit ? `commit ${p.commit}${p.dirty ? ' plus uncommitted changes' : ''}` : 'a folder outside git'}`
+  // The viewer never reads the project, so it cannot know of newer commits: past a fortnight an
+  // upload is flagged as likely behind its code.
+  if (Date.now() - Date.parse(p.at) > STALE_DAYS * 86400_000) {
+    s.classList.add('stale')
+    s.title += `. Over ${STALE_DAYS} days old: the code has likely moved on; publishing again brings the map up to date.`
+  }
   return [s]
 }
+/** An upload older than this many days is flagged as likely behind its code. */
+const STALE_DAYS = 14
 
 async function loadModel(): Promise<ModelJson> {
   if (modelName === 'synthetic') return synthetic(Number(new URLSearchParams(location.search).get('n') ?? 1000))
@@ -139,7 +145,7 @@ async function main() {
   let world: World = placeWorld(tree, local)
 
   const app = new Application()
-  await app.init({ resizeTo: window, background: '#04060c', antialias: true, autoDensity: true, resolution: devicePixelRatio, preference: 'webgl' })
+  await app.init({ resizeTo: $('stage'), background: '#04060c', antialias: true, autoDensity: true, resolution: devicePixelRatio, preference: 'webgl' })
   $('stage').appendChild(app.canvas)
   // The map takes keyboard focus like any control, so its keys act only when it has it.
   app.canvas.tabIndex = 0
@@ -173,12 +179,15 @@ async function main() {
   const frameFor = (i: number) => {
     const r = world.rect, W = cam.w, H = cam.h
     const box = (id: string) => { const e = document.getElementById(id); return e && !e.hidden && e.getClientRects().length ? e.getBoundingClientRect() : null }
-    const crumbs = box('crumbs'), top = box('top'), panel = box('details'), mini = box('minimap')
-    const t = Math.max(crumbs?.bottom ?? 0, top?.bottom ?? 0) + 8
-    const right = panel ? panel.left - 12 : W, bottom = H - 28
+    const top = box('top'), panel = box('details'), mini = box('minimap')
+    const t = (top?.bottom ?? 0) + 8
+    // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
+    const sheet = panel && panel.top > H / 2 ? panel : null
+    const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = sheet ? sheet.top - 12 : H - 28
+    const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]
-    if (mini && !panel) frames[0] = [0, t, right, mini.top - 8]
-    if (mini) frames.push([0, t, Math.min(right, mini.left - 8), bottom])
+    if (over && !panel) frames[0] = [0, t, right, over.top - 8]
+    if (over) frames.push([0, t, Math.min(right, over.left - 8), bottom])
     const fill = i === 0 ? 0.96 : tree.children[i].length ? 0.9 : 0.4
     const w = r[i * 4 + 2], h = r[i * 4 + 3]
     // A crowded level framed with a margin can come out too small to open: it uses the margin, up
@@ -289,23 +298,26 @@ async function main() {
     return `#${rk.rank[i]} of ${peers} · reaches ${rk.partners[i]} of ${peers - 1} peer${peers === 2 ? '' : 's'} · ${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}`
   }
   let rows: PanelRows = { uses: [], usedBy: [], mark: () => {} }
-  const showDetails = () => { rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected)) }
+  /** The place the outline shows, while nothing is selected. */
+  let outlined = -1
+  const showDetails = () => {
+    rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected))
+    outlined = -1
+    if (renderer.selected <= 0) showOutline()
+  }
+  /** With nothing selected, the panel outlines the place you are in (renderOutline). */
+  const showOutline = () => {
+    const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0
+    if (renderer.selected > 0 || here === outlined) return
+    outlined = here
+    // Keyboard focus in the outline stays on the same card across a redraw.
+    const focused = details.contains(document.activeElement) ? (document.activeElement as HTMLElement).textContent : null
+    renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j))
+    if (focused) [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)?.focus()
+  }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
     showDetails()
-    // The panel opens on the right; a selected card under it glides left to clear it, at the same
-    // zoom. It waits out a double-click, so a second click still lands on the card it aimed at.
-    if (i > 0) setTimeout(() => clearPanel(i), DOUBLE_CLICK_MS)
-  }
-  /** Glides the view so card i sits left of the details panel, if the panel covers it. */
-  const clearPanel = (i: number) => {
-    if (renderer.selected !== i || details.hidden || cam.flying) return
-    const r = world.rect, [sx] = cam.toScreen(r[i * 4], 0), w = r[i * 4 + 2] * cam.z
-    const left = details.getBoundingClientRect().x - 24, dx = sx + w - left
-    if (dx <= 0 || w >= left - 24) return
-    // flyTo takes the view's rectangle: the same size, its left edge moved right by dx.
-    const vw = cam.w / cam.z, vh = cam.h / cam.z
-    cam.flyTo(cam.x - vw / 2 + dx / cam.z, cam.y - vh / 2, vw, vh, now(), 1)
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.
@@ -338,9 +350,10 @@ async function main() {
     const file = q.get('file'), line = Number(q.get('line')) || 0
     const target = at > 0 ? at : file ? cardOf(file, inside) : inside
     if (target > 0) {
+      // Selected first, so the frame leaves room for the panel it opens.
+      if (at > 0 || file) select(target)
       const f = frameFor(at > 0 || file ? target : inside)
       cam.set(f.x, f.y, f.z)
-      if (at > 0 || file) select(target)
       if (file && line) void openCode(target, line)
     }
     places.update(controls.view())
@@ -462,12 +475,10 @@ async function main() {
     last = renderer.frame(t)
     code.update(renderer.codeSlots, cam.w, cam.h)
     const path = renderer.breadcrumb()
-    // Reading a file, the minimap steps back: still there to click, no longer over the code.
+    // Reading a file on the map, the minimap steps back: still there to click, no longer over the code.
     const here = path[path.length - 1] ?? 0
     const readingCode = here > 0 && !tree.children[here].length && !!tree.els[here].metadata?.path
     minimapEl.classList.toggle('faint', readingCode)
-    // The panel folds to its header too: the code is what is being read. Hovering it opens it.
-    details.classList.toggle('folded', readingCode)
     // Nothing but a card's empty inside on screen (a drag went past its children): say how back.
     emptyHint.hidden = last.inView > 0 || readingCode || cam.flying
     const key = path.join('/')
@@ -477,11 +488,18 @@ async function main() {
       crumbs.replaceChildren(...[0, ...path].map((i, k) => {
         const b = document.createElement('button')
         b.textContent = tree.els[i].title
+        b.title = tree.els[i].title
         b.onclick = () => controls.go(i)
-        if (k === path.length) b.className = 'here'
+        if (k === path.length) { b.className = 'here'; b.setAttribute('aria-current', 'location') }
         return b
       }), ...provenance(published, uploaded))
+      // A long path gives way in its middle: the map, the place you are in and its parent stay.
+      const buttons = [...crumbs.querySelectorAll('button')]
+      for (let k = 1; k < buttons.length - 2 && crumbs.scrollWidth > crumbs.clientWidth + 1; k++) { buttons[k].textContent = '…'; buttons[k].style.flex = 'none' }
+      document.title = here > 0 ? `${tree.els[here].title} · ${tree.els[0].title}` : tree.els[0].title
+      if (!cam.flying) showOutline()
     }
+    if (!cam.flying && outlined !== here && renderer.selected <= 0) showOutline()
     push(cpu, performance.now() - start)
     push(delta, dt)
   }

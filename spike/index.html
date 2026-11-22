@@ -9,11 +9,12 @@
     :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #8a99b0; --faint: #7c8aa1; --accent: #fbbf24; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
-    #stage, #stage canvas { position: fixed; inset: 0; display: block; }
+    /* The map fills the window below the top bar; on wide screens the details column is beside it, not over it. */
+    #stage { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
+    #stage canvas { position: absolute; inset: 0; display: block; }
     .panel { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(10px); }
-    #top { top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; padding: 6px 8px; pointer-events: none; background: none; border: 0; backdrop-filter: none; z-index: 20; }
-    #top > * { pointer-events: auto; }
-    #brand { font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: var(--accent); padding: 8px 12px; }
+    /* One row: the model, where you are, search, the view, colour by, help. Opaque, so nothing on the map runs under it. */
+    #top { position: fixed; top: 0; left: 0; right: 0; height: 52px; display: flex; gap: 10px; align-items: center; padding: 0 12px; background: rgba(6, 9, 16, 0.96); border-bottom: 1px solid var(--line); z-index: 20; }
     /* One button names the open model; its menu lists the others, so the bar stays one line. */
     #models { position: relative; padding: 3px; min-width: 0; }
     .model-current { background: none; border: 0; color: var(--text); font: inherit; font-weight: 600; padding: 5px 10px; border-radius: 7px; cursor: pointer; max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -28,31 +29,58 @@
     .model-menu a.imported { color: #fde68a; }
     /* The open model's views sit with the lenses on the right: ways of looking at it, not other models. */
     /* In a narrow window the travel box gives way; the controls around it keep their size. */
-    #brand, #views, .lensbar { flex: none; white-space: nowrap; }
-    #travel { min-width: 0; }
-    #views { display: flex; gap: 2px; padding: 3px; margin-left: auto; }
+    #views, .lensbar, #models, #help { flex: none; white-space: nowrap; }
+    #travel { min-width: 0; flex: 0 1 220px; }
+    #views { display: flex; gap: 2px; padding: 3px; align-items: center; }
     #views[hidden] { display: none; }
-    #views:not([hidden]) + .lensbar { margin-left: 0; }
+    .bar-label { color: var(--dim); font-size: 11px; padding: 0 4px 0 6px; }
     #views a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
     #views a:hover { color: var(--text); }
     #views a.on { color: #0b0f17; background: #6ee7b7; font-weight: 600; }
-    /* The breadcrumb and, on a first visit, the intro after it: one row, so neither covers the other. */
-    #crumbrow { position: fixed; top: 64px; left: 24px; right: 24px; display: flex; gap: 12px; align-items: flex-start; pointer-events: none; }
-    #crumbs { position: static; display: flex; gap: 2px; align-items: center; padding: 3px; flex-wrap: wrap; max-width: 60vw; flex: none; pointer-events: auto; }
-    #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
-    #crumbs button + button::before { content: '›'; margin-right: 8px; color: #334155; }
+    /* The breadcrumb takes the room the bar has; long names give way, the place you are in last. */
+    #crumbs { flex: 1 1 auto; min-width: 0; display: flex; gap: 2px; align-items: center; overflow: hidden; white-space: nowrap; }
+    #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 6px; border-radius: 7px; cursor: pointer; min-width: 0; max-width: 18em; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+    #crumbs button + button::before { content: '›'; margin-right: 6px; color: var(--faint); }
     #crumbs button:hover { color: var(--text); }
     #crumbs button.here { color: var(--text); font-weight: 600; }
-    #crumbs .provenance { color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
+    /* The place you are in keeps its name; the crumbs before it give way first. */
+    #crumbs button.here { flex: 0 0 auto; max-width: 22em; }
+    #crumbs button:first-child { flex: 0 0 auto; }
+    @media (max-width: 1099px) {
+      .bar-label, #travel kbd, #crumbs .provenance { display: none; }
+      #travel { flex: 0 0 auto; }
+      #models .model-current { max-width: 10em; }
+    }
+    #crumbs .provenance { flex: none; color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
+    #crumbs .provenance.stale { color: #fbbf24; }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
-    #minimap { right: 12px; bottom: 40px; width: 240px; height: 150px; cursor: crosshair; }
+    #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
     #minimap.faint { opacity: 0.3; }
     #minimap.faint:hover { opacity: 1; }
-    #details { top: 72px; right: 12px; width: 330px; max-height: calc(100vh - 290px); overflow: auto; padding: 16px 16px 12px; }
-    #details.folded { max-height: 58px; overflow: hidden; opacity: 0.85; transition: max-height 0.2s; }
-    #details.folded:hover { max-height: calc(100vh - 290px); overflow: auto; opacity: 1; }
+    /* Narrow: the details are a bottom sheet over the map, the minimap steps aside while it is up. */
+    #details { left: 0; right: 0; bottom: 0; max-height: 45vh; overflow: auto; padding: 14px 16px 12px; border-radius: 10px 10px 0 0; z-index: 14; }
     #details[hidden] { display: none; }
+    body:has(#details:not([hidden])) #minimap { display: none; }
+    /* Narrow, with nothing selected, the outline is a bar at the foot that opens when reached. */
+    #details.outline { max-height: 46px; overflow: hidden; }
+    #details.outline:focus-within, #details.outline:hover { max-height: 45vh; overflow: auto; }
+    .d-outline { margin-top: 12px; }
+    .d-outline h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+    .d-outline ul { list-style: none; margin: 0; padding: 0; }
+    .d-outline .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+    .d-outline .d-rel:hover, .d-outline .d-rel:focus-visible { background: rgba(251, 191, 36, 0.12); outline: none; }
+    .d-outline .d-rel span { color: var(--dim); font-size: 11px; }
+    /* Wide: a column of its own beside the map, the minimap at its foot. */
+    @media (min-width: 1100px) {
+      #stage, #code { right: 354px !important; }
+      #details { left: auto; top: 64px; right: 12px; bottom: 174px; width: 330px; max-height: none; border-radius: 10px; }
+      #details[hidden] { display: block; }
+      #minimap { width: 330px; height: 150px; }
+      body:has(#details:not([hidden])) #minimap { display: block; }
+      .reader { right: 354px !important; }
+      #details.outline { max-height: none; overflow: auto; }
+    }
     .d-head { display: flex; flex-direction: column; gap: 6px; }
     .d-kind { align-self: flex-start; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #0b0f17; background: #fbbf24; border-radius: 4px; padding: 2px 7px; font-weight: 700; }
     #details h2 { margin: 0; font-size: 19px; color: #f1f5f9; font-weight: 650; }
@@ -96,7 +124,7 @@
     .d-steps .d-rel:hover { background: rgba(148, 163, 184, 0.1); }
     .d-steps .d-rel span { color: var(--dim); font-size: 11px; }
     .d-none { color: var(--dim); font-size: 11px; padding: 2px 6px; }
-    #code { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+    #code { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
     .code[hidden] { display: none; }
     /* Both are laid out at 16 px from the card's top-left and scaled; columns sit where the code view puts them. */
@@ -127,7 +155,7 @@
     .d-ev em { display: block; font-size: 11px; color: #f59e0b; }
     .d-hint { margin-top: 12px; color: var(--faint); font-size: 11px; }
     /* The controls a newcomer needs first: readable (AA contrast), not small print. */
-    #help { right: 12px; bottom: 12px; position: fixed; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+    #help { background: rgba(148, 163, 184, 0.08); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
     #help:hover { border-color: rgba(251, 191, 36, 0.5); }
     #stage canvas:focus { outline: none; }
     #stage canvas:focus-visible { outline: 2px solid rgba(251, 191, 36, 0.6); outline-offset: -2px; }
@@ -155,8 +183,7 @@
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #b6c2d3; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; }
     #empty button { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
     /* Reading a file: one column of code over the map, left of the details panel. */
-    .reader { position: fixed; z-index: 15; top: 112px; left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: rgba(5, 8, 14, 0.97); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-    body:has(#details:not([hidden])) .reader { right: 354px; }
+    .reader { position: fixed; z-index: 15; top: 64px; left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: rgba(5, 8, 14, 0.97); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .reader[hidden] { display: none; }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
@@ -181,19 +208,25 @@
     .reader-rail button.cited { background: #fbbf24; }
     .reader-none { padding: 24px; color: var(--text); font-family: 'Segoe UI', sans-serif; }
     /* While reading, the map's own furniture steps aside. */
-    body.reading #minimap, body.reading #help, body.reading #empty { display: none; }
+    body.reading #minimap, body.reading #empty { display: none !important; }
     #empty[hidden] { display: none; }
-    .lensbar { position: relative; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 3px; }
-    .lensbar button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
-    .lensbar button.on { color: #0b0f17; background: var(--accent); font-weight: 600; }
+    .lensbar { position: relative; display: flex; align-items: center; gap: 2px; }
+    .lens-current { background: rgba(148, 163, 184, 0.08); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 10px; border-radius: 8px; cursor: pointer; }
+    .lens-current::after { content: ' ▾'; color: var(--dim); }
+    .lens-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 160px; padding: 4px; display: flex; flex-direction: column; z-index: 30; background: #0b1220; }
+    .lens-menu[hidden] { display: none; }
+    .lens-menu button { background: none; border: 0; color: var(--text); font: inherit; text-align: left; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+    .lens-menu button:hover, .lens-menu button:focus-visible { background: rgba(251, 191, 36, 0.14); outline: none; }
+    .lens-menu button.on { color: #fde68a; font-weight: 600; }
     /* The legend hangs below the lens bar, so picking a lens never reflows the top bar. */
-    .lens-legend { position: absolute; top: calc(100% + 6px); right: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
+    .lens-legend { position: absolute; top: calc(100% + 8px); right: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: rgba(9, 12, 20, 0.95); border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
+    .lens-legend .lens-label { color: var(--text); }
     .lens-legend[hidden] { display: none; }
     .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
     /* Altimeter: depth gauge on the left edge. */
     /* Region title card. */
     kbd { font: 600 10px ui-monospace, Consolas, monospace; color: #94a3b8; border: 1px solid #334155; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: rgba(15, 23, 42, 0.8); }
-    #travel { width: 240px; white-space: nowrap; overflow: hidden; gap: 10px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    #travel { white-space: nowrap; overflow: hidden; gap: 10px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
     #travel:hover { color: var(--text); border-color: rgba(251, 191, 36, 0.4); }
     /* Toast */
     .toast { position: fixed; z-index: 50; left: 50%; bottom: 96px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 22, 0.92); border: 1px solid rgba(251, 191, 36, 0.35); color: #e2e8f0; padding: 9px 14px; border-radius: 10px; font-size: 13px; transition: opacity 0.18s, transform 0.18s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
@@ -240,22 +273,19 @@
 <body>
   <div id="stage"></div>
   <div id="code"></div>
-  <div id="top" class="panel">
-    <div id="brand" class="panel" style="position: static">Zoom spike</div>
-    <nav id="models" class="panel" style="position: static"></nav>
-    <button id="travel">Travel to…<kbd>Ctrl K</kbd></button>
-    <nav id="views" class="panel" style="position: static" hidden></nav>
-  </div>
-  <div id="crumbrow">
-    <div id="crumbs" class="panel"></div>
-  </div>
+  <header id="top">
+    <nav id="models" aria-label="Map"></nav>
+    <nav id="crumbs" aria-label="Where you are"></nav>
+    <button id="travel" type="button">Search<kbd>Ctrl K</kbd></button>
+    <nav id="views" aria-label="View" hidden></nav>
+    <button id="help" type="button" aria-haspopup="dialog"><kbd>?</kbd> Help</button>
+  </header>
   <div id="stats" class="panel">loading…</div>
   <section id="welcome" aria-label="Welcome" hidden></section>
   <section id="failed" hidden></section>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
   <div id="empty" hidden>Nothing here · Backspace goes back · Alt+↑ goes up a level <button type="button" id="fitall">Fit whole map</button></div>
-  <button id="help" type="button" aria-haspopup="dialog"><kbd>?</kbd> Help</button>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

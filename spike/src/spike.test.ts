@@ -406,12 +406,14 @@ describe('fitText', () => {
 })
 
 describe('titlePx', () => {
-  it('shrinks a long name before cutting it, down to a readable size', () => {
+  it('shrinks a long name a little before cutting it, so siblings read near one size', () => {
     // Fits at the level's size: the level's size.
     expect(titlePx(20, 200, 8)).toBe(20)
-    // Too wide: shrinks to fit, below the 0.45 floor's pull only as far as 9 px.
-    expect(titlePx(20, 200, 16)).toBe(12.5)
-    expect(titlePx(20, 100, 16)).toBe(9)
+    // Too wide: shrinks to fit, down to three quarters of the level's size, then is cut.
+    expect(titlePx(20, 300, 16)).toBe(18.75)
+    expect(titlePx(20, 200, 16)).toBe(15)
+    // Never below 9 px when the level allows it.
+    expect(titlePx(10, 50, 16)).toBe(9)
     // A small level never grows to the 9 px floor.
     expect(titlePx(7, 30, 16)).toBe(7)
   })
