@@ -65,6 +65,36 @@ export interface LayoutJob {
   edges: { s: number; t: number; count: number }[]
   /** Connections view: each child's importance (relations crossing its boundary), in `children` order; placed centre-out. */
   weights?: number[]
+  /**
+   * A request's path: each child's place in the sequence (0, 1, 2…), or -1 for a card beside it
+   * (a type it names, a branch). Placed in reading order (lanePlace).
+   */
+  lane?: number[]
+}
+
+/**
+ * A request's path in reading order: the numbered cards left to right, wrapping to the next row,
+ * then the cards beside the sequence (types, branches) on rows of their own. The row width is the
+ * one whose cards come out largest in the parent's content box.
+ */
+export function lanePlace(job: LayoutJob & { lane: number[] }): { pos: number[]; w: number; h: number } {
+  const cellW = CARD_W + GUTTER, cellH = CARD_H + GUTTER
+  const seq = job.children.map((_, k) => k).filter(k => job.lane[k] >= 0).sort((a, b) => job.lane[a] - job.lane[b])
+  const aside = job.children.map((_, k) => k).filter(k => job.lane[k] < 0)
+  const n = Math.max(seq.length, aside.length, 1)
+  let cols = 1, bestScale = 0
+  for (let c = 1; c <= n; c++) {
+    const rows = Math.ceil(seq.length / c) + Math.ceil(aside.length / c)
+    const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / (rows * cellH + GUTTER))
+    if (scale > bestScale + 1e-12) { bestScale = scale; cols = c }
+  }
+  const pos = new Array<number>(job.children.length * 2)
+  const put = (list: number[], row0: number) => list.forEach((k, j) => { pos[k * 2] = GUTTER + (j % cols) * cellW; pos[k * 2 + 1] = GUTTER + (row0 + Math.floor(j / cols)) * cellH })
+  const seqRows = Math.ceil(seq.length / cols)
+  put(seq, 0)
+  put(aside, seqRows)
+  const rows = seqRows + Math.ceil(aside.length / cols)
+  return { pos, w: cols * cellW + GUTTER, h: rows * cellH + GUTTER }
 }
 
 /**
@@ -236,7 +266,10 @@ export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
       if (p) p.count += e.count
       else pairs.set(key, { ...e })
     }
-    jobs.push({ id: i, children: c, spans: c.map(k => span[k]), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight ? { weights: c.map(k => weight[k]) } : {}) })
+    // A request's path (its cards carry a role): numbered steps in order, the rest beside them.
+    const roles = c.map(k => tree.els[k].metadata?.role)
+    const lane = roles.some(r => r === 'step') ? c.map((k, j) => (roles[j] === 'step' ? Number(tree.els[k].metadata?.step) - 1 : roles[j] === 'response' && /^\d+ · /.test(tree.els[k].title) ? c.length : -1)) : undefined
+    jobs.push({ id: i, children: c, spans: c.map(k => (lane ? 1 : span[k])), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight && !lane ? { weights: c.map(k => weight[k]) } : {}), ...(lane ? { lane } : {}) })
   }
   return jobs
 }

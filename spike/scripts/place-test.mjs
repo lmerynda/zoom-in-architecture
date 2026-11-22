@@ -124,6 +124,28 @@ try {
   check('a cited line opens the reader at that line, named in its header', !!cite && cite.want === cite.at && cite.where === cite.want, JSON.stringify(cite))
   await page.keyboard.press('Escape')
 
+  // Requests: an endpoint's steps read in order, left to right and down, and its handler opens at
+  // its method's first line, not at the route annotation or line 1.
+  await open('model=knights-of-darkness&view=requests')
+  const lane = await page.evaluate(async () => {
+    const s = window.__spike, t = s.tree
+    const ep = t.els.findIndex(e => e.title === 'POST /kingdom/pass-turn')
+    const steps = t.children[ep].filter(k => t.els[k].metadata?.role === 'step').sort((a, b) => t.els[a].metadata.step - t.els[b].metadata.step)
+    const r = s.world.rect, key = k => [Math.round(r[k * 4 + 1]), r[k * 4]]
+    const ordered = steps.every((k, j) => !j || (key(k)[0] > key(steps[j - 1])[0] || (key(k)[0] === key(steps[j - 1])[0] && key(k)[1] > key(steps[j - 1])[1])))
+    s.select(steps[0])
+    const span = t.els[steps[0]].metadata.span
+    ;[...document.querySelectorAll('#details .d-actions button')].find(b => b.textContent === 'Read code').click()
+    for (let k = 0; k < 200 && document.querySelector('.reader').hidden; k++) await new Promise(r => setTimeout(r, 25))
+    await new Promise(r => setTimeout(r, 200))
+    return { steps: steps.length, ordered, span, at: document.querySelector('.reader pre .at i')?.textContent.trim() }
+  })
+  check('an endpoint’s steps read in order', lane.steps > 1 && lane.ordered, JSON.stringify(lane))
+  check('a handler opens at its method, not the route line', lane.span?.startsWith('166-') && lane.at === '166', JSON.stringify(lane))
+  await shot('03-request-step')
+  await page.keyboard.press('Escape')
+  await open('model=knights-of-darkness')
+
   // The wheel never stops silently: zooming in over a file at its limit says how to read it.
   await page.evaluate(() => { const s = window.__spike; s.select(-1) })
   const [fx, fy] = await page.evaluate(id => { const s = window.__spike, i = s.id(id); s.fit(i); return [0, 0] }, file.id)

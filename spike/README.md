@@ -115,6 +115,8 @@ A few controls, each doing one thing. Press `?` or the Help button in the app fo
 | `Esc` | Closes the top layer (a menu, the card stepped to), then clears the selection; it never moves the view |
 | `?` | The controls sheet, a dialog |
 
+In the Requests view an endpoint's numbered steps sit in reading order, left to right and down, with the types it names and its branches on the rows after; its panel lists the request in order, and a step opens at the lines it stands for. Cards say what they are in words: Endpoint, Step, Type, View, Response.
+
 A first visit shows a short welcome: the map's counts (parts, files, features), how to go in, and its features as places to start. It stays until Got it. An unknown map or view says so and lists the maps there are.
 
 The address names where you are: the selection (`at=`), else the card you are in (`in=`), the file and line being read (`file=`, `line=`) and the lens (`lens=`). A link opens there, and switching view (Architecture, Connections, Requests) keeps the subject; to and from Requests it crosses by file.

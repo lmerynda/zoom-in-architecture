@@ -5,7 +5,7 @@ import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, PAD, type World } from './layout'
-import { aggregateEdges, type EvidenceJson, type ShownEdge, type Tree } from './model'
+import { aggregateEdges, kindName, type EvidenceJson, type ShownEdge, type Tree } from './model'
 
 const FONT = 'ui'
 const FONT_PX = 32
@@ -555,7 +555,7 @@ export class Renderer {
         if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
         st.texts++
       }
-      const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${this.tree.els[i].kind.toUpperCase()} · ${this.tree.children[i].length}`
+      const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${kindName(this.tree.els[i]).toUpperCase()} · ${this.tree.children[i].length} INSIDE`
       const meta = (v.meta ??= this.text(metaText, texts))
       if (meta.text !== metaText) meta.text = metaText
       const mpx = level * 0.62
@@ -608,8 +608,8 @@ export class Renderer {
         const wrap = Math.round(((tInner - lead * want) * FONT_PX) / want / 8) * 8
         two = v.title2 ??= this.text(full, texts, wrap)
         if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
-        // Two lines or it is no help: past that, the one-line title, cut.
-        if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1) tpx = want
+        // Two lines or it is no help, and no word wider than the card: past that, the one-line title, cut.
+        if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1 && two.width / (two.scale.x || 1) <= wrap + 1) tpx = want
         else two = null
       }
     }
@@ -639,7 +639,7 @@ export class Renderer {
     // A file says how big it is and in what, not just that it is code.
     const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
     const inside = this.tree.children[i].length
-    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${el.kind} · ${inside} inside` : el.kind
+    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${kindName(el)} · ${inside} inside` : kindName(el)
     // Rank, how much crosses its boundary, and how many of its siblings it reaches: a hub many use
     // and a part that talks to everything both rank high, and the last number tells them apart.
     const rk = this.ranking, sibs = this.tree.children[this.tree.parent[i]]?.length - 1

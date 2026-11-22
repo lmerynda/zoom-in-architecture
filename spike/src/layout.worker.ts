@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
-import { cardH, cardW, centreOut, CONTENT_ASPECT, GUTTER, type LayoutJob, type LocalLayout } from './layout'
+import { cardH, cardW, centreOut, CONTENT_ASPECT, GUTTER, lanePlace, type LayoutJob, type LocalLayout } from './layout'
 import { ChannelGrid } from './route'
 
 const elk = new ELK()
@@ -20,7 +20,8 @@ const OPTIONS = {
  */
 async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
   // Coupling-view levels are placed centre-out by importance; the rest are packed by ELK.
-  const packed = jobs.filter(j => !j.weights)
+  // A request's path is placed in reading order.
+  const packed = jobs.filter(j => !j.weights && !j.lane)
   const root: ElkNode = {
     id: 'root',
     layoutOptions: { 'elk.algorithm': 'box' },
@@ -34,7 +35,8 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
   const elkOf = new Map(packed.map((j, n) => [j.id, g.children![n]]))
   return jobs.map(job => {
     let pos: number[], w: number, h: number
-    if (job.weights) ({ pos, w, h } = centreOut(job))
+    if (job.lane) ({ pos, w, h } = lanePlace({ ...job, lane: job.lane }))
+    else if (job.weights) ({ pos, w, h } = centreOut(job))
     else {
       const c = elkOf.get(job.id)!
       const at = new Map(c.children!.map(k => [k.id, k]))

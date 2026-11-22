@@ -40,6 +40,8 @@ const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([
   job.edges.map(e => [t.els[e.s].id, t.els[e.t].id, e.count]).sort(),
   // The Connections view places children by importance: a change there is a change of layout.
   job.weights ?? null,
+  // A request's path places children by their step: a new order is a new layout.
+  job.lane ?? null,
 ])
 
 /**

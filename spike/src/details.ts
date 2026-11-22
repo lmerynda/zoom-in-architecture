@@ -1,4 +1,4 @@
-import type { EvidenceJson, Tree } from './model'
+import { kindName, type EvidenceJson, type Tree } from './model'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag)
@@ -63,7 +63,7 @@ export function foldEvidence(evidence: EvidenceJson[]): { code: string | null; a
 export function kindWord(tree: Tree, i: number): string {
   const e = tree.els[i], n = tree.children[i].length
   if (e.metadata?.path) return 'File'
-  const k = e.kind ? e.kind[0].toUpperCase() + e.kind.slice(1) : 'Element'
+  const name = kindName(e), k = name ? name[0].toUpperCase() + name.slice(1) : 'Element'
   return n ? `${k} · ${n} inside` : k
 }
 
@@ -160,6 +160,28 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     box.append(list)
     return box
   }
+  // A request's path: its numbered steps in the order the request runs, then what stands beside
+  // them (the types it names, its branches and answers). Each a jump to its card.
+  const kids = tree.children[i], roleOf = (k: number) => tree.els[k].metadata?.role
+  const path2: HTMLElement[] = []
+  if (kids.some(k => roleOf(k) === 'step')) {
+    const box = el('section', 'd-steps')
+    const order = (k: number) => (roleOf(k) === 'step' ? Number(tree.els[k].metadata?.step) : 1e3 + ['view', 'response', 'type'].indexOf(roleOf(k) ?? '') )
+    const steps = [...kids].sort((a, b) => order(a) - order(b))
+    box.append(el('h3', '', 'The request, in order'))
+    const ol = el('ol')
+    for (const k of steps) {
+      const li = el('li', roleOf(k) === 'step' ? '' : 'beside')
+      const b = el('button', 'd-rel')
+      const note = roleOf(k) === 'step' ? tree.els[k].technology || '' : kindName(tree.els[k])
+      b.append(el('b', '', tree.els[k].title), ...(note && !tree.els[k].title.includes(note) ? [el('span', '', note)] : []))
+      b.onclick = () => act.go(k)
+      li.append(b)
+      ol.append(li)
+    }
+    box.append(ol)
+    path2.push(box)
+  }
   panel.replaceChildren(
     head,
     ...(path.length ? [crumbs] : []),
@@ -169,6 +191,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
     // What the scanner saw here but could not follow: the map has no arrow for it.
     ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
+    ...path2,
     section('Uses', 'out', 'uses', uses),
     section('Used by', 'in', 'usedBy', usedBy),
   )

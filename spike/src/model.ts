@@ -46,6 +46,17 @@ export interface SiblingEdge {
   count: number
 }
 
+/**
+ * What a card is, in a word a reader uses: a request path's own words (Endpoint, Step, Type, View,
+ * Response) where the map has them, else the map's kind.
+ */
+export function kindName(e: { kind: string; metadata?: Record<string, string> }): string {
+  const role = e.metadata?.role
+  if (e.metadata?.method) return 'Endpoint'
+  if (role) return role[0].toUpperCase() + role.slice(1)
+  return e.kind
+}
+
 /** A doc comment's text without its markup: {@link Pet} as Pet, <code>x</code> as x. */
 export function plainDoc(s: string): string {
   return s.replace(/\{@\w+\s+([^}]*)\}/g, '$1').replace(/<\/?[a-z][^>]*>/gi, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
