@@ -154,23 +154,23 @@ export function buildRequests(graph, map, model) {
         // render, and each answer, is a card of its own off the step that gives it, not a next step.
         const views = e.responses.filter(r => r.kind === 'view').map(r => r.view)
         const branches = e.responses.length > 1
-        const steps = branches ? e.steps : [...e.steps, ...views]
+        // Only files the model shows become cards; the numbers count those, so they never skip.
+        const steps = (branches ? e.steps : [...e.steps, ...views]).filter(p => fileEl.has(p))
         const sid = new Map()
         // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
         const shown = [...steps, ...e.types, ...(branches ? views : [])]
         const name = p => shown.some(q => q !== p && stem(q) === stem(p)) ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)
         steps.forEach((p, k) => {
-          const base = fileEl.get(p)
-          if (!base) return
+          const base = fileEl.get(p), handles = p === e.file
           const id = `${eid}.s${k + 1}`
           sid.set(p, id)
           // The handler leads with its method, the one thing that differs between endpoints of one
           // controller; its class is the line below, so a cut title never loses the method.
-          const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : name(p)}`
-          const technology = k === 0 && e.name ? stem(p) : base.technology
+          const title = `${k + 1} · ${handles ? (e.name ? `${e.name}()` : stem(p)) : name(p)}`
+          const technology = handles && e.name ? stem(p) : base.technology
           // The handler's card marks its route line when the route sits in its file. Every card names
           // the lines it is about (`span`), so its code opens exactly there.
-          const marks = k === 0 && e.routeFile === p ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
+          const marks = handles && e.routeFile === p ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
           elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks, role: 'step', step: String(k + 1), span: e.spans[p] } })
         })
         // The types the handler only names (what it takes and gives back) do not run in sequence:
@@ -189,7 +189,17 @@ export function buildRequests(graph, map, model) {
           sid.set(p, id)
           elements.push({ ...copy(base), id, parent: eid, title: name(p), ...CODE, metadata: { ...base.metadata, role: 'view', span: e.spans[p] } })
         })
-        for (const r of graph.edges) if (!r.types && sid.has(r.from) && sid.has(r.to)) relations.push({ source: sid.get(r.from), target: sid.get(r.to), title: r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ') })
+        // One lane, in the order the request runs: exactly one arrow from each numbered step to the
+        // next, titled with what the first imports of the second when it does, so a layered layout
+        // draws the steps left to right. A type hangs off the handler that names it, a branch's view
+        // off the handler that renders it.
+        const names = (from, to) => {
+          const r = graph.edges.find(x => x.from === from && x.to === to && !x.types) ?? graph.edges.find(x => x.from === from && x.to === to)
+          return r && (r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', '))
+        }
+        steps.slice(1).forEach((p, k) => relations.push({ source: sid.get(steps[k]), target: sid.get(p), title: names(steps[k], p) || (views.includes(p) ? 'renders' : 'then') }))
+        for (const p of e.types) if (sid.has(p) && sid.has(e.file)) relations.push({ source: sid.get(e.file), target: sid.get(p), title: names(e.file, p) || 'names' })
+        if (branches) for (const p of views) if (sid.has(p) && sid.has(e.file)) relations.push({ source: sid.get(e.file), target: sid.get(p), title: 'renders' })
         // Back out: the page it renders, or the handler's own answer (a redirect, a body). One answer
         // ends the numbered path; each of several is a Response card of its own.
         e.responses.forEach((r, k) => {
@@ -200,8 +210,6 @@ export function buildRequests(graph, map, model) {
           const from = r.kind === 'view' ? sid.get(r.view) : sid.get(e.file)
           if (from) relations.push({ source: from, target: rid, title: r.kind === 'view' ? 'HTML page' : r.kind === 'redirect' ? 'redirect' : r.model ?? (r.json ? 'JSON' : 'returns') })
         })
-        // The handler renders each view it may answer with.
-        if (branches) for (const p of views) if (sid.has(p) && !relations.some(x => x.source === sid.get(e.file) && x.target === sid.get(p))) relations.push({ source: sid.get(e.file), target: sid.get(p), title: 'renders' })
         // Out to the stores and services: the map's own links from these files, with their evidence.
         for (const p of steps) for (const l of linksFrom.get(p) ?? []) {
           const to = fileEl.has(l.to) ? top(fileEl.get(l.to).parent) : top(l.to)

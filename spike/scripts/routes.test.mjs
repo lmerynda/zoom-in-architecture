@@ -240,6 +240,21 @@ describe('buildRequests of a request path', () => {
     expect(rel(`${list.id}.v2`, `${list.id}.response-4`).title).toBe('HTML page')
   })
 
+  it('draws one lane: exactly one arrow from each numbered step to the next, and none skipping ahead', () => {
+    const greet = ep('POST', '/owners/greet')
+    const lane = r.relations.filter(x => x.source.startsWith(`${greet.id}.s`) && x.target.startsWith(`${greet.id}.s`)).map(x => `${x.source.slice(greet.id.length + 1)}>${x.target.slice(greet.id.length + 1)} ${x.title}`)
+    // The controller also imports ClinicService and OwnerRepository; those arrows would skip ahead.
+    // Mailer imports nothing of ClinicService: the request just runs it next.
+    expect(lane).toEqual(['s1>s2 Mailer', 's2>s3 then', 's3>s4 OwnerRepository'])
+    // A type hangs off the handler that names it.
+    expect(r.relations.filter(x => x.target === `${greet.id}.t1`).map(x => x.source)).toEqual([`${greet.id}.s1`])
+    for (const e of r.elements.filter(x => x.metadata.route)) {
+      const steps = kids(e.id).filter(x => x.metadata.role === 'step').map(x => x.id)
+      const arrows = r.relations.filter(x => steps.includes(x.source) && steps.includes(x.target)).map(x => [steps.indexOf(x.source), steps.indexOf(x.target)])
+      expect(arrows).toEqual(steps.slice(1).map((_, k) => [k, k + 1]))
+    }
+  })
+
   it('names on every card the lines it is about, and marks the route on the handler', () => {
     const greet = ep('POST', '/owners/greet'), el = id => r.elements.find(e => e.id === id)
     expect(kids(greet.id).filter(e => e.metadata.role !== 'response').map(e => `${e.title} ${e.metadata.span}`)).toEqual(['1 · greet() 63-67', '2 · Mailer 7-10', '3 · ClinicService 16-19', '4 · OwnerRepository 3-7', 'Owner 3-26'])
