@@ -128,7 +128,8 @@ function bodyOf(lines, from, lang) {
   for (let j = from; j < lines.length; j++) {
     // Annotations ({ "/vets" }) carry braces of their own; the body starts after them.
     if (!opened && /^\s*(@|\[)/.test(lines[j])) continue
-    const code = lines[j].replace(/\/\/.*$/, '').replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g, '""')
+    // Go's empty interface{} and struct{} are types, not the body: `func Save(data interface{}) error {`.
+    const code = lines[j].replace(/\/\/.*$/, '').replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g, '""').replace(lang === 'go' ? /\b(interface|struct)\s*\{\s*\}/g : /$^/, '$1')
     if (!name) name = code.match(/(\w+)\s*\(/)?.[1] ?? ''
     for (const c of code) {
       if (c === '{') { depth++; opened = true } else if (c === '}') depth--

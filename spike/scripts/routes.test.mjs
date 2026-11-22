@@ -73,7 +73,8 @@ describe('endpoints of Express and Gin routers', () => {
   it('reads Gin routes under the group their register function is called with, handlers anywhere in the package', () => {
     const eps = endpoints(fixture('gin'))
     // router.GET("") and router.GET("/") are one endpoint; Pay lives in another file of the package.
-    expect(brief(eps)).toEqual(['GET /api/orders List: routers.go > models.go', 'POST /api/orders/:id/pay Pay: pay.go > models.go'])
+    // SaveNote(id string, meta interface{}) has a body past its signature's braces, and it reaches the store.
+    expect(brief(eps)).toEqual(['GET /api/orders List: routers.go > models.go', 'POST /api/orders/:id/note Note: pay.go > notes.go > models.go', 'POST /api/orders/:id/pay Pay: pay.go > models.go'])
     expect(eps.every(e => e.response.json)).toBe(true)
   })
 })
