@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson } from '../model'
-import { elementScore, fuzzy, History } from './logic'
+import { elementScore, fuzzy, same } from './logic'
 
 const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
 // web → api → db, and ops → api (so db reaches ops only against direction).
@@ -16,24 +16,11 @@ const model: ModelJson = {
 const tree = new Tree(model)
 const id = (s: string) => tree.byId.get(s)!
 
-describe('History', () => {
-  it('goes back and forward and drops forward on a new jump', () => {
-    const h = new History()
-    const v = (x: number, z = 1) => ({ x, y: 0, z, selected: null })
-    h.push(v(0), 1000)
-    h.push(v(5000), 1000)
-    expect(h.goBack(v(9000))!.x).toBe(5000)
-    expect(h.goBack(v(5000))!.x).toBe(0)
-    expect(h.goForward(v(0))!.x).toBe(5000)
-    h.push(v(7000), 1000)
-    expect(h.forward).toEqual([])
-  })
-
-  it('does not record views close to the last one', () => {
-    const h = new History()
-    h.push({ x: 0, y: 0, z: 1, selected: null }, 1000)
-    h.push({ x: 10, y: 0, z: 1.05, selected: null }, 1000)
-    expect(h.back.length).toBe(1)
+describe('same', () => {
+  it('reads views close together as one place', () => {
+    expect(same({ x: 0, y: 0, z: 1, selected: null }, { x: 10, y: 0, z: 1.05, selected: null }, 1000)).toBe(true)
+    expect(same({ x: 0, y: 0, z: 1, selected: null }, { x: 5000, y: 0, z: 1, selected: null }, 1000)).toBe(false)
+    expect(same({ x: 0, y: 0, z: 1, selected: 'a' }, { x: 0, y: 0, z: 1, selected: null }, 1000)).toBe(false)
   })
 })
 

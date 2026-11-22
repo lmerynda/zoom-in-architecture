@@ -6,7 +6,8 @@ import type { Minimap } from '../minimap'
 import type { Tree } from '../model'
 import type { PanelRows } from '../details'
 import type { Renderer } from '../render'
-import { History, same, type View } from './logic'
+import type { Places } from '../places'
+import { same, type View } from './logic'
 import { Help, Menu, Palette, Toast, Tooltip, type Command } from './ui'
 
 export interface Ctx {
@@ -30,6 +31,10 @@ export interface Ctx {
   read: (i: number) => void
   /** The details panel's rows, in the order shown: ] and [ walk them. */
   rows: () => PanelRows
+  /** The browser's history of places: Back, Forward and the address. */
+  places: Places
+  /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
+  closeTop: () => boolean
   now: () => number
 }
 
@@ -48,11 +53,13 @@ export function installControls(c: Ctx) {
   // The model can be swapped live; every closure below reads these, and swap() reassigns them.
   let tree = c.tree, world = c.world, renderer = c.renderer
   const toast = new Toast()
-  const history = new History()
   const help = new Help(c.connections)
   const menu = new Menu()
 
-  const view = (): View => ({ x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected > 0 ? tree.els[renderer.selected].id : null })
+  const view = (): View => {
+    const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0
+    return { x: cam.x, y: cam.y, z: cam.z, selected: renderer.selected > 0 ? tree.els[renderer.selected].id : null, here: here > 0 ? tree.els[here].id : null }
+  }
   /**
    * Moving by hand (wheel, drag, arrow keys) is a trip too: where it started is recorded once the
    * view settles somewhere else, so Back returns from exploring as it does from a jump.
@@ -61,11 +68,12 @@ export function installControls(c: Ctx) {
   const moved = () => { const t = performance.now(); if (excursion) excursion.at = t; else excursion = { from: view(), at: t } }
   const settle = (force = false) => {
     if (!excursion || (!force && (drag || cam.flying || performance.now() - excursion.at < 600))) return
-    if (!same(excursion.from, view(), cam.w)) history.push(excursion.from, cam.w)
+    const now = view()
+    if (!same(excursion.from, now, cam.w)) c.places.record(excursion.from, now)
     excursion = null
   }
   /** Records the place being left: a pending trip's start first, then here. */
-  const leave = () => { settle(true); history.push(view(), cam.w) }
+  const leave = () => { settle(true); c.places.record(view()) }
   /** Every jump records where you were, so Back brings you back. */
   const go = (i: number) => { leave(); c.fit(i) }
   /** Jump that also selects the destination; the view left behind keeps its own selection. */
@@ -74,8 +82,9 @@ export function installControls(c: Ctx) {
     cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
     c.select(v.selected ? tree.byId.get(v.selected) ?? -1 : -1)
   }
-  const back = () => { settle(true); const v = history.goBack(view()); if (v) { goView(v); toast.show('Back', 'Alt+→ forward') } else toast.show('No earlier place') }
-  const forward = () => { const v = history.goForward(view()); if (v) goView(v) }
+  const back = () => { settle(true); if (!c.places.back()) toast.show('No earlier place') }
+  const forward = () => c.places.forward()
+  c.places.onGo = v => { excursion = null; goView(v) }
   /** Up one level from where you are: the parent of the selection, else of the place on screen. */
   const parent = () => {
     const path = renderer.breadcrumb(), here = path[path.length - 1] ?? 0
@@ -166,8 +175,17 @@ export function installControls(c: Ctx) {
     // code there is nothing new to see, only the text growing.
     const n = renderer.pick(e.offsetX, e.offsetY)
     const intoCode = n > 0 && !tree.children[n].length && !!tree.els[n].metadata?.path && world.rect[n * 4 + 2] * cam.z > cam.w * 0.4
-    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * (intoCode && d < 0 ? 0.0038 : 0.0022)), c.zoomLimit(e.offsetX, e.offsetY), c.zoomFloor())
+    const limit = c.zoomLimit(e.offsetX, e.offsetY)
+    cam.zoomAt(e.offsetX, e.offsetY, Math.exp(-d * (intoCode && d < 0 ? 0.0038 : 0.0022)), limit, c.zoomFloor())
+    // The wheel never stops without saying why: at a file, how to read it; in a gap, where to point.
+    if (d < 0 && cam.z >= limit * 0.97 && performance.now() - stopSaid > 2500) {
+      stopSaid = performance.now()
+      const file = n > 0 && !tree.children[n].length && tree.els[n].metadata?.path
+      toast.show(file ? `Press Enter or double-click to read ${tree.els[n].title}` : 'Nothing further here: point at a card to go into it', file ? 'Enter' : '')
+      if (file && renderer.selected !== n) c.select(n)
+    }
   }, { passive: false })
+  let stopSaid = 0
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
   canvas.addEventListener('pointerdown', e => {
     // Any press ends a flight where it is: the reader has taken over.
@@ -232,6 +250,7 @@ export function installControls(c: Ctx) {
     if (k === 'escape') {
       // One layer at a time: a menu, a stepped-to card, then the selection. Never a move.
       if (menu.isOpen) return menu.close()
+      if (c.closeTop()) return
       if (renderer.target > 0) return clearTarget()
       if (renderer.selected > 0) return c.select(-1)
       return
@@ -279,7 +298,7 @@ export function installControls(c: Ctx) {
       const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
       tooltip.update(p && small && !drag && !cam.flying && !palette.isOpen && !menu.isOpen ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
-    go, goSelect, back, forward, parent, cycleTarget, palette, help, menu, toast,
+    view, go, goSelect, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },
     /** Points every control at a new model version; the caller carries the selection over. */

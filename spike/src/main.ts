@@ -1,6 +1,6 @@
 import { Application } from 'pixi.js'
 import { Camera } from './camera'
-import { CodeView, linePoint } from './code'
+import { CodeView } from './code'
 import { installControls } from './controls/install'
 import { renderDetails, type PanelActions, type PanelRows } from './details'
 import { LensBar, ago } from './hud'
@@ -11,6 +11,8 @@ import { Minimap } from './minimap'
 import { renderModelTabs } from './models'
 import { diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
+import { placeUrl, Places } from './places'
+import { Reader } from './reader'
 import { OPEN_A, Renderer } from './render'
 import { synthetic } from './synthetic'
 
@@ -22,8 +24,7 @@ const view = new URLSearchParams(location.search).get('view')
 /** The Connections view lays out the architecture model by connection; other views have their own model. */
 const coupling = view === 'connections'
 const modelFile = view && !coupling ? `${modelName}.${view}` : modelName
-/** On-screen font size a jump into code aims for, and the largest the wheel zooms code to. */
-const READ_PX = 15
+/** The largest on-screen font size the wheel zooms code on the map to. */
 const MAX_READ_PX = 28
 /** Longer than a double-click: a click that may be the first of two waits this long before moving the view. */
 const DOUBLE_CLICK_MS = 350
@@ -124,6 +125,7 @@ async function main() {
   const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')
   const minimap = new Minimap(minimapEl, tree, world)
   showIntro()
+  $('fitall').onclick = () => controls.go(0)
   const code = new CodeView($('code'), modelName, tree)
   // Reduced motion: no flights, the view cuts to where it goes.
   const reduced = matchMedia('(prefers-reduced-motion: reduce)')
@@ -225,22 +227,26 @@ async function main() {
   }
   /** Where a card's own code starts: the part of the file it stands for, else its first line. */
   const startOf = (i: number) => Number(tree.els[i].metadata?.span?.split('-')[0]) || 1
-  /** Opens card i's file at a line: flies there with the line readable, beside the panel, and selects the card. */
+  /** The file being read and its line, while its card is the selection or the place you are in. */
+  let reading: { id: string; line: number } | null = null
+  const reader = new Reader()
+  reader.onLine = line => { if (reading) reading.line = line }
+  reader.onClose = () => { reading = null; document.body.classList.remove('reading'); app.canvas.focus({ preventScroll: true }) }
+  /**
+   * Reads card i's file at a line: the card is selected and framed among its neighbours, and its
+   * code opens over the map in one scrolling column. Double-click, Enter, Read code and a cited
+   * line all come here.
+   */
   const openCode = async (i: number, line: number) => {
     const path = tree.els[i]?.metadata?.path
     if (i <= 0 || !path) return
+    if (renderer.selected !== i) controls.goSelect(i)
     // Fetching and preparing a big file takes a moment; say so at once.
     controls.toast.show(`Opening ${path.split('/').pop()}:${line}`)
-    const m = await code.measure(i)
-    if (!m) return controls.go(i)
-    const r = world.rect
-    const p = linePoint(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3], m.lines, m.cols, line)
-    const z = READ_PX / p.font
-    // The line goes in the middle of the space the details panel leaves free.
-    const cover = details.hidden ? 0 : details.getBoundingClientRect().width + 24
-    // A cited line sits mid-screen; a file opened to read starts at its top, under the top bar.
-    const fromTop = line <= 1 ? (cam.h / 2 - 140) / z : 0
-    controls.visit({ x: p.x + cover / 2 / z, y: p.y + fromTop, z, selected: tree.els[i].id })
+    const src = await code.prepared(i)
+    reading = { id: tree.els[i].id, line }
+    document.body.classList.add('reading')
+    reader.open(path, tree.els[i].title, tree.els[tree.parent[i]].title, line, src, () => void openCode(i, line))
   }
   const actions: PanelActions = {
     go: j => controls.goSelect(j),
@@ -284,8 +290,46 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows })
+  const places = new Places(v => {
+    const r = reading && (v.selected === reading.id || v.here === reading.id) ? reading : null
+    const path = r ? tree.els[tree.byId.get(r.id) ?? 0]?.metadata?.path : null
+    return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null }
+  }, () => cam.w)
+  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
+
+  // A link names a place: open there. The selection (`at`) is framed among its neighbours, a place
+  // (`in`) fills the view; `file` finds a file's card (the Requests view has its own ids), and
+  // `line` opens it there.
+  {
+    const q = new URLSearchParams(location.search)
+    const lens = q.get('lens')
+    if (lens && lenses.some(l => l.name === lens)) setLens(lens as LensName)
+    const at = tree.byId.get(q.get('at') ?? '') ?? -1, inside = tree.byId.get(q.get('in') ?? '') ?? -1
+    const file = q.get('file'), line = Number(q.get('line')) || 0
+    const target = at > 0 ? at : file ? cardOf(file, inside) : inside
+    if (target > 0) {
+      const f = frameFor(at > 0 || file ? target : inside)
+      cam.set(f.x, f.y, f.z)
+      if (at > 0 || file) select(target)
+      if (file && line) void openCode(target, line)
+    }
+    places.update(controls.view())
+  }
+  /**
+   * The view switch keeps your subject: Architecture and Connections share ids; the Requests view
+   * has its own, so the subject crosses to or from it by its file.
+   */
+  const viewLinks = () => {
+    const v = controls.view()
+    const subject = tree.byId.get(v.selected ?? v.here ?? '') ?? -1
+    const file = subject > 0 ? tree.els[subject].metadata?.path ?? null : null
+    for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a')) {
+      const base = (a.dataset.base ??= a.getAttribute('href') ?? '')
+      const crossing = (new URLSearchParams(base).get('view') === 'requests') !== (view === 'requests')
+      a.href = crossing ? placeUrl(base, { at: null, file }) : placeUrl(base, { at: v.selected, in: v.here, lens: renderer.lens?.name ?? null })
+    }
+  }
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
@@ -422,6 +466,7 @@ async function main() {
       `drawn ${last.nodes} cards · ${last.texts} labels · ${last.edges} edges · ${last.chips} off-screen`,
     ].join('\n')
     minimap.draw(cam)
+    if (!cam.flying) { places.update(controls.view()); viewLinks() }
     measureHud()
   }, 250)
 

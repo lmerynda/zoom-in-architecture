@@ -289,13 +289,24 @@ export class CodeView {
 
   /** A file's line count and width once it is fetched and prepared, or null if it has no source. */
   async measure(i: number): Promise<{ lines: number; cols: number } | null> {
+    const src = await this.prepared(i)
+    return src && { lines: src.lines.length, cols: src.cols }
+  }
+
+  /**
+   * Card i's file fetched and prepared: its lines, their markup (numbers, colours, marks), and which
+   * lines are cited and marked; null when there is no source to show (a static build, a failed fetch).
+   * A failed fetch is tried again on the next call.
+   */
+  async prepared(i: number): Promise<{ lines: string[]; html: string[]; cols: number; cited: Set<number>; marks: Map<number, string[]> } | null> {
     const path = this.tree.els[i]?.metadata?.path
     if (!path) return null
+    if (this.sources.get(path) === null) this.sources.delete(path)
     if (!this.sources.has(path)) this.load(path, i)
-    for (let t = 0; t < 200; t++) {
+    for (let t = 0; t < 400; t++) {
       const src = this.sources.get(path)
       if (src === null || src === undefined) return null
-      if (src !== 'loading' && src.ready) return { lines: src.lines.length, cols: src.cols }
+      if (src !== 'loading' && src.ready) return src
       await new Promise(r => setTimeout(r, 25))
     }
     return null

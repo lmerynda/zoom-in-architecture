@@ -105,15 +105,19 @@ A few controls, each doing one thing. Press `?` or the Help button in the app fo
 | Control | Does |
 |---|---|
 | Wheel, drag, click | Zoom at the pointer, pan, select (what it uses in amber, what uses it in cyan) |
-| Double-click, `Enter` | Go into a card; on a file, read its code where its part starts |
+| Double-click, `Enter` | Go into a card; on a file, open its code to read, where its part starts |
 | Right-click a card | A short menu: go in or read code, copy the file's path |
 | `Ctrl+K` or `/` | Search the map by title, id or feature, then description or file path; `>` lists commands (colour by a lens, whole map, back, controls) |
-| `Backspace` or `Alt+←` | Back to the previous place, including where a wheel, drag or arrow-key trip started; `Alt+→` and the mouse buttons go forward |
+| `Backspace` or `Alt+←` | Back to the previous place, including where a wheel, drag or arrow-key trip started; `Alt+→` and the mouse buttons go forward. These are the browser's Back and Forward too |
 | `Alt+↑` | Up to the parent |
 | `]` / `[` | Step through the details panel's Uses / Used by rows, in its order; the camera moves only if a card is out of view; `Enter` goes there |
 | `.` / `,` | Connections view only: next / previous card of the level by rank, with why it ranks there |
 | `Esc` | Closes the top layer (a menu, the card stepped to), then clears the selection; it never moves the view |
 | `?` | The controls sheet, a dialog |
+
+The address names where you are: the selection (`at=`), else the card you are in (`in=`), the file and line being read (`file=`, `line=`) and the lens (`lens=`). A link opens there, and switching view (Architecture, Connections, Requests) keeps the subject; to and from Requests it crosses by file.
+
+Reading a file opens it over the map in one column: native scrolling, selectable text, a header naming `path:line` with Copy and the way back to its parent, and a rail marking cited (amber) and marked (cyan) lines. Only an explicit open does this (double-click, `Enter`, Read code, a cited line); the wheel keeps zooming the map, and at its limit over a file says how to read it. A source the viewer cannot fetch says so, with Try again. Empty space offers Fit whole map.
 
 Also: the details panel lists every relation of the selection, one line each; a line backed by a map link opens its cited code lines on click, identical lines shown once, and clicking one opens its file at that line, in the card nearest the selection; a file's panel has its path, line count, Read code and Copy path. A card too small to show its name gets a short preview on hover. Zooming past a file card shows its source (the wheel stops once it reads comfortably), coloured, with cited lines in amber and the graph's marked lines tagged with their kind. The minimap clicks and drags; arrow keys and `+` / `-` move the camera. Flights last at most 0.7 s and any press ends one; with reduced motion set in the system, the view cuts instead. Frame statistics show with `?stats` in the address.
 
@@ -129,6 +133,7 @@ DPR=2 node scripts/tour.mjs                                # screenshot walkthro
 node scripts/ux-tour.mjs                                   # drives every control with real input into shots/ux/
 node scripts/answers-test.mjs                              # checks the map's answers: panel vs map, Back, opening code
 node scripts/controls-test.mjs                             # checks the controls: dialogs, Esc, menu, motion, contrast
+node scripts/place-test.mjs                                # checks places: the address, browser Back, view switch, the code reader
 node scripts/live-test.mjs                                 # edits a model while the map is open, checks the live update
 node scripts/publish-test.mjs                              # publishes a map like an agent, edits the repo, checks the map follows
 node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s into shots/video/ (code-* scenes use this repo's map)

@@ -138,18 +138,18 @@ try {
   await shot('02b-code')
   await page.evaluate(() => { const s = window.__spike; s.fit(0) })
   check('a link shows its evidence in the panel', proof.includes('src/api.ts:1') && proof.includes("fetch('/api/orders')") && proof.includes('@GetMapping("/api/orders")'), proof.split('\n').filter(l => /:\d|fetch|@Get/.test(l)).join(' | '))
-  // Clicking a cited line opens its file there: the line in view, readable, beside the panel.
+  // Clicking a cited line opens its file to read, at that line, beside the panel.
   await page.waitForFunction(() => !window.__spike.cam.flying)
   await page.evaluate(() => [...document.querySelectorAll('.d-ev .cite')].find(e => e.title.includes('OrderController.java:11')).click())
-  await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 5000 }).catch(() => {})
-  await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
-  await sleep(600)
+  await page.waitForFunction(() => !document.querySelector('.reader').hidden && document.querySelector('.reader pre .at'), { timeout: 10000 })
+  await sleep(300)
   const opened = await page.evaluate(() => {
-    const line = [...document.querySelectorAll('.code .cited')].find(e => e.textContent.includes('@GetMapping'))
-    const r = line?.getBoundingClientRect(), panel = document.getElementById('details').getBoundingClientRect()
-    return r ? { y: r.y, h: r.height, left: r.x, panelLeft: panel.x, mid: innerHeight / 2 } : null
+    const line = document.querySelector('.reader pre .at')
+    const r = line.getBoundingClientRect(), box = document.querySelector('.reader').getBoundingClientRect(), panel = document.getElementById('details').getBoundingClientRect()
+    return { text: line.textContent, inView: r.y > box.y && r.bottom < box.bottom, right: box.right, panelLeft: panel.x }
   })
-  check('a cited line opens its code there', !!opened && Math.abs(opened.y + opened.h / 2 - opened.mid) < 60 && opened.h > 12 && opened.left < opened.panelLeft, JSON.stringify(opened))
+  check('a cited line opens its code there', opened.text.includes('@GetMapping') && opened.inView && opened.right <= opened.panelLeft, JSON.stringify(opened))
+  await page.keyboard.press('Escape')
   await shot('02c-evidence-opened')
   // A selection lights the focused card's edges.
   await page.evaluate(() => { const s = window.__spike; s.select(-1); s.unhover(); s.fit(0) })
@@ -226,7 +226,7 @@ try {
   const far = await page.evaluate(() => window.__spike.cam.z)
   check('the wheel stops over empty space and near the landscape', deep.z < deep.fit * 8 && deep.cards > 0 && far > deep.fit * 0.45, JSON.stringify({ deep: deep.z / deep.fit, cards: deep.cards, far: far / deep.fit }))
   // Double-clicking a file reads it: a real double-click (two presses, the second counted as such,
-  // so the browser fires dblclick) flies in to the file's code at reading size.
+  // so the browser fires dblclick) opens the file's code to read.
   const fileAt = await page.evaluate(async () => {
     const s = window.__spike, f = s.tree.els.findIndex(e => e.metadata?.path === 'web/src/api.ts')
     s.select(-1); s.fit(s.tree.parent[f])
@@ -240,8 +240,10 @@ try {
   await page.mouse.down({ clickCount: 1 }); await page.mouse.up({ clickCount: 1 })
   await page.mouse.down({ clickCount: 2 }); await page.mouse.up({ clickCount: 2 })
   await sleep(3000)
-  const read = await page.evaluate(() => ({ dblclicks: window.__dblclicks, sel: window.__spike.renderer.selected, z: window.__spike.cam.z, text: [...document.querySelectorAll('.code pre')].some(p => !p.hidden && !p.closest('.code').hidden) }))
-  check('double-clicking a file flies in to its code as text', fileAt.under === fileAt.f && read.dblclicks === 1 && read.sel === fileAt.f && read.z > fileAt.z * 1.5 && read.text, JSON.stringify({ ...fileAt, ...read }))
+  await page.waitForFunction(() => !document.querySelector('.reader').hidden, { timeout: 10000 }).catch(() => {})
+  const read = await page.evaluate(() => ({ dblclicks: window.__dblclicks, sel: window.__spike.renderer.selected, text: document.querySelectorAll('.reader pre > span').length }))
+  check('double-clicking a file opens its code to read', fileAt.under === fileAt.f && read.dblclicks === 1 && read.sel === fileAt.f && read.text > 0, JSON.stringify({ ...fileAt, ...read }))
+  await page.keyboard.press('Escape')
   // Selecting a card the details panel would cover glides it clear, and it stays on screen.
   const cleared = await page.evaluate(async () => {
     const s = window.__spike, r = s.world.rect, wait = ms => new Promise(res => setTimeout(res, ms))

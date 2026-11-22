@@ -90,6 +90,7 @@ try {
     while (s.cam.flying) await new Promise(r => setTimeout(r, 50))
     const after = s.tree.els[s.renderer.selected].title
     s.controls.back()
+    await new Promise(r => setTimeout(r, 300))
     while (s.cam.flying) await new Promise(r => setTimeout(r, 50))
     return { target, after, back: s.tree.els[s.renderer.selected]?.title }
   })

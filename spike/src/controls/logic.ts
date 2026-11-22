@@ -1,34 +1,5 @@
-import type { Tree } from '../model'
-
 /** A camera view to come back to; the selection is an element id, stable across model versions. */
-export interface View { x: number; y: number; z: number; selected: string | null }
-
-/** Back/forward through places visited, like a browser or an RPG's "return to last location". */
-export class History {
-  back: View[] = []
-  forward: View[] = []
-
-  /** Records leaving `from`; views close to the last entry are not duplicated. */
-  push(from: View, viewportW: number) {
-    const last = this.back[this.back.length - 1]
-    if (last && same(last, from, viewportW)) return
-    this.back.push(from)
-    if (this.back.length > 100) this.back.shift()
-    this.forward = []
-  }
-
-  goBack(current: View): View | null {
-    const v = this.back.pop()
-    if (v) this.forward.push(current)
-    return v ?? null
-  }
-
-  goForward(current: View): View | null {
-    const v = this.forward.pop()
-    if (v) this.back.push(current)
-    return v ?? null
-  }
-}
+export interface View { x: number; y: number; z: number; selected: string | null; here?: string | null }
 
 /** Whether two views are the same place: one selection, about the same zoom and spot. */
 export function same(a: View, b: View, viewportW: number) {
