@@ -212,6 +212,8 @@ export class Tooltip {
 
   /** Every frame: the card under the pointer that is too small to read, or -1. */
   update(node: number, x: number, y: number, now: number) {
+    // Off the line it was naming: that tooltip goes.
+    if (this.lineKey) { this.lineKey = ''; this.root.hidden = true }
     if (node !== this.node) { this.node = node; this.since = now; this.root.hidden = true }
     if (node <= 0 || now - this.since < 350) return
     if (this.root.hidden) {
@@ -229,7 +231,21 @@ export class Tooltip {
     this.root.style.top = `${Math.min(y + 16, innerHeight - r.height - 12)}px`
   }
 
-  close() { this.node = -1; this.root.hidden = true }
+  /** Over a line: what it carries, as pairs, kept until the pointer leaves it. */
+  showLines(key: string, title: string, rows: string[], x: number, y: number) {
+    if (key !== this.lineKey) {
+      this.lineKey = key
+      this.root.replaceChildren(el('div', 'tip-kind', 'This line carries'), el('div', 'tip-title', title), ...rows.map(r => el('div', 'tip-desc', r)))
+    }
+    this.node = -1
+    this.root.hidden = false
+    const r = this.root.getBoundingClientRect()
+    this.root.style.left = `${Math.min(x + 16, innerWidth - r.width - 12)}px`
+    this.root.style.top = `${Math.min(y + 16, innerHeight - r.height - 12)}px`
+  }
+  private lineKey = ''
+
+  close() { this.node = -1; this.lineKey = ''; this.root.hidden = true }
 }
 
 /** The controls page, as a modal dialog: focus moves in, Tab stays in, Esc or ? closes it. */

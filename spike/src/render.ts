@@ -28,6 +28,8 @@ const IN = 0x22d3ee
 /** A card's rank badge in the Connections view. */
 const RANK = 0xfde68a
 const FLASH_MS = 3200
+/** Past this many files on screen, arrows wait for a card in focus. */
+const RESTING_FILES = 12
 /** Icon size and the gap after it, in multiples of the title's font size. */
 const ICON = 1.05
 const ICON_GAP = 0.4
@@ -779,6 +781,10 @@ export class Renderer {
     // the focused card's chips stay.
     const crumb = this.breadcrumb(), here = crumb[crumb.length - 1] ?? 0
     const reading = here > 0 && !this.tree.children[here].length
+    // Among many files a web of arrows says nothing: at rest they wait for a card in focus.
+    const files = this.shown.filter(c => !this.tree.children[c].length && this.tree.els[c].metadata?.path && this.onScreen(c)).length
+    if (files > RESTING_FILES && focus <= 0) drawn.length = 0
+    this.lines = []
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -797,6 +803,7 @@ export class Renderer {
         }
       }
       paths[kind].push(clipped)
+      this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
       strokes[kind][tier].push(clipped)
@@ -813,7 +820,9 @@ export class Renderer {
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
         // A single import's name ("User") is detail: it shows on the focused card's edges only.
         // Counts and the map's links (what a call or a store does) always say what they carry.
-        const s = n > 1 ? `${n} relations` : hot || this.tree.relEvidence[rel] ? this.tree.relTitles[rel] : ''
+        // A count sits by the arrowhead it belongs to (this stretch ends there); which pairs a line
+        // carries is said on hover (linesAt).
+        const s = n > 1 ? `×${n}` : hot || this.tree.relEvidence[rel] ? this.tree.relTitles[rel] : ''
         // One import named after the card it reaches says nothing the arrow does not.
         if (at.length && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ at, s, kind, weight: n })
       }
@@ -877,6 +886,36 @@ export class Renderer {
 
   /** Screen rect of a node, for overlays positioned by the controls. */
   screenRectOf(i: number) { return this.screenRect(i) }
+
+  /** The lines drawn last frame, in screen px, with the cards they join and how much they carry. */
+  private lines: { s: number; t: number; count: number; pts: number[] }[] = []
+
+  /** The lines passing within `r` px of a screen point: a shared trunk is several. */
+  linesAt(x: number, y: number, r = 6): { s: number; t: number; count: number }[] {
+    const near = (p: number[]) => {
+      for (let k = 2; k < p.length; k += 2) {
+        const x0 = p[k - 2], y0 = p[k - 1], dx = p[k] - x0, dy = p[k + 1] - y0, l2 = dx * dx + dy * dy
+        const u = l2 ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2)) : 0
+        if (Math.hypot(x0 + u * dx - x, y0 + u * dy - y) <= r) return true
+      }
+      return false
+    }
+    return this.lines.filter(l => near(l.pts))
+  }
+
+  /** The element pairs a line between cards s and t carries, both directions, busiest first. */
+  carried(s: number, t: number, max = 6): { from: number; to: number; count: number }[] {
+    const m = new Map<string, { from: number; to: number; count: number }>()
+    for (let k = 0; k < this.tree.rels.length; k += 2) {
+      const a = this.tree.rels[k], b = this.tree.rels[k + 1], ra = this.rep(a), rb = this.rep(b)
+      if (!((ra === s && rb === t) || (ra === t && rb === s))) continue
+      const key = `${a}>${b}`
+      const p = m.get(key) ?? { from: a, to: b, count: 0 }
+      p.count++
+      m.set(key, p)
+    }
+    return [...m.values()].sort((x, y) => y.count - x.count).slice(0, max)
+  }
 
   /** Whether card i was drawn dimmed last frame (out of the selection's play). */
   dimmed(i: number): boolean {

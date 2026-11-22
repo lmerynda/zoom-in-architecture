@@ -115,6 +115,42 @@ try {
   const zBack = await page.evaluate(() => window.__spike.cam.z)
   check('Back returns from a wheel excursion', zoomedIn > wheel * 3 && Math.abs(Math.log(zBack / wheel)) < 0.2, JSON.stringify({ wheel, zoomedIn, zBack }))
 
+  // 4b. Arrows: among many files they wait for a card in focus; over a line, the pairs it carries are named.
+  const quiet = await page.evaluate(async () => {
+    const s = window.__spike, t = s.tree
+    const level = t.els.findIndex((e, i) => t.children[i].length > 12 && t.children[i].every(k => t.els[k].metadata?.path))
+    s.select(-1); s.unhover(); s.fit(level)
+    while (s.cam.flying) await new Promise(r => setTimeout(r, 50))
+    await new Promise(r => setTimeout(r, 300))
+    const rest = s.last().edges
+    const busy = t.children[level].find(k => s.renderer.relationsOf(k).out.length + s.renderer.relationsOf(k).inn.length > 0)
+    s.select(busy)
+    await new Promise(r => setTimeout(r, 300))
+    return { level: t.els[level]?.id, rest, focused: s.last().edges }
+  })
+  check('among many files, arrows wait for a card in focus', quiet.rest === 0 && quiet.focused > 0, JSON.stringify(quiet))
+  const said = await page.evaluate(async () => {
+    const s = window.__spike
+    s.fit(s.id('backend'))
+    while (s.cam.flying) await new Promise(r => setTimeout(r, 50))
+    s.select(-1)
+    await new Promise(r => setTimeout(r, 300))
+    // A point on a drawn line that is not on a card.
+    for (const l of s.renderer.lines) for (let k = 2; k < l.pts.length; k += 2) {
+      const x = (l.pts[k - 2] + l.pts[k]) / 2, y = (l.pts[k - 1] + l.pts[k + 1]) / 2
+      if (s.renderer.pick(x, y) === s.id('backend') || s.renderer.pick(x, y) <= 0) return [x, y]
+    }
+    return null
+  })
+  if (said) {
+    await page.mouse.move(said[0], said[1])
+    await sleep(300)
+  }
+  const tip = await page.evaluate(() => { const t = document.querySelector('.tip'); return t && !t.hidden ? t.textContent : '' })
+  check('hovering a line names the pairs it carries', /carries/.test(tip) && /→/.test(tip), tip || JSON.stringify(said))
+  await shot('04-line-carries')
+  await page.mouse.move(5, 500)
+
   // 5. Opening a cited line opens it in this endpoint's card, at that line.
   await open('model=knights-of-darkness&view=requests')
   const cite = await page.evaluate(async () => {

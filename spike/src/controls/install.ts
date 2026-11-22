@@ -319,7 +319,15 @@ export function installControls(c: Ctx) {
       const p = renderer.pointer, h = renderer.hover
       // Only a card too small to carry its own name and counts gets a preview.
       const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
-      tooltip.update(p && small && !drag && !cam.flying && !palette.isOpen && !menu.isOpen ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
+      const busy = !!drag || cam.flying || palette.isOpen || menu.isOpen
+      // Off the cards, over a line: say which pairs of elements it carries.
+      const lines = p && h <= 0 && !busy ? renderer.linesAt(p[0], p[1]) : []
+      if (lines.length) {
+        const name = (i: number) => tree.els[i].title
+        const pairs = lines.flatMap(l => renderer.carried(l.s, l.t)).slice(0, 8)
+        const total = lines.reduce((a, l) => a + l.count, 0)
+        tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), p![0], p![1])
+      } else tooltip.update(p && small && !busy ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
     view, go, goSelect, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
