@@ -173,9 +173,10 @@ export function buildRequests(graph, map, model) {
           // controller; its class is the line below, so a cut title never loses the method.
           const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : name(p)}`
           const technology = k === 0 && e.name ? stem(p) : base.technology
-          // The handler's card marks its route line, so its code opens at the endpoint.
-          const marks = k === 0 ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
-          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks, role: 'step', step: String(k + 1) } })
+          // The handler's card marks its route line when the route sits in its file. Every card names
+          // the lines it is about (`span`), so its code opens exactly there.
+          const marks = k === 0 && e.routeFile === p ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
+          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks, role: 'step', step: String(k + 1), span: e.spans[p] } })
         })
         // The types the handler only names (what it takes and gives back) do not run in sequence:
         // unnumbered cards beside the path, each hanging off the handler.
@@ -184,14 +185,14 @@ export function buildRequests(graph, map, model) {
           if (!base) return
           const id = `${eid}.t${k + 1}`
           sid.set(p, id)
-          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...TYPE, metadata: { ...base.metadata, role: 'type' } })
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...TYPE, metadata: { ...base.metadata, role: 'type', span: e.spans[p] } })
         })
         if (branches) views.forEach((p, k) => {
           const base = fileEl.get(p)
           if (!base) return
           const id = `${eid}.v${k + 1}`
           sid.set(p, id)
-          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...CODE, metadata: { ...base.metadata, role: 'view' } })
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...CODE, metadata: { ...base.metadata, role: 'view', span: e.spans[p] } })
         })
         for (const r of graph.edges) if (!r.types && sid.has(r.from) && sid.has(r.to)) relations.push({ source: sid.get(r.from), target: sid.get(r.to), title: r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ') })
         // Back out: the page it renders, or the handler's own answer (a redirect, a body). One answer

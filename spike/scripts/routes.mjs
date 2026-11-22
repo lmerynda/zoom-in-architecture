@@ -144,9 +144,58 @@ function bodyOf(lines, from, lang) {
   return { start: from, end: lines.length - 1, name }
 }
 
+/** The line a handler's own code starts on (0-based): past the annotations, attributes or decorators above it. */
+function signatureLine(lines, from, lang) {
+  if (lang === 'py') {
+    const def = lines.findIndex((l, j) => j >= from && /^\s*(async\s+)?def\s+\w+/.test(l))
+    return def < 0 ? from : def
+  }
+  let depth = 0
+  for (let j = from; j < lines.length; j++) {
+    const code = clean(lines[j], lang)
+    const open = (code.match(/\(/g) ?? []).length - (code.match(/\)/g) ?? []).length
+    // Inside an annotation that spans lines (@RequestMapping(value = "/x",\n method = POST)).
+    if (depth > 0) { depth += open; continue }
+    if (!code.trim()) continue
+    if (/^\s*(@|\[)/.test(code)) {
+      depth = Math.max(0, open)
+      // An annotation that shares its line with the signature (@ResponseBody public Vets list()).
+      if (!depth && code.replace(/^\s*(?:@[\w.]+(?:\s*\((?:[^()]|\([^()]*\))*\))?\s*|\[[^\]]*\]\s*)+/, '').trim()) return j
+      continue
+    }
+    return j
+  }
+  return from
+}
+
+/** The lines of a file's first declaration, a type or a function ("3-26"); the whole file when it declares none. */
+function firstDeclaration(lines, lang, declared) {
+  const type = lines.findIndex(l => /^\s*(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial|export|default|data|open)\s+)*(?:class|interface|record|enum|struct|object)\s+\w+|^type\s+\w+/.test(clean(l, lang)))
+  const starts = [type, ...declared.values()].filter(x => x >= 0)
+  return starts.length ? spanAt(lines, Math.min(...starts), lang) : `1-${lines.length}`
+}
+
+/** The 1-based, inclusive lines of the block that starts at line `start` (0-based): "12-30". */
+function spanAt(lines, start, lang) {
+  let end = start
+  if (lang === 'py') {
+    const indent = lines[start].match(/^\s*/)[0].length
+    for (let j = start + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      if (lines[j].match(/^\s*/)[0].length <= indent && !/^\s*[)\]]/.test(lines[j])) break
+      end = j
+    }
+  } else if (BRACES.has(lang) && !(lang === 'go' && /^type\s/.test(lines[start]) && !lines[start].includes('{'))) end = bodyOf(lines, start, lang).end
+  return `${start + 1}-${end + 1}`
+}
+
 /**
  * Every endpoint of the application files in `graph`, with the path its requests take.
- * @returns {{ method: string, path: string, file: string, line: number, name: string, steps: string[], views: string[], response: { redirect?: string, model?: string, json?: boolean } }[]}
+ * `steps` run in sequence from the handler (`file`, its method `name`); `types` are the files it
+ * only names; `responses` are the ways it answers, in source order. `line` is the route's line in
+ * `routeFile`, and `spans` gives each step, type and view the 1-based lines it is about ("12-30"):
+ * the handler's method, the first method its caller calls in a later step, a type's declaration.
+ * @returns {{ method: string, path: string, file: string, routeFile: string, line: number, name: string, steps: string[], types: string[], spans: Record<string, string>, responses: ({ kind: 'view', view: string, name: string } | { kind: 'redirect', redirect: string } | { kind: 'body', model?: string, json?: boolean })[] }[]}
  */
 export function endpoints(graph) {
   const read = new Map()
@@ -344,7 +393,10 @@ export function endpoints(graph) {
         for (const c of candidates) { const d = context(c).declared.get(last); if (d != null) { hp = c; from = d; name = last; break } }
       }
       const hc = context(hp)
-      const body = bodyOf(hc.lines, from, hc.lang)
+      // The handler's own lines: its signature to its closing brace, not the route above it.
+      const sig = signatureLine(hc.lines, from, hc.lang)
+      const body = bodyOf(hc.lines, hc.lang === 'py' ? from : sig, hc.lang)
+      const spans = { [hp]: `${sig + 1}-${body.end + 1}` }
       if (name == null) name = (f.lang === 'js' || f.lang === 'go') && inline ? '' : body.name
       // A handler's helper functions in the same file count as part of its body. What it says
       // (view names, redirects) is read from its strings; what it uses, from its code alone.
@@ -399,10 +451,12 @@ export function endpoints(graph) {
       // the method called, is where the path stops: its other methods do not run. Each file's
       // calls follow it at once, in the order its body makes them, so the steps read as the
       // request runs.
+      // A step is about the first method its caller calls there, or else the file's first declaration.
       const visit = (p, d, callerText, caller) => {
         steps.push(p)
+        const part = partOf(p, callerText, caller), c = context(p)
+        spans[p] = part ? spanAt(c.lines, c.declared.get(part.calls[0]), c.lang) : firstDeclaration(c.lines, c.lang, c.declared)
         if (own(p) || d >= DEPTH) return
-        const part = partOf(p, callerText, caller)
         if (part == null && context(p).declared.size) return
         const used = part?.text ?? context(p).code
         const uses = part == null ? () => true : usedBy(p, used)
@@ -412,11 +466,12 @@ export function endpoints(graph) {
       }
       for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
       const types = data.map(e => e.to).filter(p => !steps.includes(p))
+      for (const p of types) { const c = context(p); spans[p] = firstDeclaration(c.lines, c.lang, c.declared) }
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
-      const sig = hc.lines.slice(body.start, Math.min(body.start + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
-      const typed = sig.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
-      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.code}`) ? javaReturn(sig) : null
+      const head = hc.lines.slice(sig, Math.min(sig + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
+      const typed = head.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
+      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(from, sig + 4).join(' ')} ${hc.code}`) ? javaReturn(head) : null
       // A framework's result type (IActionResult, ObjectResult) says how, not what: it is not the model.
       const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
@@ -438,7 +493,8 @@ export function endpoints(graph) {
       answers.sort((a, b) => a.at - b.at)
       if (json || !answers.length) answers.push({ kind: 'body', ...(model ? { model } : {}), ...(json ? { json } : {}) })
       const responses = answers.map(({ at, ...a }) => a)
-      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, types, responses })
+      for (const v of views) spans[v] = `1-${src(v).length}`
+      result.push({ method: ep.method, path: full, file: hp, routeFile: path, line: ep.line, name, steps, types, spans, responses })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))

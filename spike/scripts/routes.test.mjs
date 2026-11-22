@@ -83,6 +83,18 @@ describe('endpoints', () => {
     expect(eps.find(e => e.path === '/owners/find').responses).toEqual([{ kind: 'view', view: 'src/main/resources/templates/owners/findOwners.html', name: 'owners/findOwners' }])
   })
 
+  it('gives each step the lines it is about: the handler past its route, then the method each caller calls', () => {
+    const greet = endpoints(fixture('clinic')).find(e => e.path === '/owners/greet')
+    // @PostMapping on 62, greet() on 63 to 67; Mailer.welcome and ClinicService.register; Owner is a type, declared whole.
+    expect(greet.line).toBe(62)
+    expect(Object.entries(greet.spans).map(([p, s]) => `${p.split('/').pop()} ${s}`)).toEqual(['OwnerController.java 63-67', 'Mailer.java 7-10', 'ClinicService.java 16-19', 'OwnerRepository.java 3-7', 'Owner.java 3-26'])
+    // A call to a method the file does not declare (forget is inherited) opens the file at its first declaration.
+    expect(endpoints(fixture('clinic')).find(e => e.path.endsWith('/forget')).spans['src/main/java/clinic/ClinicService.java']).toBe('5-24')
+    // A Go route names a handler in another file of its package: the route's line is in routers.go.
+    const note = endpoints(fixture('gin')).find(e => e.path.endsWith('/note'))
+    expect([note.routeFile, note.line, note.file, note.spans[note.file], note.spans['orders/notes.go']]).toEqual(['orders/routers.go', 9, 'orders/pay.go', '9-11', '4-7'])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([
@@ -225,5 +237,13 @@ describe('buildRequests of a request path', () => {
     expect(rel(`${list.id}.s1`, `${list.id}.response-3`).title).toBe('redirect')
     expect(rel(`${list.id}.s1`, `${list.id}.v2`)).toBeTruthy()
     expect(rel(`${list.id}.v2`, `${list.id}.response-4`).title).toBe('HTML page')
+  })
+
+  it('names on every card the lines it is about, and marks the route on the handler', () => {
+    const greet = ep('POST', '/owners/greet'), el = id => r.elements.find(e => e.id === id)
+    expect(kids(greet.id).filter(e => e.metadata.role !== 'response').map(e => `${e.title} ${e.metadata.span}`)).toEqual(['1 · greet() 63-67', '2 · Mailer 7-10', '3 · ClinicService 16-19', '4 · OwnerRepository 3-7', 'Owner 3-26'])
+    expect(el(`${greet.id}.s1`).metadata.marks.split(' ')[0]).toBe('62:route')
+    const list = ep('GET', '/owners')
+    expect(el(`${list.id}.v1`).metadata.span).toBe('1-4')
   })
 })
