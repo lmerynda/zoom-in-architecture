@@ -152,8 +152,9 @@ describe('buildRequests', () => {
     expect(kids('web')).toEqual(['/api', '/cart', '/', '/orders'])
   })
 
-  it('titles the endpoints of a group alike: below the group once one of them is too long for its card', () => {
-    expect(kids('web.api')).toEqual(['GET …/orders', 'POST …/orders/{id}/pay', 'POST …/orders/{id}/refund-to-card'])
+  it('titles each endpoint with its method and full path, however long, and keeps both in its metadata', () => {
+    expect(kids('web.api')).toEqual(['GET /api/orders', 'POST /api/orders/{id}/pay', 'POST /api/orders/{id}/refund-to-card'])
+    expect(r.elements.find(e => e.title === 'POST /api/orders/{id}/refund-to-card').metadata).toEqual({ method: 'POST', route: '/api/orders/{id}/refund-to-card' })
     expect(kids('web.cart')).toEqual(['POST /cart', 'GET /cart/items'])
   })
 
@@ -187,7 +188,7 @@ describe('buildRequests', () => {
     ])
     expect(under('web.account.card')).toEqual(['POST /account/add-card', 'POST /account/remove-card'])
     expect(under('web.account.address')).toEqual(['POST /account/add-address', 'GET /account/address-book', 'POST /account/remove-address'])
-    expect(under('web.account.loyalty-points')).toEqual(['GET …/loyalty-points-balance', 'POST …/redeem-loyalty-points'])
+    expect(under('web.account.loyalty-points')).toEqual(['GET /account/loyalty-points-balance', 'POST /account/redeem-loyalty-points'])
     expect(c.elements.find(e => e.id === 'web.account.card').description).toBe('2 endpoints, handled in AccountApi')
   })
 

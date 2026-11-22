@@ -28,7 +28,7 @@ A map shows a codebase's architecture: the processes that run, the components in
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`, which uploads it to the running viewer (below).
 - **The Requests view, from code:** publishing also writes `<name>.requests.json` for any app with endpoints, and an Architecture / Requests switch appears beside the lenses: like a lens, it is a way of looking at the open model.
   - The landscape is the edge: the callers, the backend, and the stores and services its requests reach.
-  - Inside the backend sit its route groups, by path. A group past 9 endpoints splits by the next path segment, and what is still crowded groups by the things its routes act on: `send-attack` and `withdraw-attack` go under "attack", while the actions (`send`, `withdraw`) never group. Inside a group sit its endpoints, with their full path, read from:
+  - Inside the backend sit its route groups, by path. A group past 9 endpoints splits by the next path segment, and what is still crowded groups by the things its routes act on: `send-attack` and `withdraw-attack` go under "attack", while the actions (`send`, `withdraw`) never group. Inside a group sit its endpoints, each titled with its method and full path however long (also in `metadata.method` and `metadata.route`; the viewer fits it to the card), read from:
     - Spring: a class-level `@RequestMapping`;
     - ASP.NET: `[Route]` on the controller;
     - FastAPI and Flask: routers or blueprints mounted with a prefix, even one held in a constant;

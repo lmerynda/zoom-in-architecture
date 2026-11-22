@@ -130,8 +130,7 @@ export function buildRequests(graph, map, model) {
       // The group's own endpoints first, then its sub-groups.
       const taken = [...subs, ...words].flatMap(([, sub]) => sub)
       const own = list.filter(e => !taken.includes(e))
-      const short = own.some(e => `${e.method} ${e.path}`.length > 30)
-      own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent, prefix, short))
+      own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent))
       for (const [s, sub] of subs) {
         const key = `${prefix === '/' ? '' : prefix}/${s}`, gid = `${parent}.${slug(s)}`
         group(gid, parent, key, sub)
@@ -145,15 +144,11 @@ export function buildRequests(graph, map, model) {
         place(gid, prefix, depth, sub)
       }
     }
-    // An endpoint's title is short enough to read on its card: when any in its group passes 30 characters,
-    // each shows its path below the group, so siblings read alike.
-    const titleOf = (e, prefix, short) => {
-      const rel = prefix !== '/' && e.path.startsWith(`${prefix}/`) ? e.path.slice(prefix.length) : ''
-      return short && rel ? `${e.method} …${rel}` : `${e.method} ${e.path}`
-    }
-    const endpoint = (e, eid, gid, prefix, short) => {
+    // An endpoint's title is its method and full path, always; the viewer fits it to the card. Both
+    // are in its metadata too (method, route).
+    const endpoint = (e, eid, gid) => {
         const handler = `${stem(e.file)}${e.name ? `.${e.name}` : ''}`
-        elements.push({ id: eid, parent: gid, title: titleOf(e, prefix, short), kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
+        elements.push({ id: eid, parent: gid, title: `${e.method} ${e.path}`, kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: { method: e.method, route: e.path } })
         // The request's path, in order: handler, the files it uses, and the view it renders when that
         // is its one answer. A handler that can answer more than one way branches: each view it may
         // render, and each answer, is a card of its own off the step that gives it, not a next step.
