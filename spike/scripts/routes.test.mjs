@@ -47,6 +47,15 @@ describe('endpoints', () => {
     expect(of('/owners/{ownerId}/edit')).toBe('GET /owners/{ownerId}/edit initUpdateOwnerForm: OwnerController.java | createOrUpdateOwnerForm.html')
   })
 
+  it('stops at a file whose called method it cannot find, unless the file declares no code of its own', () => {
+    const eps = endpoints(fixture('clinic'))
+    const of = path => brief([eps.find(e => e.path === path)])[0]
+    // forget() is inherited: ClinicService's own methods, and the stores only they reach, do not run.
+    expect(of('/owners/{ownerId}/forget')).toBe('POST /owners/{ownerId}/forget forget: OwnerController.java > ClinicService.java')
+    // PetRepository declares nothing (its queries are generated), so it is followed whole.
+    expect(of('/owners/{ownerId}/pets')).toBe('GET /owners/{ownerId}/pets pets: OwnerController.java > PetRepository.java > PetQueries.java | ownersList.html')
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([

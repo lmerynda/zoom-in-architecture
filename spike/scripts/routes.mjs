@@ -366,13 +366,16 @@ export function endpoints(graph) {
       const lead = direct.filter(e => leads(e.to, 1, new Set())), data = direct.filter(e => !lead.includes(e))
       const steps = [hp]
       // Below the handler a file takes part through the methods its caller calls on it, so only
-      // what those methods use goes on; a file whose called methods are not its own (an inherited
-      // or generated API) is followed whole. Each file's calls follow it at once, in the order its
-      // body makes them, so the steps read as the request runs.
+      // what those methods use goes on. A file that declares no code of its own (a generated or
+      // inherited API, such as a Spring Data interface) is followed whole; one that does, but not
+      // the method called, is where the path stops: its other methods do not run. Each file's
+      // calls follow it at once, in the order its body makes them, so the steps read as the
+      // request runs.
       const visit = (p, d, callerText, caller) => {
         steps.push(p)
         if (own(p) || d >= DEPTH) return
         const part = partOf(p, callerText, caller)
+        if (part == null && context(p).declared.size) return
         const uses = part == null ? () => true : usedBy(p, part)
         const at = firstUse(p, part ?? context(p).code)
         const next = (out.get(p) ?? []).filter(e => !steps.includes(e.to) && byPath.get(e.to)?.lang !== 'view' && uses(e) && leads(e.to, d + 1, new Set()))
