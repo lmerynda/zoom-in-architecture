@@ -107,13 +107,15 @@ A few controls, each doing one thing. Press `?` or the Help button in the app fo
 | Wheel, drag, click | Zoom at the pointer, pan, select (what it uses in amber, what uses it in cyan) |
 | Double-click, `Enter` | Go into a card; on a file, open its code to read, where its part starts |
 | Right-click a card | A short menu: go in or read code, copy the file's path |
-| `Ctrl+K` or `/` | Search the map by title, id or feature, then description or file path; `>` lists commands (colour by a lens, whole map, back, controls) |
+| `Ctrl+K` or `/` | Search: features and parts first, then files, ranked whole name, then start, then word starts, then anywhere, letters in order last (plurals fold: "spy" finds Spies); an exact file path wins; a feature frames the cards that carry it. Empty, it lists recent places and the map's features; `>` lists commands. Finding nothing, it offers the features |
 | `Backspace` or `Alt+←` | Back to the previous place, including where a wheel, drag or arrow-key trip started; `Alt+→` and the mouse buttons go forward. These are the browser's Back and Forward too |
 | `Alt+↑` | Up to the parent |
 | `]` / `[` | Step through the details panel's Uses / Used by rows, in its order; the camera moves only if a card is out of view; `Enter` goes there |
 | `.` / `,` | Connections view only: next / previous card of the level by rank, with why it ranks there |
 | `Esc` | Closes the top layer (a menu, the card stepped to), then clears the selection; it never moves the view |
 | `?` | The controls sheet, a dialog |
+
+A first visit shows a short welcome: the map's counts (parts, files, features), how to go in, and its features as places to start. It stays until Got it. An unknown map or view says so and lists the maps there are.
 
 The address names where you are: the selection (`at=`), else the card you are in (`in=`), the file and line being read (`file=`, `line=`) and the lens (`lens=`). A link opens there, and switching view (Architecture, Connections, Requests) keeps the subject; to and from Requests it crosses by file.
 

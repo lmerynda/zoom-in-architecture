@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson } from '../model'
-import { elementScore, fuzzy, same } from './logic'
+import { fuzzy, match, same, searchMap } from './logic'
 
 const el = (id: string, parent: string | null) => ({ id, parent, title: id, kind: 'k', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' })
 // web → api → db, and ops → api (so db reaches ops only against direction).
@@ -40,17 +40,43 @@ describe('fuzzy', () => {
     expect(fuzzy('sector', 'SectorRuntime')).toBeGreaterThan(fuzzy('sector', 'SnapshotEncoderTor'))
   })
 
-  it('finds an element by a feature it carries', () => {
-    const travel = { id: 'server.travel', title: 'Jump coordinator', features: ['Fast travel'] }
-    expect(elementScore('fast travel', travel)).toBeGreaterThan(0)
-    expect(elementScore('fast travel', { ...travel, features: [] })).toBe(-1)
-  })
+})
 
-  it('finds an element by its file path or description, below any name match', () => {
-    const file = { id: 'api.tokenUtils', title: 'token.utils', description: 'Signs the log-in token.', metadata: { path: 'src/app/routes/auth/token.utils.ts' } }
-    expect(elementScore('routes/auth', file)).toBeGreaterThan(0)
-    expect(elementScore('login', file)).toBeGreaterThan(0)
-    expect(elementScore('login', file)).toBeLessThan(elementScore('login', { id: 'login', title: 'Login page' }))
-    expect(elementScore('payments', file)).toBe(-1)
+describe('searchMap', () => {
+  const el = (id: string, title: string, extra = {}) => ({ id, title, ...extra })
+  const els = [
+    el('', 'root'),
+    el('backend.military.intel', 'Intel', { features: ['Spies'] }),
+    el('backend.military', 'War'),
+    el('backend.misc.spyglass', 'Spyglass helpers'),
+    el('backend.misc.sp', 'StepPolicy'),
+    el('backend.k.reports', 'SpyReportDto', { metadata: { path: 'backend/src/intel/SpyReportDto.java' } }),
+    el('web.x', 'index', { metadata: { path: 'web/src/pages/index.ts' }, features: ['Spies'] }),
+    el('docs', 'Docs', { description: 'How sign-in works.' }),
+  ]
+  it('ranks whole names, then starts, then word starts, then letters in order', () => {
+    expect(match('war', 'War')).toBe(100)
+    expect(match('spy', 'Spies and reports')).toBeGreaterThanOrEqual(80)
+    expect(match('report', 'Spies and reports')).toBeGreaterThanOrEqual(60)
+    expect(match('spy', 'StepPolicy')).toBeLessThan(20)
+    expect(match('xyz', 'War')).toBe(-1)
+  })
+  it('folds plurals and separators', () => {
+    expect(match('spies', 'Spy')).toBe(100)
+    expect(match('sign in', 'SignInPage')).toBeGreaterThanOrEqual(80)
+  })
+  it('puts a feature and a named part above a loose match', () => {
+    const f = searchMap(els, 'spy')
+    expect(f.features.map(x => x.name)).toEqual(['Spies'])
+    expect(f.parts[0].i).toBe(3)
+    expect(f.parts.at(-1)?.i).toBe(4)
+  })
+  it('lets an exact file path win', () => {
+    expect(searchMap(els, 'web/src/pages/index.ts').files[0]).toEqual({ i: 6, score: 110 })
+    expect(searchMap(els, 'pages/index.ts').files[0].i).toBe(6)
+  })
+  it('finds a description last, and never the landscape', () => {
+    expect(searchMap(els, 'sign-in').parts).toEqual([{ i: 7, score: 5 }])
+    expect(searchMap(els, 'root').parts).toEqual([])
   })
 })

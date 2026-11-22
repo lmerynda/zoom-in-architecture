@@ -127,11 +127,23 @@
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
     /* Shown when the screen holds only empty space inside a card: how to get back. */
     /* First visit only: what the map is, beside the breadcrumb; gone at the first scroll, click or key. */
-    #intro { min-width: 0; flex: 0 1 auto; height: 34px; display: block; line-height: 32px; padding: 0 14px; color: #cbd5e1; background: var(--panel); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 10px; font-size: 12.5px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity 0.4s; }
-    #intro b { color: #fbbf24; font-weight: 600; margin-right: 6px; }
-    #intro.gone { opacity: 0; }
-    #intro[hidden] { display: none; }
-    @media (max-width: 900px) { #intro { display: none; } }
+    /* First visit: what the map is, its counts and features to start from; it stays until Got it. */
+    #welcome { position: fixed; z-index: 12; left: 12px; bottom: 12px; width: min(520px, calc(100vw - 24px)); padding: 12px 14px; background: rgba(9, 12, 20, 0.95); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 10px; font-size: 13px; color: var(--text); }
+    #welcome[hidden] { display: none; }
+    #welcome p { margin: 0 0 8px; line-height: 1.5; }
+    #welcome p b { color: #fde68a; }
+    #welcome .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+    #welcome .chips span { color: var(--dim); font-size: 12px; }
+    #welcome .chips button { background: none; border: 1px solid rgba(251, 191, 36, 0.45); color: #fde68a; border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+    #welcome .chips button:hover { background: rgba(251, 191, 36, 0.14); }
+    #welcome .ok { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
+    /* No map to show: why, and the maps there are. */
+    #failed { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; }
+    #failed[hidden] { display: none; }
+    #failed h2 { margin: 0; color: #f1f5f9; font-weight: 600; }
+    #failed p { margin: 0; color: var(--dim); }
+    #failed .maps { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 720px; margin-top: 8px; }
+    #failed a { color: #fde68a; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; text-decoration: none; }
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #b6c2d3; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; }
     #empty button { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
     /* Reading a file: one column of code over the map, left of the details panel. */
@@ -188,6 +200,7 @@
     .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .palette .row b { color: #e2e8f0; font-weight: 600; }
     .palette .row .sub { color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .palette .group { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); padding: 10px 10px 4px; }
     .palette .none { color: #94a3b8; font-size: 13px; padding: 10px 10px 8px; }
     /* Tooltips */
     /* Context menu */
@@ -227,9 +240,10 @@
   </div>
   <div id="crumbrow">
     <div id="crumbs" class="panel"></div>
-    <div id="intro" hidden><b>New here?</b>Cards are the parts of the product, arrows how they use each other (thicker carries more). Scroll into a card to open it · double-click a file to read it · ? for every control</div>
   </div>
   <div id="stats" class="panel">loading…</div>
+  <section id="welcome" aria-label="Welcome" hidden></section>
+  <section id="failed" hidden></section>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>
   <div id="empty" hidden>Nothing here · Backspace goes back · Alt+↑ goes up a level <button type="button" id="fitall">Fit whole map</button></div>

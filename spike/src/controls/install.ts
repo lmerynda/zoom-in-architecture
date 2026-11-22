@@ -77,7 +77,24 @@ export function installControls(c: Ctx) {
   /** Every jump records where you were, so Back brings you back. */
   const go = (i: number) => { leave(); c.fit(i) }
   /** Jump that also selects the destination; the view left behind keeps its own selection. */
-  const goSelect = (i: number) => { leave(); c.select(i); c.fit(i) }
+  const goSelect = (i: number) => { leave(); c.select(i); c.fit(i); remember(i) }
+  /** Cards visited, most recent first, for an empty search. Kept by id, so a live update keeps them. */
+  let recent: string[] = []
+  const remember = (i: number) => { if (i > 0) recent = [tree.els[i].id, ...recent.filter(id => id !== tree.els[i].id)].slice(0, 8) }
+  /**
+   * A feature: the cards that carry it are framed together, the first part among them selected,
+   * and the toast names them all.
+   */
+  const feature = (name: string) => {
+    const cards = tree.els.flatMap((e, i) => (i > 0 && e.features?.includes(name) ? [i] : []))
+    if (!cards.length) return toast.show(`No card carries ${name}`)
+    const first = cards.find(i => !tree.els[i].metadata?.path) ?? cards[0]
+    leave()
+    c.select(first)
+    remember(first)
+    frame(cards)
+    toast.show(`${name}: ${cards.map(i => tree.els[i].title).join(', ')}`)
+  }
   const goView = (v: View) => {
     cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
     c.select(v.selected ? tree.byId.get(v.selected) ?? -1 : -1)
@@ -158,7 +175,11 @@ export function installControls(c: Ctx) {
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
   // A container found by search is framed, to look into; a leaf is selected, to read about.
-  const palette = new Palette(tree, commands, i => (tree.children[i].length ? go(i) : goSelect(i)))
+  const palette = new Palette(tree, commands, {
+    go: i => { if (tree.children[i].length) { go(i); remember(i) } else goSelect(i) },
+    feature,
+    recent: () => recent.map(id => tree.byId.get(id) ?? -1),
+  })
   document.getElementById('travel')?.addEventListener('click', () => palette.open())
   document.getElementById('help')?.addEventListener('click', () => help.toggle(true))
   const tooltip = new Tooltip(tree, i => { const r = renderer.relationsOf(i); return { uses: new Set(r.out.map(x => x.other)).size, usedBy: new Set(r.inn.map(x => x.other)).size } })
@@ -214,7 +235,9 @@ export function installControls(c: Ctx) {
     if (drag.moved < 5) {
       clearTarget()
       tooltip.close()
-      c.select(renderer.pick(e.offsetX, e.offsetY))
+      const hit = renderer.pick(e.offsetX, e.offsetY)
+      c.select(hit)
+      remember(hit)
     } else if (performance.now() - drag.t < 80) cam.release(drag.vx, drag.vy)
     drag = null
   })
@@ -298,7 +321,7 @@ export function installControls(c: Ctx) {
       const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
       tooltip.update(p && small && !drag && !cam.flying && !palette.isOpen && !menu.isOpen ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
-    view, go, goSelect, back, forward, parent, cycleTarget, palette, help, menu, toast,
+    view, go, goSelect, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },
     /** Points every control at a new model version; the caller carries the selection over. */

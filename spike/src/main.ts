@@ -48,7 +48,8 @@ function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[]
 async function loadModel(): Promise<ModelJson> {
   if (modelName === 'synthetic') return synthetic(Number(new URLSearchParams(location.search).get('n') ?? 1000))
   const res = await fetch(`${import.meta.env.BASE_URL}models/${modelFile}.json`)
-  if (!res.ok) throw new Error(`model ${modelFile}: ${res.status}`)
+  // A dev server answers an unknown file with its page: no JSON is no map, as a 404 is.
+  if (!res.ok || !res.headers.get('content-type')?.includes('json')) throw new Error(`model ${modelFile}: ${res.ok ? 404 : res.status}`)
   return res.json()
 }
 
@@ -60,23 +61,51 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 const INTRO_SEEN = 'zoom.introSeen'
 /**
- * On a first visit, one line beside the breadcrumb says what the cards and arrows are and how to
- * go in. The first scroll, click or key puts it away for good.
+ * On a first visit, a short welcome: what the map shows, its counts (parts, files, features), how
+ * to go in, and its features as places to start. It stays until Got it, at any width.
  */
-function showIntro() {
-  const intro = $('intro')
+function showIntro(tree: Tree, feature: (name: string) => void) {
   let seen = false
   try { seen = localStorage.getItem(INTRO_SEEN) === '1' } catch { /* storage blocked: show it this time */ }
   if (seen) return
-  // It shares the breadcrumb's row (index.html), so it always follows it, however wide.
-  intro.hidden = false
-  const done = () => {
-    try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ }
-    intro.classList.add('gone')
-    setTimeout(() => { intro.hidden = true }, 400)
-    for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) removeEventListener(ev, done, true)
+  const box = $('welcome')
+  const files = tree.els.filter(e => e.metadata?.path).length, parts = tree.children[0].length
+  const features = [...new Set(tree.els.flatMap(e => e.features ?? []))]
+  const p = document.createElement('p'), b = document.createElement('b')
+  b.textContent = tree.els[0].title
+  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
+  p.append(b, ` is mapped here: ${[n(parts, 'part'), ...(files ? [n(files, 'file')] : []), ...(features.length ? [n(features.length, 'feature')] : [])].join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). Scroll into a card to open it, double-click a file to read it, ? for every control.`)
+  const chips = document.createElement('div')
+  chips.className = 'chips'
+  if (features.length) {
+    const h = document.createElement('span')
+    h.textContent = 'Start with a feature:'
+    chips.append(h, ...features.slice(0, 10).map(f => { const c = document.createElement('button'); c.textContent = f; c.onclick = () => feature(f); return c }))
   }
-  for (const ev of ['wheel', 'pointerdown', 'keydown'] as const) addEventListener(ev, done, true)
+  const ok = document.createElement('button')
+  ok.className = 'ok'
+  ok.textContent = 'Got it'
+  ok.onclick = () => { try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ } box.hidden = true }
+  box.replaceChildren(p, ...(features.length ? [chips] : []), ok)
+  box.hidden = false
+}
+
+/** Says, in the map's place, why there is no map to show: an unknown name or view, or a failed load. */
+async function cannotOpen(e: unknown) {
+  const box = $('failed')
+  const h = document.createElement('h2'), p = document.createElement('p')
+  const status = String(e).match(/: (\d{3})$/)?.[1]
+  h.textContent = status === '404' ? (view ? `“${modelName}” has no ${view} view` : `No map named “${modelName}”`) : 'The map could not be opened'
+  p.textContent = status === '404' ? 'Open one of these instead:' : String(e)
+  const list = document.createElement('div')
+  list.className = 'maps'
+  try {
+    const index: { name: string; title: string }[] = await (await fetch(`${import.meta.env.BASE_URL}models/index.json`)).json()
+    if (view && index.some(m => m.name === modelName)) { const a = document.createElement('a'); a.href = `?model=${encodeURIComponent(modelName)}`; a.textContent = `${modelName}: Architecture`; list.append(a) }
+    for (const m of index) { const a = document.createElement('a'); a.href = `?model=${encodeURIComponent(m.name)}`; a.textContent = m.title; list.append(a) }
+  } catch { /* no index: the message stands alone */ }
+  box.replaceChildren(h, p, list)
+  box.hidden = false
 }
 
 /** The most recently uploaded map, for a visit that names none; null when only samples exist. */
@@ -124,7 +153,6 @@ async function main() {
   app.stage.addChild(renderer.stage)
   const minimapEl = $<HTMLCanvasElement>('minimap'), emptyHint = $('empty')
   const minimap = new Minimap(minimapEl, tree, world)
-  showIntro()
   $('fitall').onclick = () => controls.go(0)
   const code = new CodeView($('code'), modelName, tree)
   // Reduced motion: no flights, the view cuts to where it goes.
@@ -297,6 +325,7 @@ async function main() {
   }, () => cam.w)
   controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
+  showIntro(tree, name => controls.feature(name))
 
   // A link names a place: open there. The selection (`at`) is framed among its neighbours, a place
   // (`in`) fills the view; `file` finds a file's card (the Requests view has its own ids), and
@@ -492,7 +521,7 @@ async function main() {
 }
 
 main().catch(e => {
-  $('stats').textContent = String(e?.stack ?? e)
-  $('stats').hidden = false
+  $('stats').hidden = true
+  void cannotOpen(e)
   console.error(e)
 })

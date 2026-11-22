@@ -37,6 +37,13 @@ const focusMap = () => page.evaluate(() => document.querySelector('#stage canvas
 try {
   await open('model=knights-of-darkness')
 
+  // An unknown map says so and lists the maps there are.
+  await page.goto(`${base}?model=no-such-map`, { waitUntil: 'load' })
+  await page.waitForFunction(() => !document.getElementById('failed').hidden, { timeout: 30000 })
+  const failedText = await page.evaluate(() => ({ h: document.querySelector('#failed h2').textContent, maps: document.querySelectorAll('#failed a').length }))
+  check('an unknown map says so and offers the maps there are', /No map named/.test(failedText.h) && failedText.maps > 0, JSON.stringify(failedText))
+  await open('model=knights-of-darkness')
+
   // Gone: the command wheel, routes, pins, sound, the shortcut sentence.
   const gone = await page.evaluate(() => ({ radial: !!document.querySelector('.radial'), route: !!document.querySelector('.routepanel'), help: document.getElementById('help').tagName }))
   check('no command wheel or route panel; Help is a button', !gone.radial && !gone.route && gone.help === 'BUTTON', JSON.stringify(gone))
@@ -87,6 +94,30 @@ try {
   await page.keyboard.down('Alt'); await page.keyboard.press('ArrowUp'); await page.keyboard.up('Alt')
   await landed()
   check('Alt+↑ goes to the parent', (await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)) === 'backend')
+
+  // Search puts features and named parts first: "spy" finds the Spies feature before any loose match.
+  await focusMap()
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await page.keyboard.type('spy')
+  await sleep(200)
+  const spy = await page.evaluate(() => [...document.querySelectorAll('.palette .row')].slice(0, 3).map(r => r.querySelector('.kind').textContent + ':' + r.querySelector('b').textContent))
+  check('search ranks the Spies feature first for "spy"', spy[0] === 'feature:Spies', JSON.stringify(spy))
+  await shot('03-search')
+  // Nothing found: the features are offered, and picking one searches it with the box still open.
+  await page.evaluate(() => { const i = document.querySelector('.palette input'); i.value = 'zzqx'; i.dispatchEvent(new Event('input')) })
+  await sleep(100)
+  await page.keyboard.press('Enter')
+  await sleep(300)
+  const retry = await page.evaluate(() => ({ open: !document.querySelector('.palette').hidden, value: document.querySelector('.palette input').value, rows: document.querySelectorAll('.palette .row').length }))
+  check('picking an offered feature searches it, box open', retry.open && retry.value.length > 0 && retry.rows > 0, JSON.stringify(retry))
+  await page.keyboard.press('Escape')
+  // An empty search lists the map's features and the places you were.
+  await focusMap()
+  await page.keyboard.press('/')
+  await sleep(150)
+  const empty = await page.evaluate(() => [...document.querySelectorAll('.palette .group')].map(g => g.textContent))
+  check('an empty search lists recent places and features', empty.includes('Features of this map') && empty.includes('Recent places'), JSON.stringify(empty))
+  await page.keyboard.press('Escape')
 
   // Search frames a container it finds without selecting it.
   await page.evaluate(() => window.__spike.select(-1))

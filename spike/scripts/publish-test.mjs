@@ -46,24 +46,23 @@ try {
   await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await page.evaluate(() => { window.__sameDocument = true })
-  // A first visit says what the map is, beside the breadcrumb; the first input puts it away for good.
-  const besideCrumbs = () => page.evaluate(() => {
-    const e = document.getElementById('intro'), r = e.getBoundingClientRect(), c = document.getElementById('crumbs').getBoundingClientRect()
-    return { shown: !e.hidden && r.width > 0, beside: r.left >= c.right && Math.abs(r.top - c.top) < 4, text: e.textContent.slice(0, 40) }
-  })
+  // A first visit says what the map is, with its counts and features to start from; input does
+  // not put it away, Got it does, for good.
+  const welcome = () => page.evaluate(() => { const e = document.getElementById('welcome'); return { shown: !e.hidden && e.getBoundingClientRect().width > 0, text: e.textContent } })
   await sleep(500)
-  const first = await besideCrumbs()
-  // A later load (another map, before any input) keeps it after the breadcrumb, never over it.
+  const first = await welcome()
+  await page.keyboard.press('Shift')
+  await page.mouse.wheel({ deltaY: -100 })
+  await sleep(400)
+  const stays = (await welcome()).shown
+  await page.click('#welcome .ok')
+  await sleep(200)
   await page.reload({ waitUntil: 'load' })
   await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
   await page.evaluate(() => { window.__sameDocument = true })
-  await sleep(1200)
-  const later = await besideCrumbs()
-  const intro = { ...later, shown: first.shown && later.shown, beside: first.beside && later.beside }
-  await page.keyboard.press('Shift')
-  await sleep(600)
-  const introGone = await page.evaluate(() => document.getElementById('intro').hidden && localStorage.getItem('zoom.introSeen') === '1')
-  check('a first visit says what the map is, and the first input puts it away', intro.shown && intro.beside && introGone, JSON.stringify({ ...intro, introGone }))
+  await sleep(500)
+  const after = await welcome()
+  check('a first visit says what the map is, with its counts, until Got it', first.shown && /\d+ parts?/.test(first.text) && stays && !after.shown, JSON.stringify({ first, stays, after: after.shown }))
 
   // A map with a guessed link is refused, and nothing is published.
   const map = JSON.parse(readFileSync('test/fixtures/polyglot-map.json', 'utf8'))

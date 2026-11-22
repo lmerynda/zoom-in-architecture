@@ -1,5 +1,5 @@
 import type { Tree } from '../model'
-import { elementScore, fuzzy } from './logic'
+import { fuzzy, searchMap } from './logic'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
   const e = document.createElement(tag)
@@ -34,17 +34,32 @@ export class Toast {
 
 export interface Command { name: string; hint?: string; run: () => void }
 
-/** Search: every element plus commands, keyboard first. Closed, it is out of the page's tab order. */
+/** What picking a search result does. */
+export interface SearchActions {
+  /** Go to element i. */
+  go: (i: number) => void
+  /** Show the cards that carry a feature. */
+  feature: (name: string) => void
+  /** Recently visited cards, most recent first. */
+  recent: () => number[]
+}
+
+type Item = { label: string; sub: string; kind: string; run: () => void }
+
+/**
+ * Search: features and parts first, then files, keyboard first. An empty box lists the map's
+ * features and the places you were; `>` lists commands. Closed, it is out of the tab order.
+ */
 export class Palette {
   private root = el('div', 'palette')
   private input = el('input')
   private list = el('div', 'palette-list')
-  private items: { label: string; sub: string; kind: string; run: () => void }[] = []
+  private items: Item[] = []
   private active = 0
   isOpen = false
 
-  constructor(public tree: Tree, private commands: () => Command[], private warp: (i: number) => void) {
-    this.input.placeholder = 'Search the map…  (> for commands)'
+  constructor(public tree: Tree, private commands: () => Command[], private act: SearchActions) {
+    this.input.placeholder = 'Search features, parts and files…  (> for commands)'
     this.input.setAttribute('aria-label', 'Search the map')
     this.root.setAttribute('role', 'dialog')
     this.root.setAttribute('aria-label', 'Search')
@@ -80,39 +95,64 @@ export class Palette {
 
   private move(d: number) {
     this.active = Math.max(0, Math.min(this.items.length - 1, this.active + d))
-    ;[...this.list.querySelectorAll('.row')].forEach((c, k) => c.classList.toggle('on', k === this.active))
-    this.list.querySelectorAll('.row')[this.active]?.scrollIntoView({ block: 'nearest' })
+    const rows = this.list.querySelectorAll('.row')
+    rows.forEach((c, k) => c.classList.toggle('on', k === this.active))
+    rows[this.active]?.scrollIntoView({ block: 'nearest' })
+  }
+
+  private element = (i: number): Item => {
+    const e = this.tree.els[i]
+    return { label: e.title, sub: e.metadata?.path ?? pathOf(this.tree, i), kind: e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
+  }
+  private featureItem = (name: string, n: number): Item => ({ label: name, sub: `carried by ${n} card${n === 1 ? '' : 's'}`, kind: 'feature', run: () => this.act.feature(name) })
+
+  private allFeatures() {
+    const m = new Map<string, number>()
+    for (const e of this.tree.els) for (const f of e.features ?? []) m.set(f, (m.get(f) ?? 0) + 1)
+    return [...m]
   }
 
   private search() {
     const raw = this.input.value
-    const cmdOnly = raw.startsWith('>')
     const q = raw.replace(/^>\s*/, '').trim()
-    const cmds = this.commands().map(c => ({ c, s: fuzzy(q, c.name) })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s)
-    const els = cmdOnly || !q ? [] : this.tree.els.map((e, i) => ({ i, s: i > 0 ? elementScore(q, e) : -1 })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s).slice(0, 12)
-    this.items = [
-      ...els.map(({ i }) => ({ label: this.tree.els[i].title, sub: pathOf(this.tree, i), kind: this.tree.els[i].kind, run: () => this.warp(i) })),
-      ...cmds.slice(0, cmdOnly || !q ? 12 : 4).map(({ c }) => ({ label: c.name, sub: c.hint ?? '', kind: 'command', run: () => c.run() })),
-    ]
-    // Nothing found: say so, and offer the map's own words, its features, to search for instead.
-    // Picking one searches for it in place: the box stays open on its results.
+    const groups: [string, Item[]][] = []
     let note: HTMLElement | null = null
-    if (q && !this.items.length) {
-      note = el('div', 'none', `Nothing matches “${q}”. Search looks at titles, features, descriptions and file paths. Features of this map:`)
-      const features = [...new Set(this.tree.els.flatMap(e => e.features ?? []))].slice(0, 8)
-      this.items = features.map(f => ({ label: f, sub: 'feature', kind: 'try', run: () => this.open(f) }))
+    if (raw.startsWith('>')) {
+      const cmds = this.commands().map(c => ({ c, s: q ? fuzzy(q, c.name) : 0 })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s)
+      groups.push(['Commands', cmds.map(({ c }) => ({ label: c.name, sub: c.hint ?? '', kind: 'command', run: () => c.run() }))])
+    } else if (!q) {
+      const recent = this.act.recent().filter(i => i > 0 && i < this.tree.size).slice(0, 6)
+      if (recent.length) groups.push(['Recent places', recent.map(this.element)])
+      groups.push(['Features of this map', this.allFeatures().map(([f, n]) => this.featureItem(f, n))])
+    } else {
+      const found = searchMap(this.tree.els, q)
+      const parts = [...found.features.map(f => ({ score: f.score, item: this.featureItem(f.name, f.cards.length) })), ...found.parts.map(p => ({ score: p.score, item: this.element(p.i) }))]
+        .sort((a, b) => b.score - a.score).map(x => x.item)
+      // An exact file path outranks the parts: it is what was asked for.
+      const exact = found.files.filter(f => f.score >= 110)
+      if (exact.length) groups.push(['Files', exact.map(f => this.element(f.i))])
+      if (parts.length) groups.push(['Features and parts', parts])
+      const files = found.files.filter(f => f.score < 110)
+      if (files.length) groups.push([exact.length ? 'More files' : 'Files', files.map(f => this.element(f.i))])
+      if (!groups.length) {
+        // Nothing found: say so, and offer the map's own words, its features, instead. Picking one
+        // searches for it in place: the box stays open on its results.
+        note = el('div', 'none', `Nothing matches “${q}”. Search looks at titles, features, file paths and descriptions. Features of this map:`)
+        groups.push(['', this.allFeatures().slice(0, 8).map(([f]) => ({ label: f, sub: 'feature', kind: 'try', run: () => this.open(f) }))])
+      }
     }
-    this.render(note)
-  }
-
-  private render(note: HTMLElement | null) {
+    this.items = groups.flatMap(([, items]) => items)
     this.active = 0
-    this.list.replaceChildren(...(note ? [note] : []), ...this.items.map((it, k) => {
-      const row = el('div', k === 0 ? 'row on' : 'row')
-      row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
-      row.onmousedown = e => { e.preventDefault(); this.close(); it.run() }
-      return row
-    }))
+    let k = 0
+    this.list.replaceChildren(...(note ? [note] : []), ...groups.flatMap(([title, items]) => [
+      ...(title ? [el('div', 'group', title)] : []),
+      ...items.map(it => {
+        const row = el('div', k++ === 0 ? 'row on' : 'row')
+        row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
+        row.onmousedown = e => { e.preventDefault(); this.close(); it.run() }
+        return row
+      }),
+    ]))
   }
 }
 
