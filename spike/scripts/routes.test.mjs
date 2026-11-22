@@ -6,7 +6,8 @@ import { buildRequests } from './requests.mjs'
 import { endpoints } from './routes.mjs'
 
 const fixture = name => buildGraph(join(import.meta.dirname, `../test/fixtures/${name}`))
-const brief = eps => eps.map(e => `${e.method} ${e.path} ${e.name}: ${e.steps.map(s => s.split('/').pop()).join(' > ')}${e.views.length ? ` | ${e.views.map(v => v.split('/').pop()).join(', ')}` : ''}`)
+// Steps in order (>), then the types the handler only names (+), then the views (|).
+const brief = eps => eps.map(e => `${e.method} ${e.path} ${e.name}: ${e.steps.map(s => s.split('/').pop()).join(' > ')}${e.types.length ? ` + ${e.types.map(s => s.split('/').pop()).join(', ')}` : ''}${e.views.length ? ` | ${e.views.map(v => v.split('/').pop()).join(', ')}` : ''}`)
 
 describe('endpoints', () => {
   it('reads Spring endpoints under their class prefix, through fields, constants and views', () => {
@@ -56,11 +57,17 @@ describe('endpoints', () => {
     expect(of('/owners/{ownerId}/pets')).toBe('GET /owners/{ownerId}/pets pets: OwnerController.java > PetRepository.java > PetQueries.java | ownersList.html')
   })
 
+  it('keeps the types a handler only names out of its steps; a file whose methods do work is a step', () => {
+    const create = endpoints(fixture('clinic')).find(e => e.path === '/owners/new')
+    // The form and the owner only have their accessors read; Mailer reaches no store, but welcome() does work.
+    expect(brief([create])).toEqual(['POST /owners/new processCreationForm: OwnerController.java > ClinicService.java > OwnerRepository.java > Mailer.java + OwnerForm.java, Owner.java'])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([
-      // The calls in order down to the store, where the path stops; then the types the handler only names.
-      'GET /api/v1/items/{id} read_item: items.py > crud.py > db.py > models.py',
+      // The calls in order down to the store, where the path stops; apart from them (+), the types the handler only names.
+      'GET /api/v1/items/{id} read_item: items.py > crud.py > db.py + models.py',
       'GET /api/v1/items/health health: items.py',
     ])
     expect(eps[0].response).toEqual({ model: 'Item', json: true })
@@ -154,5 +161,26 @@ describe('buildRequests', () => {
   it('has no Requests view for code without endpoints', () => {
     const g = fixture('polyglot')
     expect(buildRequests({ ...g, files: g.files.map(f => ({ ...f, hints: f.hints.filter(h => h.kind !== 'route') })) }, { nodes: [], links: [] }, { name: 'x', title: 'X', elements: [], relations: [] })).toBe(null)
+  })
+})
+
+describe('buildRequests of a request path', () => {
+  const graph = fixture('clinic')
+  const map = {
+    nodes: [{ id: 'web', kind: 'webapp', title: 'Clinic', files: ['src/**'] }, { id: 'db', kind: 'database', title: 'Clinic DB' }],
+    links: [{ from: 'src/main/java/clinic/OwnerRepository.java', to: 'db', title: 'JPA', evidence: ['src/main/java/clinic/OwnerRepository.java:3'] }],
+  }
+  const built = buildModel(graph, map, { name: 'clinic' })
+  const r = buildRequests(graph, map, built.model)
+  const ep = (method, path) => r.elements.find(e => e.parent && e.title === `${method} ${path}`)
+  const kids = id => r.elements.filter(e => e.parent === id)
+  const rel = (a, b) => r.relations.find(x => x.source === a && x.target === b)
+
+  it('numbers the steps and sets the types the handler only names beside them, off the handler', () => {
+    expect(built.errors).toEqual([])
+    const create = ep('POST', '/owners/new')
+    expect(kids(create.id).map(e => e.title)).toEqual(['1 · processCreationForm()', '2 · ClinicService', '3 · OwnerRepository', '4 · Mailer', 'OwnerForm', 'Owner', '5 · Response'])
+    expect(kids(create.id).map(e => e.metadata.role)).toEqual(['step', 'step', 'step', 'step', 'type', 'type', undefined])
+    expect(rel(`${create.id}.s1`, `${create.id}.t1`).title).toBe('OwnerForm')
   })
 })

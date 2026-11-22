@@ -9,6 +9,7 @@ import { endpoints } from './routes.mjs'
 
 const CODE = { color: 'sky', shape: 'rectangle' }
 const RESPONSE = { color: 'green', shape: 'rectangle' }
+const TYPE = { color: 'gray', shape: 'rectangle' }
 const stem = p => posix.basename(p).replace(/\.[^.]+$/, '')
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'root'
 
@@ -159,20 +160,30 @@ export function buildRequests(graph, map, model) {
         // The request's path, in order: handler, the files it uses, the views it renders.
         const steps = [...e.steps, ...e.views]
         const sid = new Map()
+        // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
+        const shown = [...steps, ...e.types]
+        const name = p => shown.some(q => q !== p && stem(q) === stem(p)) ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)
         steps.forEach((p, k) => {
           const base = fileEl.get(p)
           if (!base) return
           const id = `${eid}.s${k + 1}`
           sid.set(p, id)
-          // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
-          const twin = steps.some(q => q !== p && stem(q) === stem(p))
           // The handler leads with its method, the one thing that differs between endpoints of one
           // controller; its class is the line below, so a cut title never loses the method.
-          const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : twin ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)}`
+          const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : name(p)}`
           const technology = k === 0 && e.name ? stem(p) : base.technology
           // The handler's card marks its route line, so its code opens at the endpoint.
           const marks = k === 0 ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
-          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks } })
+          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks, role: 'step', step: String(k + 1) } })
+        })
+        // The types the handler only names (what it takes and gives back) do not run in sequence:
+        // unnumbered cards beside the path, each hanging off the handler.
+        e.types.forEach((p, k) => {
+          const base = fileEl.get(p)
+          if (!base) return
+          const id = `${eid}.t${k + 1}`
+          sid.set(p, id)
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...TYPE, metadata: { ...base.metadata, role: 'type' } })
         })
         const rid = `${eid}.response`
         elements.push({ id: rid, parent: eid, title: `${steps.length + 1} · Response`, kind: 'component', description: `${answer(e)[0].toUpperCase()}${answer(e).slice(1)}.`, technology: '', tags: [], features: [], ...RESPONSE, metadata: {} })

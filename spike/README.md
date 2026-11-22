@@ -41,7 +41,7 @@ A map shows a codebase's architecture: the processes that run, the components in
     - the handler method;
     - the files its body calls that lead to a store or another service (fields lead to their types, helper methods in the same file count; a word inside a string or a comment is not a use, so the view name `"owners/findOwners"` does not call an `owners` field);
     - below those, what the called methods use, method by method: a service's other methods, and the stores only they reach, are not on this path. A file that declares no code of its own (a generated or inherited API, such as a Spring Data repository interface) is followed whole; one that does, but not the method called (an inherited method), is where the path stops, since none of its own code runs. The path also stops at the first file that reaches a store or service;
-    - the types the handler only names (request and response objects), after the calls;
+    - beside the numbered path, as unnumbered cards hanging off the handler, the types it only names (request and response objects, an object whose accessors it reads): they do not run in sequence. A file whose called methods do work (more than an accessor, a lazy getter or a `new` factory) is a numbered step even when it reaches no store;
     - the views it renders (constants lead to the view names they hold), and a Response card that says what comes back.
   - Arrows between steps come from the graph. Arrows out to stores carry the map's own evidence.
   - A caller the map links to the app as a whole reaches the app once; one linked to a file or a component reaches the endpoints in it.

@@ -253,9 +253,10 @@ export function endpoints(graph) {
     return t
   }
   /**
-   * The part of file `p` a caller's text uses: the bodies of the methods it calls there, or null
-   * when it calls none `p` declares. A call on a receiver counts when the caller's field or variable
-   * of that name has `p`'s type, or a type the caller does not say (a module alias, a local).
+   * The part of file `p` a caller's text uses: the bodies of the methods it calls there (`text`)
+   * and their names in the order the caller first calls them (`calls`), or null when it calls none
+   * `p` declares. A call on a receiver counts when the caller's field or variable of that name has
+   * `p`'s type, or a type the caller does not say (a module alias, a local).
    */
   const partOf = (p, callerText, caller) => {
     const c = context(p), typeOf = context(caller).typeOf, own = stemOf(p)
@@ -270,7 +271,25 @@ export function endpoints(graph) {
     }
     if (!calls.size) return null
     const bodies = [...calls].map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
-    return clean(withHelpers(c, clean(bodies, c.lang), [...calls]), c.lang)
+    return { text: clean(withHelpers(c, clean(bodies, c.lang), [...calls]), c.lang), calls: [...calls] }
+  }
+  /**
+   * Whether method `name` of file `p` does work. An accessor (return this.name;), a lazy getter
+   * that only creates what it returns, or a factory (return new Result(msg, true, Optional.empty());)
+   * does not, so a file whose called methods are all like that is a type the caller names, not a
+   * step of the request.
+   */
+  const works = (p, name) => {
+    const c = context(p), b = bodyOf(c.lines, c.declared.get(name), c.lang)
+    let inner = clean(c.lines.slice(b.start, b.end + 1).join('\n'), c.lang).replace(/\b(interface|struct)\s*\{\s*\}/g, '$1')
+    inner = c.lang === 'py' ? inner.split('\n').slice(1).join('\n') : inner.slice(inner.indexOf('{') + 1, inner.lastIndexOf('}'))
+    const statements = inner.split(c.lang === 'py' || c.lang === 'go' ? /[;\n]/ : /;/).map(s => s.trim()).filter(Boolean)
+    const calls = /\b(?!(?:if|for|foreach|while|switch|catch|return|using|lock|synchronized)\b)\w+\s*\(/.test(inner.replace(/\bnew\s+[\w.]+\s*(<[^>]*>)?\s*\(/g, ''))
+    if (statements.length === 1 && /^(return\s+)?new\s/.test(statements[0])) return false
+    // A constructor (new UserData(...)) that only stores its arguments is the type being made.
+    const constructor = (c.lang === 'java' || c.lang === 'cs') && name === stemOf(p)
+    if (!calls && (statements.length <= 1 || constructor || /^(get|set|is|has)[A-Z_]/.test(name))) return false
+    return true
   }
   /** Whether an edge out of `p` is one `part` of it uses: a name it imports, or the type of a field it reads. */
   const usedBy = (p, part) => {
@@ -279,13 +298,17 @@ export function endpoints(graph) {
     const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
     return e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].some(n => used.has(n))
   }
-  /** Where in `part` of file `p` an edge's target is first used: by a name it imports, or a field of its type. */
+  /**
+   * Where in `part` of file `p` an edge's target is first used: by a name it imports (in JS, also
+   * the name the file imported the module as), or a field of its type.
+   */
   const firstUse = (p, part) => {
     const c = context(p), first = new Map()
     for (const m of part.matchAll(/[A-Za-z_]\w*/g)) {
       for (const n of [m[0], c.typeOf.get(m[0])]) if (n && !first.has(n)) first.set(n, m.index)
     }
-    return e => Math.min(...e.names.map(n => first.get(n.replace(/\W+$/, '')) ?? Infinity))
+    const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
+    return e => Math.min(...[...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].map(n => first.get(n) ?? Infinity))
   }
   const dir = p => p.slice(0, p.lastIndexOf('/') + 1)
   const ROUTE_CALL = /([\w$]+)\s*\.\s*(?:get|post|put|delete|patch|all|route|HandleFunc|Handle)\s*\(/i
@@ -361,9 +384,11 @@ export function endpoints(graph) {
       // A file that reaches the outside itself is where the path ends: what else it imports
       // (a seeding helper next to the engine) is not part of this request.
       const own = p => byPath.get(p)?.hints.some(h => BOUNDARY.has(h.kind)) ?? false
-      // The steps in call order: the handler, the files it calls that lead somewhere, what those
-      // call in turn, and last the files it only names (request and response types).
-      const lead = direct.filter(e => leads(e.to, 1, new Set())), data = direct.filter(e => !lead.includes(e))
+      // The steps in call order: the handler, the files it calls that lead somewhere or do work of
+      // their own, and what those call in turn. The files it only names (request and response
+      // types, an object whose accessors it reads) are not steps: they are `types`.
+      const worked = e => partOf(e.to, text, hp)?.calls.some(n => works(e.to, n)) ?? false
+      const lead = direct.filter(e => leads(e.to, 1, new Set()) || worked(e)), data = direct.filter(e => !lead.includes(e))
       const steps = [hp]
       // Below the handler a file takes part through the methods its caller calls on it, so only
       // what those methods use goes on. A file that declares no code of its own (a generated or
@@ -376,13 +401,14 @@ export function endpoints(graph) {
         if (own(p) || d >= DEPTH) return
         const part = partOf(p, callerText, caller)
         if (part == null && context(p).declared.size) return
-        const uses = part == null ? () => true : usedBy(p, part)
-        const at = firstUse(p, part ?? context(p).code)
+        const used = part?.text ?? context(p).code
+        const uses = part == null ? () => true : usedBy(p, used)
+        const at = firstUse(p, used)
         const next = (out.get(p) ?? []).filter(e => !steps.includes(e.to) && byPath.get(e.to)?.lang !== 'view' && uses(e) && leads(e.to, d + 1, new Set()))
-        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, part ?? context(p).code, p)
+        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, used, p)
       }
       for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
-      for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)
+      const types = data.map(e => e.to).filter(p => !steps.includes(p))
       const redirect = said.find(s => s.startsWith('redirect:'))
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
@@ -393,7 +419,7 @@ export function endpoints(graph) {
       const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
       const response = { ...(redirect ? { redirect: redirect.slice('redirect:'.length) || '/' } : {}), ...(model ? { model } : {}), ...(json ? { json } : {}) }
-      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, views, response })
+      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, types, views, response })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
