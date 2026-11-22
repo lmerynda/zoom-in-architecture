@@ -81,7 +81,8 @@ export class History {
   }
 }
 
-function same(a: View, b: View, viewportW: number) {
+/** Whether two views are the same place: one selection, about the same zoom and spot. */
+export function same(a: View, b: View, viewportW: number) {
   return a.selected === b.selected && Math.abs(Math.log(a.z / b.z)) < 0.2 && Math.hypot(a.x - b.x, a.y - b.y) * a.z < viewportW * 0.15
 }
 

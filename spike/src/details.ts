@@ -1,5 +1,4 @@
 import type { EvidenceJson, Tree } from './model'
-import type { Renderer } from './render'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag)
@@ -8,101 +7,205 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e
 }
 
-/** How many cited lines a relation row shows before "+N more". */
-const SHOWN = 2
-
-/** Opens a file of the map at a line, in the code view. */
-export type OpenCode = (path: string, line: number) => void
-
-/**
- * The code lines that prove a link the map added: where each is, and what it says, so a reader
- * can judge the link without opening the repository. One in a file of the map opens it there.
- */
-function proof(evidence: EvidenceJson[], files: Set<string>, open?: OpenCode) {
-  const box = el('div', 'd-ev')
-  const item = (ev: EvidenceJson) => {
-    const file = ev.at.replace(/:\d+(-\d+)?$/, '')
-    const canOpen = !!open && ev.code != null && files.has(file)
-    const div = el('div', [ev.code == null && 'stale', canOpen && 'open'].filter(Boolean).join(' '))
-    // The file name and its folder are enough to recognise it; the full path is in the tooltip.
-    const short = ev.at.split('/').slice(-2).join('/')
-    div.append(el('span', 'at', canOpen ? `${short} ↗` : short))
-    div.title = canOpen ? `${ev.at} · open in the code` : ev.at
-    div.append(ev.code == null ? el('em', '', 'no longer at this line') : el('pre', '', ev.code))
-    if (canOpen) div.onclick = () => open!(file, ev.line)
-    return div
-  }
-  box.append(...evidence.slice(0, SHOWN).map(item))
-  if (evidence.length > SHOWN) {
-    const more = el('button', 'more', `+${evidence.length - SHOWN} more`)
-    more.onclick = () => more.replaceWith(...evidence.slice(SHOWN).map(item))
-    box.append(more)
-  }
-  return box
+/** What the panel can ask of the page: travel, select, and open code. */
+export interface PanelActions {
+  /** Selects element i and frames it, recording the place left behind. */
+  go: (i: number) => void
+  /** Opens a file of the map at a line; `near` picks among cards showing the same file. */
+  openPath: (path: string, line: number, near: number) => void
+  /** Opens element i's own code at its start. */
+  read: (i: number) => void
 }
 
-/** Unit panel for the selected element: identity, path, description and clickable relations. */
-export function renderDetails(panel: HTMLElement, tree: Tree, renderer: Renderer, i: number, go: (i: number) => void, open?: OpenCode) {
-  if (i <= 0) { panel.hidden = true; return }
+/** One relation as the panel lists it: the card on the other side, what it reaches there, and the cited lines. */
+export interface RelationRow { other: number; names: string[]; evidence: EvidenceJson[] }
+
+type Rel = { other: number; title: string; evidence?: EvidenceJson[] }
+
+/**
+ * The relations of element i grouped one row per card on the other side. A container's are listed
+ * by what is on the other side at its own level (a sibling component, another app), naming the
+ * elements reached inside it; a leaf's by the exact element. Links a map added (they carry
+ * evidence) cross the architecture, so they lead; then the busiest; then by name, so the order is
+ * stable. Every relation is in some row: the list is complete.
+ */
+export function relationRows(tree: Tree, i: number, rels: Rel[]): RelationRow[] {
+  const rollUp = (o: number) => (tree.children[i].length ? tree.childUnder(tree.lca(i, o), o) : o)
+  const byOther = new Map<number, { names: Set<string>; evidence: Map<string, EvidenceJson> }>()
+  for (const r of rels) {
+    const o = rollUp(r.other)
+    const row = byOther.get(o) ?? { names: new Set(), evidence: new Map() }
+    const name = o === r.other ? r.title : tree.els[r.other].title
+    // A relation named after the element it reaches (an import of KingdomDto) says nothing twice.
+    if (name && name !== tree.els[o].title && name !== 'uses') row.names.add(name)
+    for (const ev of r.evidence ?? []) row.evidence.set(ev.at, ev)
+    byOther.set(o, row)
+  }
+  return [...byOther]
+    .map(([other, r]) => ({ other, names: [...r.names], evidence: [...r.evidence.values()] }))
+    .sort((a, b) => Number(b.evidence.length > 0) - Number(a.evidence.length > 0) || b.names.length - a.names.length || tree.els[a.other].title.localeCompare(tree.els[b.other].title))
+}
+
+/** Evidence with identical code excerpts folded together: one excerpt, every place it stands. */
+export function foldEvidence(evidence: EvidenceJson[]): { code: string | null; at: EvidenceJson[] }[] {
+  const out = new Map<string, { code: string | null; at: EvidenceJson[] }>()
+  for (const ev of evidence) {
+    const key = ev.code == null ? `\0${ev.at}` : ev.code.trim()
+    const g = out.get(key) ?? { code: ev.code, at: [] }
+    g.at.push(ev)
+    out.set(key, g)
+  }
+  // Excerpts that stand in one place say the most about this link; the shared ones come last.
+  return [...out.values()].sort((a, b) => a.at.length - b.at.length)
+}
+
+/** A card's kind in words: "Component", "21 files", "File". */
+export function kindWord(tree: Tree, i: number): string {
+  const e = tree.els[i], n = tree.children[i].length
+  if (e.metadata?.path) return 'File'
+  const k = e.kind ? e.kind[0].toUpperCase() + e.kind.slice(1) : 'Element'
+  return n ? `${k} · ${n} inside` : k
+}
+
+/** Where the panel's rows are, so ] and [ can walk them in the order shown. */
+export interface PanelRows { uses: number[]; usedBy: number[]; mark: (dir: 'uses' | 'usedBy', k: number) => void }
+
+const EMPTY: PanelRows = { uses: [], usedBy: [], mark: () => {} }
+
+/**
+ * The details panel for the selected element: what it is, where it sits, its file, and every
+ * relation it has as one line each, Uses then Used by. A line's cited code opens on click.
+ */
+export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, i: number, act: PanelActions, rank?: string): PanelRows {
+  if (i <= 0) { panel.hidden = true; panel.replaceChildren(); return EMPTY }
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const e = tree.els[i]
   const path: number[] = []
   for (let a = tree.parent[i]; a > 0; a = tree.parent[a]) path.unshift(a)
   const head = el('div', 'd-head')
-  head.append(el('span', 'd-kind', e.kind), el('h2', '', e.title))
-  const crumbs = el('div', 'd-path')
+  head.append(el('span', 'd-kind', kindWord(tree, i)), el('h2', '', e.title))
+  const crumbs = el('nav', 'd-path')
+  crumbs.setAttribute('aria-label', 'Inside')
   for (const a of path) {
     const b = el('button', '', tree.els[a].title)
-    b.onclick = () => go(a)
+    b.onclick = () => act.go(a)
     crumbs.append(b)
   }
+
+  // A file: where it is, how big, and the way into its code.
+  const file = e.metadata?.path
+  const fileBox: HTMLElement[] = []
+  if (file) {
+    const box = el('div', 'd-file')
+    const lines = Number(e.metadata?.lines), ext = file.match(/\.(\w+)$/)?.[1]
+    const p = el('code', 'd-filepath', file)
+    p.title = file
+    const facts = el('span', 'd-facts', [lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}` : '', ext ?? ''].filter(Boolean).join(' · '))
+    const actions = el('div', 'd-actions')
+    const read = el('button', 'primary', 'Read code')
+    read.onclick = () => act.read(i)
+    const start = Number(e.metadata?.span?.split('-')[0]) || 0
+    const copy = el('button', '', 'Copy path')
+    copy.onclick = () => {
+      const text = start > 1 ? `${file}:${start}` : file
+      void navigator.clipboard?.writeText(text).then(() => { copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy path' }, 1200) }, () => {})
+    }
+    actions.append(read, copy)
+    box.append(p, facts, actions)
+    fileBox.push(box)
+  } else if (tree.children[i].length) {
+    const actions = el('div', 'd-actions')
+    const inBtn = el('button', 'primary', 'Go in')
+    inBtn.onclick = () => act.go(i)
+    actions.append(inBtn)
+    fileBox.push(actions)
+  }
+
   const tags = el('div', 'd-tags')
   for (const f of e.features ?? []) tags.append(el('span', 'feat', f))
   for (const t of [e.technology, ...e.tags.map(t => '#' + t)].filter(Boolean)) tags.append(el('span', '', t))
-  if (tree.children[i].length) tags.append(el('span', '', `${tree.children[i].length} inside`))
 
-  const { out, inn } = renderer.relationsOf(i)
-  // A container's relations are listed by what is on the other side at its own level (a sibling
-  // component, another app), naming the elements reached inside it; a leaf's by the exact element.
-  const rollUp = (o: number) => (tree.children[i].length ? tree.childUnder(tree.lca(i, o), o) : o)
-  const list = (title: string, cls: string, all: { other: number; title: string; evidence?: EvidenceJson[] }[], arrow: string) => {
-    if (!all.length) return []
-    // One row per element on the other side, however many of our children talk to it.
-    const byOther = new Map<number, { titles: Set<string>; evidence: Map<string, EvidenceJson> }>()
-    for (const r of all) {
-      const o = rollUp(r.other)
-      const row = byOther.get(o) ?? { titles: new Set(), evidence: new Map() }
-      row.titles.add(o === r.other ? r.title : tree.els[r.other].title)
-      for (const ev of r.evidence ?? []) row.evidence.set(ev.at, ev)
-      byOther.set(o, row)
-    }
-    const names = (s: Set<string>) => { const a = [...s]; return a.length > 4 ? `${a.slice(0, 4).join(', ')} +${a.length - 4}` : a.join(', ') }
-    // Links a map added (they carry evidence) cross the architecture, so they lead; then the busiest.
-    const rows = [...byOther]
-      .sort((a, b) => Number(b[1].evidence.size > 0) - Number(a[1].evidence.size > 0) || b[1].titles.size - a[1].titles.size)
-      .map(([other, r]) => ({ other, title: names(r.titles), evidence: [...r.evidence.values()] }))
-    const box = el('div', `d-rels ${cls}`)
+  const { out, inn } = relationsOf(i)
+  const uses = relationRows(tree, i, out), usedBy = relationRows(tree, i, inn)
+  const buttons: Record<'uses' | 'usedBy', HTMLElement[]> = { uses: [], usedBy: [] }
+  const section = (title: string, cls: 'out' | 'in', key: 'uses' | 'usedBy', rows: RelationRow[]) => {
+    const box = el('section', `d-rels ${cls}`)
     box.append(el('h3', '', `${title} · ${rows.length}`))
-    for (const r of rows.slice(0, 40)) {
-      const b = el('button')
-      // A relation named after the element it reaches (an import of KingdomDto) says nothing twice.
-      const name = tree.els[r.other].title
-      b.append(el('i', '', arrow), el('b', '', name), ...(r.title && r.title !== name ? [el('span', '', r.title)] : []))
-      b.onclick = () => go(r.other)
-      box.append(b, ...(r.evidence.length ? [proof(r.evidence, files, open)] : []))
+    if (!rows.length) { box.append(el('div', 'd-none', 'none on this map')); return box }
+    const list = el('ul')
+    for (const r of rows) {
+      const li = el('li')
+      const b = el('button', 'd-rel')
+      b.append(el('i', '', cls === 'out' ? '→' : '←'), el('b', '', tree.els[r.other].title))
+      if (r.names.length) b.append(el('span', '', r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ')))
+      b.title = `${title === 'Uses' ? 'Uses' : 'Used by'} ${tree.els[r.other].title}: go there`
+      b.onclick = () => act.go(r.other)
+      li.append(b)
+      if (r.evidence.length) {
+        const n = r.evidence.length
+        const toggle = el('button', 'd-cite', `${n} cited line${n === 1 ? '' : 's'}`)
+        toggle.setAttribute('aria-expanded', 'false')
+        let box2: HTMLElement | null = null
+        toggle.onclick = () => {
+          if (box2) { box2.remove(); box2 = null; toggle.setAttribute('aria-expanded', 'false'); return }
+          box2 = proof(r.evidence, files, (p, line) => act.openPath(p, line, i))
+          li.append(box2)
+          toggle.setAttribute('aria-expanded', 'true')
+        }
+        li.append(toggle)
+      }
+      list.append(li)
+      buttons[key].push(li)
     }
-    return [box]
+    box.append(list)
+    return box
   }
   panel.replaceChildren(
     head,
     ...(path.length ? [crumbs] : []),
-    tags,
+    ...fileBox,
+    ...(rank ? [el('p', 'd-rank', rank)] : []),
+    ...(tags.childElementCount ? [tags] : []),
     ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
     // What the scanner saw here but could not follow: the map has no arrow for it.
     ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
-    ...list('Outgoing', 'out', out, '→'),
-    ...list('Incoming', 'in', inn, '←'),
-    el('div', 'd-hint', 'Esc clears the selection'),
+    section('Uses', 'out', 'uses', uses),
+    section('Used by', 'in', 'usedBy', usedBy),
   )
   panel.hidden = false
+  return {
+    uses: uses.map(r => r.other),
+    usedBy: usedBy.map(r => r.other),
+    mark(dir, k) {
+      for (const key of ['uses', 'usedBy'] as const) buttons[key].forEach((li, j) => li.classList.toggle('on', key === dir && j === k))
+      buttons[dir][k]?.scrollIntoView({ block: 'nearest' })
+    },
+  }
+}
+
+/**
+ * The code lines that prove a link the map added: where each is, and what it says, so a reader
+ * can judge the link without opening the repository. One in a file of the map opens it there.
+ * Identical lines in several places show once, with every place they stand as its own button.
+ */
+function proof(evidence: EvidenceJson[], files: Set<string>, open: (path: string, line: number) => void) {
+  const box = el('div', 'd-ev')
+  for (const g of foldEvidence(evidence)) {
+    const div = el('div', g.code == null ? 'stale' : '')
+    const places = el('div', 'at')
+    for (const ev of g.at) {
+      const file = ev.at.replace(/:\d+(-\d+)?$/, '')
+      // The file name and its folder are enough to recognise it; the full path is in the tooltip.
+      const short = ev.at.split('/').slice(-2).join('/')
+      if (ev.code != null && files.has(file)) {
+        const b = el('button', 'cite', short)
+        b.title = `${ev.at}: open the code here`
+        b.onclick = () => open(file, ev.line)
+        places.append(b)
+      } else places.append(el('span', '', short))
+    }
+    div.append(places, g.code == null ? el('em', '', 'no longer at this line') : el('pre', '', g.code))
+    box.append(div)
+  }
+  return box
 }

@@ -65,14 +65,29 @@
     .d-tags span.feat { color: #fde68a; border-color: rgba(251, 191, 36, .45); }
     #details p { color: #94a3b8; margin: 10px 0 4px; line-height: 1.5; }
     #details p.d-missed { color: #fbbf24; font-size: 12px; border-left: 2px solid rgba(251, 191, 36, 0.5); padding-left: 8px; }
-    .d-rels { margin-top: 12px; display: flex; flex-direction: column; }
+    .d-file { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+    .d-filepath { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
+    .d-facts { color: var(--dim); font-size: 11px; }
+    .d-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .d-actions button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    .d-actions button.primary { background: #fbbf24; border-color: #fbbf24; color: #0b0f17; font-weight: 600; }
+    .d-actions button:hover { filter: brightness(1.15); }
+    #details p.d-rank { color: #fde68a; font-size: 12px; margin: 8px 0 0; }
+    .d-rels { margin-top: 14px; }
     .d-rels h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
     .d-rels.out h3, .d-rels.out i { color: #fbbf24; }
     .d-rels.in h3, .d-rels.in i { color: #22d3ee; }
-    .d-rels button { display: grid; grid-template-columns: 16px 1fr; text-align: left; padding: 4px 6px; }
-    .d-rels i { font-style: normal; grid-row: span 2; }
-    .d-rels b { color: #e2e8f0; font-weight: 600; }
-    .d-rels button span { color: var(--dim); font-size: 11px; }
+    .d-rels ul { list-style: none; margin: 0; padding: 0; }
+    .d-rels li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; border-radius: 6px; }
+    .d-rels li.on { background: rgba(251, 191, 36, 0.14); }
+    .d-rels.in li.on { background: rgba(34, 211, 238, 0.12); }
+    .d-rels .d-rel { display: flex; gap: 6px; align-items: baseline; text-align: left; padding: 3px 6px; flex: 1 1 auto; min-width: 0; }
+    .d-rels i { font-style: normal; }
+    .d-rels b { color: #e2e8f0; font-weight: 600; flex: none; max-width: 62%; }
+    .d-rels .d-rel span { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .d-rels .d-cite { color: var(--dim); font-size: 11px; padding: 2px 6px; flex: none; }
+    .d-rels .d-cite[aria-expanded="true"] { color: var(--text); }
+    .d-none { color: var(--dim); font-size: 11px; padding: 2px 6px; }
     #code { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
     .code[hidden] { display: none; }
@@ -94,16 +109,14 @@
     .code pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.8em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
     .code pre .cited { background: rgba(251, 191, 36, 0.16); box-shadow: inset 3px 0 #fbbf24; }
     .code pre .cited b { color: #fde68a; border-color: rgba(251, 191, 36, 0.6); }
-    .d-ev { margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
+    .d-ev { flex-basis: 100%; margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
     .d-ev > div { border-left: 2px solid var(--line); padding: 1px 0 1px 8px; }
-    .d-ev .at { font-size: 10px; color: #64748b; font-family: ui-monospace, Consolas, monospace; }
+    .d-ev .at { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 10px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; }
+    .d-ev .at .cite { background: none; border: 0; padding: 0; font: inherit; color: #fde68a; cursor: pointer; text-decoration: underline dotted; }
+    .d-ev .at .cite:hover { color: #fff; }
     .d-ev pre { margin: 1px 0 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: #cbd5e1; white-space: pre; overflow-x: auto; }
     .d-ev .stale { border-left-color: #b45309; }
-    .d-ev .open { cursor: pointer; border-radius: 0 5px 5px 0; }
-    .d-ev .open:hover { background: rgba(148, 163, 184, 0.1); border-left-color: #fbbf24; }
-    .d-ev .open:hover .at { color: #fbbf24; }
     .d-ev em { display: block; font-size: 11px; color: #f59e0b; }
-    .d-ev button.more { display: inline-block; align-self: flex-start; font-size: 11px; padding: 1px 6px; }
     .d-hint { margin-top: 12px; color: #475569; font-size: 11px; }
     /* The controls a newcomer needs first: readable (AA contrast), not small print. */
     #help { right: 12px; bottom: 12px; color: #94a3b8; font-size: 12px; position: fixed; }

@@ -2,7 +2,7 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView, linePoint } from './code'
 import { installControls } from './controls/install'
-import { renderDetails } from './details'
+import { renderDetails, type PanelActions, type PanelRows } from './details'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -205,10 +205,25 @@ async function main() {
   }
   /** How far the wheel may zoom out: a little past the whole landscape. */
   const zoomFloor = () => 0.5 * Math.min((cam.w * 0.92) / world.rect[2], (cam.h * 0.92) / world.rect[3])
-  /** Opens a file at a line: flies there with the line readable, beside the panel, and selects the file. */
-  const openCode = async (path: string, line: number) => {
-    const i = tree.els.findIndex(e => e.metadata?.path === path)
-    if (i <= 0) return
+  /**
+   * The card showing a file, nearest element `near`: in the Requests view one file is a step of
+   * many endpoints, and a line cited in this endpoint opens in this endpoint's card.
+   */
+  const cardOf = (path: string, near: number) => {
+    let best = -1, depth = -1
+    for (let i = 1; i < tree.size; i++) {
+      if (tree.els[i].metadata?.path !== path) continue
+      const d = near > 0 ? tree.depth[tree.lca(i, near)] : 0
+      if (d > depth) { best = i; depth = d }
+    }
+    return best
+  }
+  /** Where a card's own code starts: the part of the file it stands for, else its first line. */
+  const startOf = (i: number) => Number(tree.els[i].metadata?.span?.split('-')[0]) || 1
+  /** Opens card i's file at a line: flies there with the line readable, beside the panel, and selects the card. */
+  const openCode = async (i: number, line: number) => {
+    const path = tree.els[i]?.metadata?.path
+    if (i <= 0 || !path) return
     // Fetching and preparing a big file takes a moment; say so at once.
     controls.toast.show(`Opening ${path.split('/').pop()}:${line}`)
     const m = await code.measure(i)
@@ -222,10 +237,24 @@ async function main() {
     const fromTop = line <= 1 ? (cam.h / 2 - 140) / z : 0
     controls.visit({ x: p.x + cover / 2 / z, y: p.y + fromTop, z, selected: tree.els[i].id })
   }
+  const actions: PanelActions = {
+    go: j => controls.goSelect(j),
+    openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
+    read: j => void openCode(j, startOf(j)),
+  }
+  /** In the Connections view, why a card ranks where it does among its siblings. */
+  const rankText = (i: number) => {
+    const rk = renderer.ranking
+    if (!rk || i <= 0) return undefined
+    const peers = tree.children[tree.parent[i]].length
+    return `#${rk.rank[i]} of ${peers} · reaches ${rk.partners[i]} of ${peers - 1} peer${peers === 2 ? '' : 's'} · ${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}`
+  }
+  let rows: PanelRows = { uses: [], usedBy: [], mark: () => {} }
+  const showDetails = () => { rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected)) }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
     if (i > 0) sound.select()
-    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
+    showDetails()
     // The panel opens on the right; a selected card under it glides left to clear it, at the same
     // zoom. It waits out a double-click, so a second click still lands on the card it aimed at.
     if (i > 0) setTimeout(() => clearPanel(i), DOUBLE_CLICK_MS)
@@ -251,7 +280,7 @@ async function main() {
   lensBar.onPick = setLens
   lensBar.show(null)
 
-  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor, read: path => void openCode(path, 1) })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, sound, lenses, model: modelName, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows })
   resize()
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
@@ -311,7 +340,7 @@ async function main() {
     minimap.tree = next; minimap.world = live
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
-    renderDetails(details, tree, renderer, renderer.selected, j => { select(j); controls.go(j) }, openCode)
+    showDetails()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
     const parts = [diff.added.length && `+${diff.added.length} added`, diff.changed.length && `${diff.changed.length} changed`, diff.removed.length && `−${diff.removed.length} removed (${diff.removed.slice(0, 3).map(id => id.split('.').pop()).join(', ')}${diff.removed.length > 3 ? '…' : ''})`].filter(Boolean)

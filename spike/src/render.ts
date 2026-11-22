@@ -297,12 +297,14 @@ export class Renderer {
     // edges as soon as they are drawn: selecting or hovering a small card shows its links.
     // The level you are in (the breadcrumb's cards, which fill the view) shows its children's
     // edges as soon as they are drawn too: there, a crowded level is what you came to read.
+    // So do the siblings of the focus and of every card holding it: what the details panel lists
+    // as used by or using the focus is a drawn card, so it is never dimmed or left without an arrow.
     const focus = this.selected > 0 ? this.selected : this.hover
     let cur = 0
     for (let k = chain.length - 1; k >= 0; k--) {
       const node = chain[k], parent = this.tree.parent[node]
       const o = this.open(parent)
-      const onFocus = (focus > 0 && (node === focus || this.tree.isAncestor(node, focus))) || this.here.includes(parent)
+      const onFocus = (focus > 0 && (parent === 0 || node === focus || this.tree.isAncestor(parent, focus))) || this.here.includes(parent)
       if (o <= 0 || (o < 0.5 && !onFocus)) break
       cur = node
       if (!this.onScreen(node)) break
@@ -1027,6 +1029,14 @@ export class Renderer {
 
   /** Screen rect of a node, for overlays positioned by the controls. */
   screenRectOf(i: number) { return this.screenRect(i) }
+
+  /** Whether card i was drawn dimmed last frame (out of the selection's play). */
+  dimmed(i: number): boolean {
+    return (this.selected > 0 || !!this.route) && this.related[i] !== this.frameNo
+  }
+
+  /** Whether an arrow to or from the focus ended at card i last frame. */
+  linked(i: number): boolean { return this.endpoint[i] === this.frameNo }
 
   private toScreen(world: number[]) {
     const out = new Array<number>(world.length)
