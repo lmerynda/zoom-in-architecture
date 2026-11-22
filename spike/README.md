@@ -39,7 +39,7 @@ A map shows a codebase's architecture: the processes that run, the components in
   - A route that names its handler (`router.POST("/login", UsersLogin)`) starts its path at that function, in the same file, its Go package, or the JS module it was imported from.
   - Inside an endpoint is the request's path as numbered steps, in call order: each file is followed at once by what it calls, in the order its body first uses them (a field of a type counts as using that type):
     - the handler method;
-    - the files its body calls that lead to a store or another service (fields lead to their types, helper methods in the same file count);
+    - the files its body calls that lead to a store or another service (fields lead to their types, helper methods in the same file count; a word inside a string or a comment is not a use, so the view name `"owners/findOwners"` does not call an `owners` field);
     - below those, what the called methods use, method by method: a service's other methods, and the stores only they reach, are not on this path. A file whose called methods it does not declare itself (an inherited or generated API) is followed whole. The path stops at the first file that reaches a store or service;
     - the types the handler only names (request and response objects), after the calls;
     - the views it renders (constants lead to the view names they hold), and a Response card that says what comes back.

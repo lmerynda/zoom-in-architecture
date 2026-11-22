@@ -38,6 +38,15 @@ describe('endpoints', () => {
     expect(brief([close])).toEqual(['POST /account/close close: AccountApi.java > AccountService.java > AuditRepository.java > CardRepository.java'])
   })
 
+  it('reads uses from code alone: a word in a string or a comment is not a field the handler calls', () => {
+    const eps = endpoints(fixture('clinic'))
+    const of = path => brief([eps.find(e => e.path === path)])[0]
+    // "owners/findOwners" and a comment saying owners.findAll() both name the owners field; neither runs it.
+    expect(of('/owners/find')).toBe('GET /owners/find initFindForm: OwnerController.java | findOwners.html')
+    // The view name still comes from the string, through the constant that holds it.
+    expect(of('/owners/{ownerId}/edit')).toBe('GET /owners/{ownerId}/edit initUpdateOwnerForm: OwnerController.java | createOrUpdateOwnerForm.html')
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([

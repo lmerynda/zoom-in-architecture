@@ -13,6 +13,27 @@ const DEPTH = 3
 
 const strings = s => [...s.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map(m => m[2])
 const words = s => new Set(s.match(/[A-Za-z_]\w*/g) ?? [])
+// Comments, and string literals unless `keep`, in one left-to-right pass, so a quote inside a
+// comment or a // inside a string is read as what it sits in. Python has # comments and triple
+// quotes; Rust's ' starts a lifetime, not a string.
+const LITERALS = {
+  py: /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?''')|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,
+  rs: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:[^`\\]|\\.)*`)|("(?:[^"\\\n]|\\.)*")/g,
+  other: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:[^`\\]|\\.)*`)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,
+}
+/**
+ * `text` as code only: comments blanked (their line breaks kept) and, unless `keep`, string
+ * literals emptied (a JS template keeps the expressions it interpolates). Identifiers in what is
+ * left are uses; a word inside "owners/findOwners" is not.
+ */
+function clean(text, lang, keep = false) {
+  return text.replace(LITERALS[lang] ?? LITERALS.other, (m, comment, multi) => {
+    if (comment) return m.replace(/[^\n]/g, ' ')
+    if (keep) return m
+    const lines = '\n'.repeat((m.match(/\n/g) ?? []).length)
+    return `""${multi ? ` ${(m.match(/\$\{[^}]*\}/g) ?? []).map(x => x.slice(2, -1)).join(' ')}` : ''}${lines}`
+  })
+}
 /** Whether a body calls its own `name`: bare, or on this/self, not a same-named method of something else. */
 const ownCall = (text, name) => new RegExp(`(?:^|[^\\w.$]|\\b(?:this|self)\\.)${name}\\s*\\(`, 'm').test(text)
 const stemOf = p => p.slice(p.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
@@ -210,12 +231,12 @@ export function endpoints(graph) {
   const contexts = new Map()
   const context = p => {
     if (contexts.has(p)) return contexts.get(p)
-    const lang = byPath.get(p).lang, lines = src(p), whole = lines.join('\n')
+    const lang = byPath.get(p).lang, lines = src(p), whole = lines.join('\n'), code = clean(whole, lang)
     // Fields and constructor parameters name the types a handler reaches through (this.owners → OwnerRepository).
     const typeOf = new Map()
-    if (BRACES.has(lang)) for (const m of whole.matchAll(/\b([A-Z]\w*)(?:<[^>\n]*>)?[ \t]+(\w+)[ \t]*[;=,)]/g)) if (!typeOf.has(m[2])) typeOf.set(m[2], m[1])
-    const constOf = new Map([...whole.matchAll(/\b(\w+)\s*(?::\s*\w+)?\s*=\s*"([^"\n]*)"/g)].map(m => [m[1], m[2]]))
-    const ctx = { lang, lines, whole, typeOf, constOf, declared: declarations(lines, lang) }
+    if (BRACES.has(lang)) for (const m of code.matchAll(/\b([A-Z]\w*)(?:<[^>\n]*>)?[ \t]+(\w+)[ \t]*[;=,)]/g)) if (!typeOf.has(m[2])) typeOf.set(m[2], m[1])
+    const constOf = new Map([...clean(whole, lang, true).matchAll(/\b(\w+)\s*(?::\s*\w+)?\s*=\s*"([^"\n]*)"/g)].map(m => [m[1], m[2]]))
+    const ctx = { lang, lines, whole, code, typeOf, constOf, declared: declarations(lines, lang) }
     contexts.set(p, ctx)
     return ctx
   }
@@ -248,7 +269,7 @@ export function endpoints(graph) {
     }
     if (!calls.size) return null
     const bodies = [...calls].map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
-    return withHelpers(c, bodies, [...calls]).replace(/\/\*[\s\S]*?\*\//g, ' ')
+    return clean(withHelpers(c, clean(bodies, c.lang), [...calls]), c.lang)
   }
   /** Whether an edge out of `p` is one `part` of it uses: a name it imports, or the type of a field it reads. */
   const usedBy = (p, part) => {
@@ -298,17 +319,19 @@ export function endpoints(graph) {
       const hc = context(hp)
       const body = bodyOf(hc.lines, from, hc.lang)
       if (name == null) name = (f.lang === 'js' || f.lang === 'go') && inline ? '' : body.name
-      // A handler's helper functions in the same file count as part of its body.
-      let text = hc.lines.slice(body.start, body.end + 1).join('\n')
-      for (const w of words(text)) {
-        if (w === name || !hc.declared.has(w) || !ownCall(text, w)) continue
+      // A handler's helper functions in the same file count as part of its body. What it says
+      // (view names, redirects) is read from its strings; what it uses, from its code alone.
+      let raw = hc.lines.slice(body.start, body.end + 1).join('\n')
+      const handlerCode = clean(raw, hc.lang)
+      for (const w of words(handlerCode)) {
+        if (w === name || !hc.declared.has(w) || !ownCall(handlerCode, w)) continue
         const helper = bodyOf(hc.lines, hc.declared.get(w), hc.lang)
-        text += `\n${hc.lines.slice(helper.start, helper.end + 1).join('\n')}`
+        raw += `\n${hc.lines.slice(helper.start, helper.end + 1).join('\n')}`
       }
-      text = text.replace(/\/\*[\s\S]*?\*\//g, ' ')
+      const text = clean(raw, hc.lang)
       const used = words(text)
       for (const w of [...used]) { if (hc.typeOf.has(w)) used.add(hc.typeOf.get(w)) }
-      const said = [...strings(text), ...[...used].filter(w => hc.constOf.has(w)).map(w => hc.constOf.get(w))]
+      const said = [...strings(clean(raw, hc.lang, true)), ...[...used].filter(w => hc.constOf.has(w)).map(w => hc.constOf.get(w))]
       // Files the handler names, in the order its body first names them. In JS a module is also
       // named by what the file imported it as (const service = require('./orders.service')).
       const local = hc.lang === 'js' ? importsOf(hp, hc.whole, out.get(hp) ?? []) : new Map()
@@ -350,9 +373,9 @@ export function endpoints(graph) {
         if (own(p) || d >= DEPTH) return
         const part = partOf(p, callerText, caller)
         const uses = part == null ? () => true : usedBy(p, part)
-        const at = firstUse(p, part ?? context(p).whole)
+        const at = firstUse(p, part ?? context(p).code)
         const next = (out.get(p) ?? []).filter(e => !steps.includes(e.to) && byPath.get(e.to)?.lang !== 'view' && uses(e) && leads(e.to, d + 1, new Set()))
-        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, part ?? context(p).whole, p)
+        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, part ?? context(p).code, p)
       }
       for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
       for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)
@@ -361,7 +384,7 @@ export function endpoints(graph) {
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
       const sig = hc.lines.slice(body.start, Math.min(body.start + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
       const typed = sig.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
-      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.whole}`) ? javaReturn(sig) : null
+      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.code}`) ? javaReturn(sig) : null
       // A framework's result type (IActionResult, ObjectResult) says how, not what: it is not the model.
       const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
