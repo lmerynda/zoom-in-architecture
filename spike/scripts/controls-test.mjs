@@ -198,6 +198,11 @@ try {
   check('keyboard only: find War, name a dependency, open its citation, return to War', /^War · /.test(title) && reachedShow && sel === 'War' && reachedCite && !!dependency && reachedLine && reading && backTo === 'War', JSON.stringify(kb))
   await shot('04-keyboard')
 
+  // A lens legend never sits on the details panel.
+  await open('model=knights-of-darkness&in=backend&lens=size')
+  const legend = await page.evaluate(() => { const l = document.querySelector('.lens-legend').getBoundingClientRect(), d = document.getElementById('details').getBoundingClientRect(); return { shown: l.height > 0, clear: l.bottom <= d.top || l.right <= d.left || l.left >= d.right } })
+  check('the lens legend keeps off the details panel', legend.shown && legend.clear, JSON.stringify(legend))
+
   // Small text reads at AA contrast on the panels.
   const contrast = await page.evaluate(() => {
     const lum = c => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
