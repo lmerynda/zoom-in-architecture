@@ -6,6 +6,7 @@ func Register(router *gin.RouterGroup) {
 	router.GET("", List)
 	router.GET("/", List)
 	router.POST("/:id/pay", Pay)
+	router.POST("/:id/note", Note)
 }
 
 func List(c *gin.Context) {

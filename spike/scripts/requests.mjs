@@ -2,24 +2,29 @@
 // The landscape holds who calls the backend, the backend, and the stores and services its
 // requests reach. Inside the backend sit its route groups, inside a group its endpoints, and
 // inside an endpoint the request's path as numbered steps: the handler, the files it uses, down to
-// the ones that reach a store, and the response. Built from code (routes.mjs) and the map's
-// placement and links; the agent writes nothing for it.
+// the ones that reach a store, and the response; beside them, unnumbered, the types the handler only
+// names, and, where it branches, each view and answer it may give. Built from code (routes.mjs) and
+// the map's placement and links; the agent writes nothing for it.
+//
+// Card contract (metadata, all strings): an endpoint has `method` and `route`. Inside it, `role` is
+// `step` (with `step`, its number, ids `<endpoint>.s<k>`), `type` (`.t<k>`), `view` (a branch's view,
+// `.v<k>`) or `response` (`.response`, or `.response-<k>` when it branches; `answer` is `view`,
+// `redirect` or `body`, with `view`, `redirect` or `model`). Steps, types and views carry `span`,
+// the 1-based inclusive lines they are about ("166-177"); the handler's route line is a `route` mark.
 import { posix } from 'node:path'
 import { endpoints } from './routes.mjs'
 
 const CODE = { color: 'sky', shape: 'rectangle' }
 const RESPONSE = { color: 'green', shape: 'rectangle' }
+const TYPE = { color: 'gray', shape: 'rectangle' }
 const stem = p => posix.basename(p).replace(/\.[^.]+$/, '')
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'root'
 
-/** What the endpoint answers with, in words. */
-function answer(ep) {
-  const parts = []
-  if (ep.views.length) parts.push(`renders ${ep.views.map(stem).join(' or ')}`)
-  if (ep.response.redirect) parts.push(`redirects to ${ep.response.redirect}`)
-  if (!parts.length) parts.push(ep.response.model ? `returns ${ep.response.model} as JSON` : ep.response.json ? 'returns JSON' : 'returns what the handler returns')
-  return parts.join(', or ')
-}
+/** One way an endpoint answers, in words: "renders owners/ownersList", "redirects to /owners/{id}". */
+const said = r => r.kind === 'view' ? `renders ${r.name}` : r.kind === 'redirect' ? `redirects to ${r.redirect}` : r.model ? `returns ${r.model} as JSON` : r.json ? 'returns JSON' : 'returns what the handler returns'
+/** What the endpoint answers with, in words: each of its answers. */
+const answer = ep => ep.responses.map(said).join(', or ')
+const sentence = s => `${s[0].toUpperCase()}${s.slice(1)}.`
 
 /**
  * Groups of endpoints that act on the same thing, read from the words of their route names at
@@ -132,8 +137,7 @@ export function buildRequests(graph, map, model) {
       // The group's own endpoints first, then its sub-groups.
       const taken = [...subs, ...words].flatMap(([, sub]) => sub)
       const own = list.filter(e => !taken.includes(e))
-      const short = own.some(e => `${e.method} ${e.path}`.length > 30)
-      own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent, prefix, short))
+      own.forEach((e, n) => endpoint(e, `${parent}.e${n + 1}`, parent))
       for (const [s, sub] of subs) {
         const key = `${prefix === '/' ? '' : prefix}/${s}`, gid = `${parent}.${slug(s)}`
         group(gid, parent, key, sub)
@@ -147,39 +151,72 @@ export function buildRequests(graph, map, model) {
         place(gid, prefix, depth, sub)
       }
     }
-    // An endpoint's title is short enough to read on its card: when any in its group passes 30 characters,
-    // each shows its path below the group, so siblings read alike.
-    const titleOf = (e, prefix, short) => {
-      const rel = prefix !== '/' && e.path.startsWith(`${prefix}/`) ? e.path.slice(prefix.length) : ''
-      return short && rel ? `${e.method} …${rel}` : `${e.method} ${e.path}`
-    }
-    const endpoint = (e, eid, gid, prefix, short) => {
+    // An endpoint's title is its method and full path, always; the viewer fits it to the card. Both
+    // are in its metadata too (method, route).
+    const endpoint = (e, eid, gid) => {
         const handler = `${stem(e.file)}${e.name ? `.${e.name}` : ''}`
-        elements.push({ id: eid, parent: gid, title: titleOf(e, prefix, short), kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
-        // The request's path, in order: handler, the files it uses, the views it renders.
-        const steps = [...e.steps, ...e.views]
+        elements.push({ id: eid, parent: gid, title: `${e.method} ${e.path}`, kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: { method: e.method, route: e.path } })
+        // The request's path, in order: handler, the files it uses, and the view it renders when that
+        // is its one answer. A handler that can answer more than one way branches: each view it may
+        // render, and each answer, is a card of its own off the step that gives it, not a next step.
+        const views = e.responses.filter(r => r.kind === 'view').map(r => r.view)
+        const branches = e.responses.length > 1
+        // Only files the model shows become cards; the numbers count those, so they never skip.
+        const steps = (branches ? e.steps : [...e.steps, ...views]).filter(p => fileEl.has(p))
         const sid = new Map()
+        // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
+        const shown = [...steps, ...e.types, ...(branches ? views : [])]
+        const name = p => shown.some(q => q !== p && stem(q) === stem(p)) ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)
         steps.forEach((p, k) => {
-          const base = fileEl.get(p)
-          if (!base) return
+          const base = fileEl.get(p), handles = p === e.file
           const id = `${eid}.s${k + 1}`
           sid.set(p, id)
-          // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
-          const twin = steps.some(q => q !== p && stem(q) === stem(p))
           // The handler leads with its method, the one thing that differs between endpoints of one
           // controller; its class is the line below, so a cut title never loses the method.
-          const title = `${k + 1} · ${k === 0 ? (e.name ? `${e.name}()` : stem(p)) : twin ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)}`
-          const technology = k === 0 && e.name ? stem(p) : base.technology
-          // The handler's card marks its route line, so its code opens at the endpoint.
-          const marks = k === 0 ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
-          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks } })
+          const title = `${k + 1} · ${handles ? (e.name ? `${e.name}()` : stem(p)) : name(p)}`
+          const technology = handles && e.name ? stem(p) : base.technology
+          // The handler's card marks its route line when the route sits in its file. Every card names
+          // the lines it is about (`span`), so its code opens exactly there.
+          const marks = handles && e.routeFile === p ? [`${e.line}:route`, ...(base.metadata.marks ?? '').split(' ').filter(m => m && !m.startsWith(`${e.line}:`))].join(' ') : base.metadata.marks
+          elements.push({ ...copy(base), id, parent: eid, title, technology, ...CODE, metadata: { ...base.metadata, marks, role: 'step', step: String(k + 1), span: e.spans[p] } })
         })
-        const rid = `${eid}.response`
-        elements.push({ id: rid, parent: eid, title: `${steps.length + 1} · Response`, kind: 'component', description: `${answer(e)[0].toUpperCase()}${answer(e).slice(1)}.`, technology: '', tags: [], features: [], ...RESPONSE, metadata: {} })
-        for (const r of graph.edges) if (!r.types && sid.has(r.from) && sid.has(r.to)) relations.push({ source: sid.get(r.from), target: sid.get(r.to), title: r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ') })
-        // Back out: the page it renders, or the handler's own return.
-        for (const v of e.views) if (sid.has(v)) relations.push({ source: sid.get(v), target: rid, title: 'HTML page' })
-        if (!e.views.length || e.response.redirect) relations.push({ source: sid.get(e.file), target: rid, title: e.response.redirect ? 'redirect' : e.response.model ?? (e.response.json ? 'JSON' : 'returns') })
+        // The types the handler only names (what it takes and gives back) do not run in sequence:
+        // unnumbered cards beside the path, each hanging off the handler.
+        e.types.forEach((p, k) => {
+          const base = fileEl.get(p)
+          if (!base) return
+          const id = `${eid}.t${k + 1}`
+          sid.set(p, id)
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...TYPE, metadata: { ...base.metadata, role: 'type', span: e.spans[p] } })
+        })
+        if (branches) views.forEach((p, k) => {
+          const base = fileEl.get(p)
+          if (!base) return
+          const id = `${eid}.v${k + 1}`
+          sid.set(p, id)
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...CODE, metadata: { ...base.metadata, role: 'view', span: e.spans[p] } })
+        })
+        // One lane, in the order the request runs: exactly one arrow from each numbered step to the
+        // next, titled with what the first imports of the second when it does, so a layered layout
+        // draws the steps left to right. A type hangs off the handler that names it, a branch's view
+        // off the handler that renders it.
+        const names = (from, to) => {
+          const r = graph.edges.find(x => x.from === from && x.to === to && !x.types) ?? graph.edges.find(x => x.from === from && x.to === to)
+          return r && (r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', '))
+        }
+        steps.slice(1).forEach((p, k) => relations.push({ source: sid.get(steps[k]), target: sid.get(p), title: names(steps[k], p) || (views.includes(p) ? 'renders' : 'then') }))
+        for (const p of e.types) if (sid.has(p) && sid.has(e.file)) relations.push({ source: sid.get(e.file), target: sid.get(p), title: names(e.file, p) || 'names' })
+        if (branches) for (const p of views) if (sid.has(p) && sid.has(e.file)) relations.push({ source: sid.get(e.file), target: sid.get(p), title: 'renders' })
+        // Back out: the page it renders, or the handler's own answer (a redirect, a body). One answer
+        // ends the numbered path; each of several is a Response card of its own.
+        e.responses.forEach((r, k) => {
+          const rid = branches ? `${eid}.response-${k + 1}` : `${eid}.response`
+          const title = branches ? `Response · ${r.kind === 'redirect' ? `redirect ${r.redirect}` : said(r)}` : `${steps.length + 1} · Response`
+          const metadata = { role: 'response', answer: r.kind, ...(r.kind === 'view' ? { view: r.name } : {}), ...(r.redirect ? { redirect: r.redirect } : {}), ...(r.model ? { model: r.model } : {}) }
+          elements.push({ id: rid, parent: eid, title, kind: 'component', description: sentence(said(r)), technology: '', tags: [], features: [], ...RESPONSE, metadata })
+          const from = r.kind === 'view' ? sid.get(r.view) : sid.get(e.file)
+          if (from) relations.push({ source: from, target: rid, title: r.kind === 'view' ? 'HTML page' : r.kind === 'redirect' ? 'redirect' : r.model ?? (r.json ? 'JSON' : 'returns') })
+        })
         // Out to the stores and services: the map's own links from these files, with their evidence.
         for (const p of steps) for (const l of linksFrom.get(p) ?? []) {
           const to = fileEl.has(l.to) ? top(fileEl.get(l.to).parent) : top(l.to)

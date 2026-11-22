@@ -13,6 +13,27 @@ const DEPTH = 3
 
 const strings = s => [...s.matchAll(/(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g)].map(m => m[2])
 const words = s => new Set(s.match(/[A-Za-z_]\w*/g) ?? [])
+// Comments, and string literals unless `keep`, in one left-to-right pass, so a quote inside a
+// comment or a // inside a string is read as what it sits in. Python has # comments and triple
+// quotes; Rust's ' starts a lifetime, not a string.
+const LITERALS = {
+  py: /(#[^\n]*)|("""[\s\S]*?"""|'''[\s\S]*?''')|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,
+  rs: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:[^`\\]|\\.)*`)|("(?:[^"\\\n]|\\.)*")/g,
+  other: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(`(?:[^`\\]|\\.)*`)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g,
+}
+/**
+ * `text` as code only: comments blanked (their line breaks kept) and, unless `keep`, string
+ * literals emptied (a JS template keeps the expressions it interpolates). Identifiers in what is
+ * left are uses; a word inside "owners/findOwners" is not.
+ */
+function clean(text, lang, keep = false) {
+  return text.replace(LITERALS[lang] ?? LITERALS.other, (m, comment, multi) => {
+    if (comment) return m.replace(/[^\n]/g, ' ')
+    if (keep) return m
+    const lines = '\n'.repeat((m.match(/\n/g) ?? []).length)
+    return `""${multi ? ` ${(m.match(/\$\{[^}]*\}/g) ?? []).map(x => x.slice(2, -1)).join(' ')}` : ''}${lines}`
+  })
+}
 /** Whether a body calls its own `name`: bare, or on this/self, not a same-named method of something else. */
 const ownCall = (text, name) => new RegExp(`(?:^|[^\\w.$]|\\b(?:this|self)\\.)${name}\\s*\\(`, 'm').test(text)
 const stemOf = p => p.slice(p.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
@@ -21,6 +42,9 @@ const join2 = (...parts) => {
   return p.length > 1 ? p.replace(/\/$/, '') : p
 }
 const VERBS = { get: 'GET', post: 'POST', put: 'PUT', delete: 'DELETE', patch: 'PATCH' }
+/** A view file as a handler names it: its path under templates/ or views/ (viewKey), without the extension (viewName). */
+const viewKey = p => p.replace(/^.*?(?:^|\/)(?:templates|views|Views)\//, '')
+const viewName = p => viewKey(p).replace(/\.[^./]+$/, '')
 
 /** What one marked route line declares: a prefix for its file, a mount of another router, or an endpoint. */
 function classify(lines, i, lang) {
@@ -107,7 +131,8 @@ function bodyOf(lines, from, lang) {
   for (let j = from; j < lines.length; j++) {
     // Annotations ({ "/vets" }) carry braces of their own; the body starts after them.
     if (!opened && /^\s*(@|\[)/.test(lines[j])) continue
-    const code = lines[j].replace(/\/\/.*$/, '').replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g, '""')
+    // Go's empty interface{} and struct{} are types, not the body: `func Save(data interface{}) error {`.
+    const code = lines[j].replace(/\/\/.*$/, '').replace(/(["'])(?:(?!\1)[^\\]|\\.)*\1/g, '""').replace(lang === 'go' ? /\b(interface|struct)\s*\{\s*\}/g : /$^/, '$1')
     if (!name) name = code.match(/(\w+)\s*\(/)?.[1] ?? ''
     for (const c of code) {
       if (c === '{') { depth++; opened = true } else if (c === '}') depth--
@@ -119,9 +144,58 @@ function bodyOf(lines, from, lang) {
   return { start: from, end: lines.length - 1, name }
 }
 
+/** The line a handler's own code starts on (0-based): past the annotations, attributes or decorators above it. */
+function signatureLine(lines, from, lang) {
+  if (lang === 'py') {
+    const def = lines.findIndex((l, j) => j >= from && /^\s*(async\s+)?def\s+\w+/.test(l))
+    return def < 0 ? from : def
+  }
+  let depth = 0
+  for (let j = from; j < lines.length; j++) {
+    const code = clean(lines[j], lang)
+    const open = (code.match(/\(/g) ?? []).length - (code.match(/\)/g) ?? []).length
+    // Inside an annotation that spans lines (@RequestMapping(value = "/x",\n method = POST)).
+    if (depth > 0) { depth += open; continue }
+    if (!code.trim()) continue
+    if (/^\s*(@|\[)/.test(code)) {
+      depth = Math.max(0, open)
+      // An annotation that shares its line with the signature (@ResponseBody public Vets list()).
+      if (!depth && code.replace(/^\s*(?:@[\w.]+(?:\s*\((?:[^()]|\([^()]*\))*\))?\s*|\[[^\]]*\]\s*)+/, '').trim()) return j
+      continue
+    }
+    return j
+  }
+  return from
+}
+
+/** The lines of a file's first declaration, a type or a function ("3-26"); the whole file when it declares none. */
+function firstDeclaration(lines, lang, declared) {
+  const type = lines.findIndex(l => /^\s*(?:(?:public|private|protected|internal|static|final|abstract|sealed|partial|export|default|data|open)\s+)*(?:class|interface|record|enum|struct|object)\s+\w+|^type\s+\w+/.test(clean(l, lang)))
+  const starts = [type, ...declared.values()].filter(x => x >= 0)
+  return starts.length ? spanAt(lines, Math.min(...starts), lang) : `1-${lines.length}`
+}
+
+/** The 1-based, inclusive lines of the block that starts at line `start` (0-based): "12-30". */
+function spanAt(lines, start, lang) {
+  let end = start
+  if (lang === 'py') {
+    const indent = lines[start].match(/^\s*/)[0].length
+    for (let j = start + 1; j < lines.length; j++) {
+      if (!lines[j].trim()) continue
+      if (lines[j].match(/^\s*/)[0].length <= indent && !/^\s*[)\]]/.test(lines[j])) break
+      end = j
+    }
+  } else if (BRACES.has(lang) && !(lang === 'go' && /^type\s/.test(lines[start]) && !lines[start].includes('{'))) end = bodyOf(lines, start, lang).end
+  return `${start + 1}-${end + 1}`
+}
+
 /**
  * Every endpoint of the application files in `graph`, with the path its requests take.
- * @returns {{ method: string, path: string, file: string, line: number, name: string, steps: string[], views: string[], response: { redirect?: string, model?: string, json?: boolean } }[]}
+ * `steps` run in sequence from the handler (`file`, its method `name`); `types` are the files it
+ * only names; `responses` are the ways it answers, in source order. `line` is the route's line in
+ * `routeFile`, and `spans` gives each step, type and view the 1-based lines it is about ("12-30"):
+ * the handler's method, the first method its caller calls in a later step, a type's declaration.
+ * @returns {{ method: string, path: string, file: string, routeFile: string, line: number, name: string, steps: string[], types: string[], spans: Record<string, string>, responses: ({ kind: 'view', view: string, name: string } | { kind: 'redirect', redirect: string } | { kind: 'body', model?: string, json?: boolean })[] }[]}
  */
 export function endpoints(graph) {
   const read = new Map()
@@ -210,12 +284,12 @@ export function endpoints(graph) {
   const contexts = new Map()
   const context = p => {
     if (contexts.has(p)) return contexts.get(p)
-    const lang = byPath.get(p).lang, lines = src(p), whole = lines.join('\n')
+    const lang = byPath.get(p).lang, lines = src(p), whole = lines.join('\n'), code = clean(whole, lang)
     // Fields and constructor parameters name the types a handler reaches through (this.owners → OwnerRepository).
     const typeOf = new Map()
-    if (BRACES.has(lang)) for (const m of whole.matchAll(/\b([A-Z]\w*)(?:<[^>\n]*>)?[ \t]+(\w+)[ \t]*[;=,)]/g)) if (!typeOf.has(m[2])) typeOf.set(m[2], m[1])
-    const constOf = new Map([...whole.matchAll(/\b(\w+)\s*(?::\s*\w+)?\s*=\s*"([^"\n]*)"/g)].map(m => [m[1], m[2]]))
-    const ctx = { lang, lines, whole, typeOf, constOf, declared: declarations(lines, lang) }
+    if (BRACES.has(lang)) for (const m of code.matchAll(/\b([A-Z]\w*)(?:<[^>\n]*>)?[ \t]+(\w+)[ \t]*[;=,)]/g)) if (!typeOf.has(m[2])) typeOf.set(m[2], m[1])
+    const constOf = new Map([...clean(whole, lang, true).matchAll(/\b(\w+)\s*(?::\s*\w+)?\s*=\s*"([^"\n]*)"/g)].map(m => [m[1], m[2]]))
+    const ctx = { lang, lines, whole, code, typeOf, constOf, declared: declarations(lines, lang) }
     contexts.set(p, ctx)
     return ctx
   }
@@ -231,9 +305,10 @@ export function endpoints(graph) {
     return t
   }
   /**
-   * The part of file `p` a caller's text uses: the bodies of the methods it calls there, or null
-   * when it calls none `p` declares. A call on a receiver counts when the caller's field or variable
-   * of that name has `p`'s type, or a type the caller does not say (a module alias, a local).
+   * The part of file `p` a caller's text uses: the bodies of the methods it calls there (`text`)
+   * and their names in the order the caller first calls them (`calls`), or null when it calls none
+   * `p` declares. A call on a receiver counts when the caller's field or variable of that name has
+   * `p`'s type, or a type the caller does not say (a module alias, a local).
    */
   const partOf = (p, callerText, caller) => {
     const c = context(p), typeOf = context(caller).typeOf, own = stemOf(p)
@@ -248,7 +323,25 @@ export function endpoints(graph) {
     }
     if (!calls.size) return null
     const bodies = [...calls].map(n => { const b = bodyOf(c.lines, c.declared.get(n), c.lang); return c.lines.slice(b.start, b.end + 1).join('\n') }).join('\n')
-    return withHelpers(c, bodies, [...calls]).replace(/\/\*[\s\S]*?\*\//g, ' ')
+    return { text: clean(withHelpers(c, clean(bodies, c.lang), [...calls]), c.lang), calls: [...calls] }
+  }
+  /**
+   * Whether method `name` of file `p` does work. An accessor (return this.name;), a lazy getter
+   * that only creates what it returns, or a factory (return new Result(msg, true, Optional.empty());)
+   * does not, so a file whose called methods are all like that is a type the caller names, not a
+   * step of the request.
+   */
+  const works = (p, name) => {
+    const c = context(p), b = bodyOf(c.lines, c.declared.get(name), c.lang)
+    let inner = clean(c.lines.slice(b.start, b.end + 1).join('\n'), c.lang).replace(/\b(interface|struct)\s*\{\s*\}/g, '$1')
+    inner = c.lang === 'py' ? inner.split('\n').slice(1).join('\n') : inner.slice(inner.indexOf('{') + 1, inner.lastIndexOf('}'))
+    const statements = inner.split(c.lang === 'py' || c.lang === 'go' ? /[;\n]/ : /;/).map(s => s.trim()).filter(Boolean)
+    const calls = /\b(?!(?:if|for|foreach|while|switch|catch|return|using|lock|synchronized)\b)\w+\s*\(/.test(inner.replace(/\bnew\s+[\w.]+\s*(<[^>]*>)?\s*\(/g, ''))
+    if (statements.length === 1 && /^(return\s+)?new\s/.test(statements[0])) return false
+    // A constructor (new UserData(...)) that only stores its arguments is the type being made.
+    const constructor = (c.lang === 'java' || c.lang === 'cs') && name === stemOf(p)
+    if (!calls && (statements.length <= 1 || constructor || /^(get|set|is|has)[A-Z_]/.test(name))) return false
+    return true
   }
   /** Whether an edge out of `p` is one `part` of it uses: a name it imports, or the type of a field it reads. */
   const usedBy = (p, part) => {
@@ -257,13 +350,17 @@ export function endpoints(graph) {
     const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
     return e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].some(n => used.has(n))
   }
-  /** Where in `part` of file `p` an edge's target is first used: by a name it imports, or a field of its type. */
+  /**
+   * Where in `part` of file `p` an edge's target is first used: by a name it imports (in JS, also
+   * the name the file imported the module as), or a field of its type.
+   */
   const firstUse = (p, part) => {
     const c = context(p), first = new Map()
     for (const m of part.matchAll(/[A-Za-z_]\w*/g)) {
       for (const n of [m[0], c.typeOf.get(m[0])]) if (n && !first.has(n)) first.set(n, m.index)
     }
-    return e => Math.min(...e.names.map(n => first.get(n.replace(/\W+$/, '')) ?? Infinity))
+    const local = c.lang === 'js' ? importsOf(p, c.whole, out.get(p) ?? []) : new Map()
+    return e => Math.min(...[...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)].map(n => first.get(n) ?? Infinity))
   }
   const dir = p => p.slice(0, p.lastIndexOf('/') + 1)
   const ROUTE_CALL = /([\w$]+)\s*\.\s*(?:get|post|put|delete|patch|all|route|HandleFunc|Handle)\s*\(/i
@@ -296,30 +393,35 @@ export function endpoints(graph) {
         for (const c of candidates) { const d = context(c).declared.get(last); if (d != null) { hp = c; from = d; name = last; break } }
       }
       const hc = context(hp)
-      const body = bodyOf(hc.lines, from, hc.lang)
+      // The handler's own lines: its signature to its closing brace, not the route above it.
+      const sig = signatureLine(hc.lines, from, hc.lang)
+      const body = bodyOf(hc.lines, hc.lang === 'py' ? from : sig, hc.lang)
+      const spans = { [hp]: `${sig + 1}-${body.end + 1}` }
       if (name == null) name = (f.lang === 'js' || f.lang === 'go') && inline ? '' : body.name
-      // A handler's helper functions in the same file count as part of its body.
-      let text = hc.lines.slice(body.start, body.end + 1).join('\n')
-      for (const w of words(text)) {
-        if (w === name || !hc.declared.has(w) || !ownCall(text, w)) continue
+      // A handler's helper functions in the same file count as part of its body. What it says
+      // (view names, redirects) is read from its strings; what it uses, from its code alone.
+      let raw = hc.lines.slice(body.start, body.end + 1).join('\n')
+      const handlerCode = clean(raw, hc.lang)
+      for (const w of words(handlerCode)) {
+        if (w === name || !hc.declared.has(w) || !ownCall(handlerCode, w)) continue
         const helper = bodyOf(hc.lines, hc.declared.get(w), hc.lang)
-        text += `\n${hc.lines.slice(helper.start, helper.end + 1).join('\n')}`
+        raw += `\n${hc.lines.slice(helper.start, helper.end + 1).join('\n')}`
       }
-      text = text.replace(/\/\*[\s\S]*?\*\//g, ' ')
+      const text = clean(raw, hc.lang)
       const used = words(text)
       for (const w of [...used]) { if (hc.typeOf.has(w)) used.add(hc.typeOf.get(w)) }
-      const said = [...strings(text), ...[...used].filter(w => hc.constOf.has(w)).map(w => hc.constOf.get(w))]
+      const said = [...strings(clean(raw, hc.lang, true)), ...[...used].filter(w => hc.constOf.has(w)).map(w => hc.constOf.get(w))]
       // Files the handler names, in the order its body first names them. In JS a module is also
       // named by what the file imported it as (const service = require('./orders.service')).
       const local = hc.lang === 'js' ? importsOf(hp, hc.whole, out.get(hp) ?? []) : new Map()
       const namesOf = e => [...e.names.map(n => n.replace(/\W+$/, '')), ...[...local].filter(([, to]) => to === e.to).map(([n]) => n)]
-      const at = e => Math.min(...namesOf(e).filter(n => used.has(n)).map(n => text.search(new RegExp(`\\b${n}\\b`))).filter(x => x >= 0), Infinity)
+      // A field counts as naming its type (this.owners names OwnerRepository) here too.
+      const at = firstUse(hp, text)
       const views = [], direct = []
       for (const e of out.get(hp) ?? []) {
         const t = byPath.get(e.to)
         if (t?.lang === 'view') {
-          const key = e.to.replace(/^.*?(?:^|\/)(?:templates|views|Views)\//, ''), bare = key.replace(/\.[^./]+$/, '')
-          if (said.some(s => s === key || s === bare)) views.push(e.to)
+          if (said.some(s => s === viewKey(e.to) || s === viewName(e.to))) views.push(e.to)
         } else if (namesOf(e).some(n => used.has(n))) direct.push(e)
       }
       direct.sort((a, b) => at(a) - at(b))
@@ -337,36 +439,62 @@ export function endpoints(graph) {
       // A file that reaches the outside itself is where the path ends: what else it imports
       // (a seeding helper next to the engine) is not part of this request.
       const own = p => byPath.get(p)?.hints.some(h => BOUNDARY.has(h.kind)) ?? false
-      // The steps in call order: the handler, the files it calls that lead somewhere, what those
-      // call in turn, and last the files it only names (request and response types).
-      const lead = direct.filter(e => leads(e.to, 1, new Set())), data = direct.filter(e => !lead.includes(e))
+      // The steps in call order: the handler, the files it calls that lead somewhere or do work of
+      // their own, and what those call in turn. The files it only names (request and response
+      // types, an object whose accessors it reads) are not steps: they are `types`.
+      const worked = e => partOf(e.to, text, hp)?.calls.some(n => works(e.to, n)) ?? false
+      const lead = direct.filter(e => leads(e.to, 1, new Set()) || worked(e)), data = direct.filter(e => !lead.includes(e))
       const steps = [hp]
       // Below the handler a file takes part through the methods its caller calls on it, so only
-      // what those methods use goes on; a file whose called methods are not its own (an inherited
-      // or generated API) is followed whole. Each file's calls follow it at once, in the order its
-      // body makes them, so the steps read as the request runs.
+      // what those methods use goes on. A file that declares no code of its own (a generated or
+      // inherited API, such as a Spring Data interface) is followed whole; one that does, but not
+      // the method called, is where the path stops: its other methods do not run. Each file's
+      // calls follow it at once, in the order its body makes them, so the steps read as the
+      // request runs.
+      // A step is about the first method its caller calls there, or else the file's first declaration.
       const visit = (p, d, callerText, caller) => {
         steps.push(p)
+        const part = partOf(p, callerText, caller), c = context(p)
+        spans[p] = part ? spanAt(c.lines, c.declared.get(part.calls[0]), c.lang) : firstDeclaration(c.lines, c.lang, c.declared)
         if (own(p) || d >= DEPTH) return
-        const part = partOf(p, callerText, caller)
-        const uses = part == null ? () => true : usedBy(p, part)
-        const at = firstUse(p, part ?? context(p).whole)
+        if (part == null && context(p).declared.size) return
+        const used = part?.text ?? context(p).code
+        const uses = part == null ? () => true : usedBy(p, used)
+        const at = firstUse(p, used)
         const next = (out.get(p) ?? []).filter(e => !steps.includes(e.to) && byPath.get(e.to)?.lang !== 'view' && uses(e) && leads(e.to, d + 1, new Set()))
-        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, part ?? context(p).whole, p)
+        for (const e of next.sort((a, b) => at(a) - at(b))) if (!steps.includes(e.to)) visit(e.to, d + 1, used, p)
       }
       for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
-      for (const e of data) if (!steps.includes(e.to)) steps.push(e.to)
-      const redirect = said.find(s => s.startsWith('redirect:'))
+      const types = data.map(e => e.to).filter(p => !steps.includes(p))
+      for (const p of types) { const c = context(p); spans[p] = firstDeclaration(c.lines, c.lang, c.declared) }
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
-      const sig = hc.lines.slice(body.start, Math.min(body.start + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
-      const typed = sig.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
-      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(body.start, body.start + 4).join(' ')} ${hc.whole}`) ? javaReturn(sig) : null
+      const head = hc.lines.slice(sig, Math.min(sig + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
+      const typed = head.match(/\b(?:Value)?Task<(?:ActionResult<)?(\w+)>/)?.[1]
+      const java = hc.lang === 'java' && /@ResponseBody|@RestController/.test(`${hc.lines.slice(from, sig + 4).join(' ')} ${hc.code}`) ? javaReturn(head) : null
       // A framework's result type (IActionResult, ObjectResult) says how, not what: it is not the model.
       const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
-      const response = { ...(redirect ? { redirect: redirect.slice('redirect:'.length) || '/' } : {}), ...(model ? { model } : {}), ...(json ? { json } : {}) }
-      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, views, response })
+      // Each way the handler can answer, once, in the order its source gives them: a view it
+      // renders, a redirect ("redirect:/owners/" + owner.getId() goes to /owners/{id}), or the body
+      // it returns. A handler with more than one branches there.
+      const kept = clean(raw, hc.lang, true)
+      const said0 = value => {
+        const hits = [`"${value}"`, `'${value}'`].map(q => kept.indexOf(q))
+        for (const [n, v] of hc.constOf) if (v === value && used.has(n)) hits.push(kept.search(new RegExp(`\\b${n}\\b`)))
+        return Math.min(...hits.filter(x => x >= 0), Infinity)
+      }
+      const answers = views.map(v => ({ kind: 'view', view: v, name: viewName(v), at: Math.min(said0(viewName(v)), said0(viewKey(v))) }))
+      for (const m of kept.matchAll(/(["'])redirect:([^"'\n]*)\1(\s*\+\s*([\w.]+)(\s*\(\s*\))?)?/g)) {
+        const param = m[4]?.split('.').pop().replace(/^get(?=[A-Z])/, '').replace(/^./, c => c.toLowerCase())
+        const redirect = `${m[2] || '/'}${param ? `{${param}}` : ''}`
+        if (!answers.some(a => a.redirect === redirect)) answers.push({ kind: 'redirect', redirect, at: m.index })
+      }
+      answers.sort((a, b) => a.at - b.at)
+      if (json || !answers.length) answers.push({ kind: 'body', ...(model ? { model } : {}), ...(json ? { json } : {}) })
+      const responses = answers.map(({ at, ...a }) => a)
+      for (const v of views) spans[v] = `1-${src(v).length}`
+      result.push({ method: ep.method, path: full, file: hp, routeFile: path, line: ep.line, name, steps, types, spans, responses })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))
