@@ -168,8 +168,10 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   }
 
   // Relations: the graph's, between files, then the map's links.
-  // Type-only imports are compile-time coupling, not runtime use, so the map does not draw them.
-  const relations = graph.edges.filter(e => !e.types).map(e => ({ source: fileId.get(e.from), target: fileId.get(e.to), title: e.names.length > 3 ? `${e.names.slice(0, 3).join(', ')} +${e.names.length - 3}` : e.names.join(', ') }))
+  // Each says what kind it is and why it exists: the lines of the using file that name what it
+  // brings in. Type-only imports are compile-time coupling, not use: kept, marked `types`, so the
+  // viewer draws them apart and can hide them. A map link is a call at runtime (below).
+  const relations = graph.edges.map(e => ({ source: fileId.get(e.from), target: fileId.get(e.to), title: e.names.length > 3 ? `${e.names.slice(0, 3).join(', ')} +${e.names.length - 3}` : e.names.join(', '), kind: e.types ? 'types' : 'code', ...(e.lines?.length ? { lines: e.lines } : {}) }))
   const endOf = s => (nodes.has(s) ? s : fileId.get(s))
   const kindOf = s => nodes.get(s)?.kind ?? 'code'
   // Whether a file is a link end, or under the node that is one.
@@ -212,7 +214,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
         warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${reads.slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}${accepted != null ? ' (it was accepted when it read differently: check it again)' : ''}`)
       }
     }
-    relations.push({ source: a, target: b, title: l.title ?? '', evidence: proof })
+    relations.push({ source: a, target: b, title: l.title ?? '', kind: 'runtime', evidence: proof })
   }
   for (const n of nodes.values()) if (byNode.has(n.id) && [...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" has child nodes and also holds ${byNode.get(n.id).length} files; move them into a child`)
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)

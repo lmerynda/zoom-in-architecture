@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildGraph, summary } from './graph.mjs'
+import { buildGraph, summary, useLines } from './graph.mjs'
 import { folderText, graphText } from './zoom.mjs'
 
 const g = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -121,8 +121,9 @@ describe('buildGraph', () => {
   it('resolves references in every language', () => {
     // JS/TS: relative, tsconfig alias, workspace package.
     expect(edge('web/src/main.ts', 'web/src/api.ts')).toBeTruthy()
-    // A named import through a barrel goes to the file that defines the name.
-    expect(edge('web/src/main.ts', 'web/src/ui/cart.ts')).toEqual({ from: 'web/src/main.ts', to: 'web/src/ui/cart.ts', names: ['cart'] })
+    // A named import through a barrel goes to the file that defines the name; the edge keeps the
+    // lines that name it, its import and its use, as the reason it exists.
+    expect(edge('web/src/main.ts', 'web/src/ui/cart.ts')).toEqual({ from: 'web/src/main.ts', to: 'web/src/ui/cart.ts', names: ['cart'], lines: [3, 6] })
     expect(edge('web/src/main.ts', 'web/src/ui/index.ts')).toBeUndefined()
     // The barrel's own edges are re-exports: it passes modules on rather than using them.
     expect(edge('web/src/ui/index.ts', 'web/src/ui/cart.ts')).toMatchObject({ reexport: true })
@@ -203,5 +204,17 @@ describe('buildGraph', () => {
   it('reads Spring Security paths as rules for incoming requests, not calls', () => {
     const m = buildGraph(join(import.meta.dirname, '../test/fixtures/mvc'))
     expect(m.files.find(f => f.path.endsWith('SecurityConfig.java')).hints).toEqual([])
+  })
+})
+
+
+describe('useLines', () => {
+  it('finds the lines that name what an edge brings in: each name’s first two, comments skipped', () => {
+    const src = ['// uses Cart', "import { Cart, total } from './cart'", 'const c = new Cart()', 'total(c)', 'total(c)', 'new Cart()'].join('\n')
+    expect(useLines(src, ['Cart', 'total'], 'src/cart.ts')).toEqual([2, 3, 4])
+  })
+  it('falls back to the target file’s name when the edge names nothing, and to comments when they are all there is', () => {
+    expect(useLines("import './polyfills'\nrun()", [], 'src/polyfills.ts')).toEqual([1])
+    expect(useLines('package web\n//go:embed assets/app.js\nvar fs embed.FS', ['go:embed'], 'web/assets/app.js')).toEqual([2])
   })
 })

@@ -33,6 +33,8 @@ export interface Ctx {
   rows: () => PanelRows
   /** The browser's history of places: Back, Forward and the address. */
   places: Places
+  /** Picks a line for the details panel, or puts it down (null). */
+  pickEdge: (l: { s: number; t: number } | null) => void
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
   closeTop: () => boolean
   now: () => number
@@ -235,6 +237,9 @@ export function installControls(c: Ctx) {
     if (drag.moved < 5) {
       clearTarget()
       tooltip.close()
+      // Off the cards, on a line: the line is picked, to see what it carries and why.
+      const lines = renderer.hoverAt(e.offsetX, e.offsetY) <= 0 ? renderer.linesAt(e.offsetX, e.offsetY) : []
+      if (lines.length) return void (c.pickEdge(lines[0]), (drag = null))
       const hit = renderer.pick(e.offsetX, e.offsetY)
       c.select(hit)
       remember(hit)
@@ -275,6 +280,7 @@ export function installControls(c: Ctx) {
       if (menu.isOpen) return menu.close()
       if (c.closeTop()) return
       if (renderer.target > 0) return clearTarget()
+      if (renderer.edge) return c.pickEdge(null)
       if (renderer.selected > 0) return c.select(-1)
       return
     }
@@ -321,12 +327,12 @@ export function installControls(c: Ctx) {
       const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
       const busy = !!drag || cam.flying || palette.isOpen || menu.isOpen
       // Off the cards, over a line: say which pairs of elements it carries.
-      const lines = p && h <= 0 && !busy ? renderer.linesAt(p[0], p[1]) : []
+      const lines = p && h <= 0 && !busy && !renderer.edge ? renderer.linesAt(p[0], p[1]) : []
       if (lines.length) {
         const name = (i: number) => tree.els[i].title
         const pairs = lines.flatMap(l => renderer.carried(l.s, l.t)).slice(0, 8)
         const total = lines.reduce((a, l) => a + l.count, 0)
-        tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), p![0], p![1])
+        tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), [...pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), 'Click: every relation and the lines that make it'], p![0], p![1])
       } else tooltip.update(p && small && !busy ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
     view, go, goSelect, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,

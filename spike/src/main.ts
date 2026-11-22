@@ -2,7 +2,7 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
-import { renderDetails, renderOutline, type PanelActions, type PanelRows } from './details'
+import { renderDetails, renderEdge, renderOutline, type PanelActions, type PanelRows } from './details'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -26,6 +26,7 @@ const coupling = view === 'connections'
 const modelFile = view && !coupling ? `${modelName}.${view}` : modelName
 /** The largest on-screen font size the wheel zooms code on the map to. */
 const MAX_READ_PX = 28
+const TYPES_KEY = 'zoom.showTypes'
 
 /** After the breadcrumb, what an uploaded map was built from, so an old map does not pass for a current one. */
 function provenance(p: ModelJson['published'], uploaded: boolean): HTMLElement[] {
@@ -136,7 +137,12 @@ async function main() {
     .then(entry => { uploaded = entry?.source === 'import'; crumbsStale = true })
   const model = await loadModel()
   // The current model version; live updates replace all four.
-  let tree = new Tree(model)
+  // Type-only imports are drawn only when asked (the arrow legend's toggle), remembered per viewer.
+  let showTypes = false
+  try { showTypes = localStorage.getItem(TYPES_KEY) === '1' } catch { /* storage blocked */ }
+  /** The model as last loaded, so the toggle can lay it out again with or without type-only imports. */
+  let raw = model
+  let tree = new Tree(model, { types: showTypes })
   let published = model.published
   let jobs = layoutJobs(tree, coupling)
   const tLayout = performance.now()
@@ -317,7 +323,17 @@ async function main() {
   }
   const select = (i: number) => {
     renderer.selected = i > 0 ? i : -1
+    renderer.edge = null
     showDetails()
+  }
+  /** Picks a line for the panel: what it carries and why, relation by relation. Null puts it down. */
+  const pickEdge = (l: { s: number; t: number } | null) => {
+    renderer.selected = -1
+    renderer.edge = l && { s: l.s, t: l.t }
+    if (!l) return showDetails()
+    rows = { uses: [], usedBy: [], mark: () => {} }
+    outlined = -1
+    renderEdge(details, tree, l.s, l.t, renderer.relationsBetween(l.s, l.t), actions)
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.
@@ -335,9 +351,36 @@ async function main() {
     const path = r ? tree.els[tree.byId.get(r.id) ?? 0]?.metadata?.path : null
     return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null }
   }, () => cam.w)
-  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
   showIntro(tree, name => controls.feature(name))
+
+  /**
+   * What the arrows are: runtime calls, uses in code, and type-only imports, with the toggle that
+   * shows or hides the last. Shown only for the kinds this map has.
+   */
+  const arrowLegend = () => {
+    const box = $('arrows')
+    const kinds = new Set(raw.relations.map(r => r.kind ?? (r.evidence ? 'runtime' : 'code')))
+    const item = (cls: string, text: string) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s }
+    const parts: HTMLElement[] = [item('a-head', 'Arrows'), item('a-code', 'uses in code')]
+    if (kinds.has('runtime')) parts.push(item('a-runtime', 'calls at runtime'))
+    if (kinds.has('types')) {
+      parts.push(item('a-types', 'type-only imports'))
+      const b = document.createElement('button')
+      b.textContent = showTypes ? 'Hide' : 'Show'
+      b.title = showTypes ? 'Hide type-only imports: compile-time coupling, not use' : 'Show type-only imports, dashed'
+      b.onclick = () => {
+        showTypes = !showTypes
+        try { localStorage.setItem(TYPES_KEY, showTypes ? '1' : '0') } catch { /* private mode */ }
+        void swapModel(raw, 0, showTypes ? 'Type-only imports shown, dashed' : 'Type-only imports hidden')
+      }
+      parts.push(b)
+    }
+    box.replaceChildren(...parts)
+    box.hidden = false
+  }
+  arrowLegend()
 
   // A link names a place: open there. The selection (`at`) is framed among its neighbours, a place
   // (`in`) fills the view; `file` finds a file's card (the Requests view has its own ids), and
@@ -378,9 +421,10 @@ async function main() {
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
   let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number] } | null = null
   let liveVersion = 0
-  const swapModel = async (json: ModelJson, buildMs = 0) => {
+  const swapModel = async (json: ModelJson, buildMs = 0, said?: string) => {
+    raw = json
     const swapStart = performance.now()
-    const next = new Tree(json)
+    const next = new Tree(json, { types: showTypes })
     const nextJobs = layoutJobs(next, coupling)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
@@ -428,7 +472,10 @@ async function main() {
     showDetails()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
-    controls.toast.show(`Map updated · ${describeDiff(diff, next)}`)
+    // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
+    const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
+    if (said || changed) controls.toast.show(said ?? `Map updated · ${describeDiff(diff, next)}`)
+    arrowLegend()
     console.info(`live update: ${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
   }
   /** Advances the morph: positions and the camera move together from the old version to the new. */
@@ -499,7 +546,7 @@ async function main() {
       document.title = here > 0 ? `${tree.els[here].title} · ${tree.els[0].title}` : tree.els[0].title
       if (!cam.flying) showOutline()
     }
-    if (!cam.flying && outlined !== here && renderer.selected <= 0) showOutline()
+    if (!cam.flying && outlined !== here && renderer.selected <= 0 && !renderer.edge) showOutline()
     push(cpu, performance.now() - start)
     push(delta, dt)
   }

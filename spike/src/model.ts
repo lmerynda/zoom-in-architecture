@@ -27,7 +27,17 @@ export interface RelationJson {
   title: string
   /** Only on links a map adds; relations from code references are their own proof. */
   evidence?: EvidenceJson[]
+  /**
+   * What kind of link it is: a call at runtime (a map link: HTTP, a store, a queue), a use in code
+   * (an import, a reference), or a type-only import (compile-time coupling, not use). Older maps
+   * leave it out: a link with evidence is runtime, the rest code.
+   */
+  kind?: RelKind
+  /** Lines of the source's file that name what it uses there: why the relation exists. */
+  lines?: number[]
 }
+
+export type RelKind = 'code' | 'types' | 'runtime'
 
 export interface ModelJson {
   name: string
@@ -78,7 +88,12 @@ export class Tree {
   readonly relEvidence: (EvidenceJson[] | undefined)[]
   readonly maxDepth: number
 
-  constructor(model: ModelJson) {
+  /** Per relation: its kind, and the lines of its source file that make it (empty for runtime links). */
+  readonly relKind: RelKind[]
+  readonly relLines: number[][]
+
+  /** `types`: keep type-only imports too (off: they are left out, as compile-time coupling only). */
+  constructor(model: ModelJson, { types = false }: { types?: boolean } = {}) {
     const root: ElementJson = {
       id: '', parent: null, title: model.title ?? model.name, kind: 'landscape', description: '',
       technology: '', tags: [], color: 'primary', shape: 'rectangle',
@@ -105,13 +120,19 @@ export class Tree {
     const pairs: number[] = []
     this.relTitles = []
     this.relEvidence = []
+    this.relKind = []
+    this.relLines = []
     for (const r of model.relations) {
+      const kind: RelKind = r.kind ?? (r.evidence ? 'runtime' : 'code')
+      if (kind === 'types' && !types) continue
       const s = this.byId.get(r.source), t = this.byId.get(r.target)
       if (s == null || t == null || s === t) continue
       if (this.isAncestor(s, t) || this.isAncestor(t, s)) continue
       pairs.push(s, t)
       this.relTitles.push(r.title)
       this.relEvidence.push(r.evidence)
+      this.relKind.push(kind)
+      this.relLines.push(r.lines ?? [])
     }
     this.rels = Int32Array.from(pairs)
   }
@@ -185,6 +206,9 @@ export interface ShownEdge {
   /** How many folded relations cross the focus, and the first of them. */
   focusCount: number
   focusRel: number
+  /** Some folded relation is a call at runtime; every one is a type-only import. */
+  runtime: boolean
+  typesOnly: boolean
 }
 
 /**
@@ -202,8 +226,11 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1 }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: true }))
     e.count++
+    const kind = tree.relKind[k >> 1]
+    if (kind === 'runtime') e.runtime = true
+    if (kind !== 'types') e.typesOnly = false
     if (e.s !== s) e.both = true
     if (inFocus) {
       const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])

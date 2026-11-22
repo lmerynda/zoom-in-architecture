@@ -124,6 +124,18 @@
     .d-steps .d-rel { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
     .d-steps .d-rel:hover { background: rgba(148, 163, 184, 0.1); }
     .d-steps .d-rel span { color: var(--dim); font-size: 11px; }
+    /* A picked arrow: each relation it carries, its kind, what it names, the lines that make it. */
+    .d-edge li { flex-direction: column; align-items: stretch; padding: 2px 0 6px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); }
+    .d-edge li.k-runtime i { color: #c4b5fd; }
+    .d-edge .d-rel { flex: none; }
+    .d-edge li.k-types b { font-weight: 500; color: var(--text); }
+    .d-why { display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: baseline; padding: 0 6px 0 28px; font-size: 11px; }
+    .d-kindtag { color: var(--dim); }
+    .k-runtime .d-kindtag { color: #c4b5fd; }
+    .k-types .d-kindtag { color: var(--dim); font-style: italic; }
+    .d-names { color: var(--text); }
+    .d-why .cite { background: none; border: 0; padding: 0; font: 11px ui-monospace, Consolas, monospace; color: #fde68a; cursor: pointer; text-decoration: underline dotted; }
+    .d-why .cite:hover { color: #fff; }
     .d-none { color: var(--dim); font-size: 11px; padding: 2px 6px; }
     #code { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
@@ -176,6 +188,16 @@
     #welcome .chips button { background: none; border: 1px solid rgba(251, 191, 36, 0.45); color: #fde68a; border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
     #welcome .chips button:hover { background: rgba(251, 191, 36, 0.14); }
     #welcome .ok { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
+    /* What the arrows are, at the map's foot. */
+    #arrows { position: fixed; z-index: 11; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 5px 10px; background: rgba(9, 12, 20, 0.9); border: 1px solid var(--line); border-radius: 8px; font-size: 11px; color: var(--dim); }
+    #arrows[hidden] { display: none; }
+    #arrows .a-head { color: var(--text); font-weight: 600; }
+    #arrows span[class^="a-"]:not(.a-head)::before { content: ''; display: inline-block; width: 22px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid #8193bd; }
+    #arrows .a-runtime::before { border-top-color: #c4b5fd !important; }
+    #arrows .a-types::before { border-top-style: dashed !important; }
+    #arrows button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
+    body.reading #arrows { display: none; }
+    @media (max-width: 1099px) { #arrows { bottom: 58px; } body:has(#details:not([hidden]):not(.outline)) #arrows { display: none; } }
     /* No map to show: why, and the maps there are. */
     #failed { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; }
     #failed[hidden] { display: none; }
@@ -291,6 +313,7 @@
   </header>
   <div id="stats" class="panel">loading…</div>
   <section id="welcome" aria-label="Welcome" hidden></section>
+  <aside id="arrows" aria-label="What the arrows are" hidden></aside>
   <section id="failed" hidden></section>
   <aside id="details" class="panel" hidden></aside>
   <canvas id="minimap" class="panel"></canvas>

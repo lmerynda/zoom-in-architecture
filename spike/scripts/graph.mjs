@@ -293,6 +293,38 @@ function hintsOf(src) {
   return out
 }
 
+/** How many lines an edge keeps as the reason it exists. */
+const USE_LINES = 6
+
+/**
+ * Where a file uses what an edge brings in: the lines that name it (its import, then its first
+ * uses), up to USE_LINES, so the map can show why the edge exists. An edge that names nothing (a
+ * side-effect import, a same-package type) falls back to lines naming the target file.
+ */
+export function useLines(src, names, to) {
+  const clean = names.map(n => n.replace(/\W+$/, '')).filter(Boolean)
+  const ident = n => /^[A-Za-z_$][\w$]*$/.test(n)
+  if (!clean.length) clean.push(to.slice(to.lastIndexOf('/') + 1).replace(/\.[^.]+$/, ''))
+  // A name is matched as a whole word; one that is no identifier (go:embed) as the text it is.
+  const res = clean.map(w => (ident(w) ? new RegExp(`(^|[^\\w$])${w.replace(/\$/g, '\\$')}(?![\\w$])`) : { test: l => l.includes(w) }))
+  // Each name's first two lines, so every name is accounted for before any repeats. Comments are
+  // skipped unless they are all there is (a directive such as //go:embed is the reference).
+  const pass = (skipComments) => {
+    const out = [], seen = new Map()
+    src.split('\n').forEach((l, i) => {
+      if (skipComments && /^\s*(\/\/|#|\*|\/\*)/.test(l)) return
+      res.forEach((re, k) => {
+        if (!re.test(l)) return
+        const n = seen.get(k) ?? 0
+        if (n < 2) { seen.set(k, n + 1); out.push(i + 1) }
+      })
+    })
+    return out
+  }
+  const out = pass(true)
+  return [...new Set(out.length ? out : pass(false))].sort((a, b) => a - b).slice(0, USE_LINES)
+}
+
 /**
  * The file graph of a repository's application code.
  * @returns {{ repo, projects, entries, config, files, edges, dropped }}
@@ -523,7 +555,7 @@ export function buildGraph(repo) {
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
     files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src), ...(f.misses.length ? { misses: f.misses } : {}) })),
-    edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
+    edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], lines: useLines(f.src, [...e.names], to), ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
     dropped: { generated: all.filter(p => LANG[extOf(p)] && GENERATED.test(p) && !/(^|\/)vendor\//.test(p)).length, tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }
 }

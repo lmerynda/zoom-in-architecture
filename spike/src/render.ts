@@ -25,6 +25,8 @@ const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
 const IN = 0x22d3ee
+/** A call at runtime (HTTP, a store, a queue), as opposed to a use in code. */
+const RUNTIME = 0xc4b5fd
 /** A card's rank badge in the Connections view. */
 const RANK = 0xfde68a
 const FLASH_MS = 3200
@@ -113,7 +115,8 @@ export interface FrameStats {
 }
 
 /** Edge colour classes, drawn as separate strokes. */
-const enum Kind { Thin, Mid, Thick, Out, In }
+/** Edge stroke classes, drawn as separate strokes: code uses by weight, the focus's out and in, runtime calls. */
+const enum Kind { Thin, Mid, Thick, Out, In, Runtime }
 
 export class Renderer {
   readonly stage = new Container()
@@ -770,7 +773,7 @@ export class Renderer {
     const W = this.cam.w, H = this.cam.h
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
     const labelSpots: LabelSpot[] = []
-    const paths: number[][][] = [[], [], [], [], []]
+    const paths: number[][][] = [[], [], [], [], [], []]
     // Strokes by kind and weight tier: [kind][tier] (see TIER_W).
     const strokes: number[][][][] = paths.map(() => TIER_W.map(() => []))
     const heads: number[][][] = paths.map(() => TIER_W.map(() => []))
@@ -783,7 +786,7 @@ export class Renderer {
       const sr = this.screenRect(e.s), tr = this.screenRect(e.t)
       if (Math.max(sr[2], tr[2]) < 6) continue
       // Only relations crossing the focus boundary light up, decided per folded relation.
-      const kind = e.out ? Kind.Out : e.in ? Kind.In : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
+      const kind = e.out ? Kind.Out : e.in ? Kind.In : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
       const world = this.router.route(e.s, e.t)
       const pts = world ? this.toScreen(world) : straight(sr, tr)
       drawn.push({ e, kind, pts, sOn, tOn })
@@ -794,7 +797,13 @@ export class Renderer {
     const reading = here > 0 && !this.tree.children[here].length
     // Among many files a web of arrows says nothing: at rest they wait for a card in focus.
     const files = this.shown.filter(c => !this.tree.children[c].length && this.tree.els[c].metadata?.path && this.onScreen(c)).length
-    if (files > RESTING_FILES && focus <= 0) drawn.length = 0
+    if (files > RESTING_FILES && focus <= 0) {
+      // A picked line stays drawn among them.
+      const e = this.edge
+      const keep = e ? drawn.filter(d => (d.e.s === e.s && d.e.t === e.t) || (d.e.s === e.t && d.e.t === e.s)) : []
+      drawn.length = 0
+      drawn.push(...keep)
+    }
     this.lines = []
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
@@ -817,7 +826,9 @@ export class Renderer {
       this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
-      strokes[kind][tier].push(clipped)
+      // A type-only import is drawn dashed: coupling at compile time, not use.
+      if (e.typesOnly) strokes[kind][tier].push(...dashes(clipped))
+      else strokes[kind][tier].push(clipped)
       st.edges++
       const n = pts.length
       if (tOn) heads[kind][tier].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -846,7 +857,7 @@ export class Renderer {
     const base = sel ? 0.1 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
     // Thin lines draw first, so a heavy one sharing their gutter stays on top and reads as heavy.
     const style: [Graphics, number, number, number][] = [
-      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95],
+      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)],
     ]
     TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
       const ps = strokes[kind][tier]
@@ -861,7 +872,7 @@ export class Renderer {
     // A dot where a line leaves a shared trunk, so a branch reads as a join, not as an edge from
     // the card beside it. Quiet lines are dotted together, highlighted ones in their own colour.
     const dots: [Graphics, number[][], number, number, number][] = [
-      [g, [...paths[Kind.Thin], ...paths[Kind.Mid], ...paths[Kind.Thick]], EDGE, Math.min(1, base * 1.6), 3],
+      [g, [...paths[Kind.Thin], ...paths[Kind.Mid], ...paths[Kind.Thick]], EDGE, Math.min(1, base * 1.6), 3], [g, paths[Kind.Runtime], RUNTIME, Math.min(1, base + 0.4), 3],
       [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6],
     ]
     for (const [gg, ps, color, alpha, r] of dots) {
@@ -888,6 +899,15 @@ export class Renderer {
     if (this.hover > 0 && this.hover !== this.selected) line(this.hover, 2, 1, 0xcbd5e1, 0.6)
     if (this.target > 0 && this.target !== this.selected) line(this.target, 3, 2, this.endKind[this.target] === 2 ? IN : OUT, 0.95)
     if (this.selected > 0) line(this.selected, 3, 2, 0xffffff, 0.95)
+    // The line picked for the panel: drawn over in white, as the selection is outlined.
+    const e = this.edge
+    const picked = e && this.lines.find(l => (l.s === e.s && l.t === e.t) || (l.s === e.t && l.t === e.s))
+    if (picked) {
+      const p = picked.pts
+      g.moveTo(p[0], p[1])
+      for (let k = 2; k < p.length; k += 2) g.lineTo(p[k], p[k + 1])
+      g.stroke({ width: 3.5, color: 0xffffff, alpha: 0.95, join: 'round', cap: 'round' })
+    }
   }
 
   /** Removes everything this renderer drew, when a new model version replaces it. */
@@ -903,15 +923,30 @@ export class Renderer {
 
   /** The lines passing within `r` px of a screen point: a shared trunk is several. */
   linesAt(x: number, y: number, r = 6): { s: number; t: number; count: number }[] {
-    const near = (p: number[]) => {
+    const dist = (p: number[]) => {
+      let d = Infinity
       for (let k = 2; k < p.length; k += 2) {
         const x0 = p[k - 2], y0 = p[k - 1], dx = p[k] - x0, dy = p[k + 1] - y0, l2 = dx * dx + dy * dy
         const u = l2 ? Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / l2)) : 0
-        if (Math.hypot(x0 + u * dx - x, y0 + u * dy - y) <= r) return true
+        d = Math.min(d, Math.hypot(x0 + u * dx - x, y0 + u * dy - y))
       }
-      return false
+      return d
     }
-    return this.lines.filter(l => near(l.pts))
+    // Nearest first: on a shared trunk, the line the pointer is closest to leads.
+    return this.lines.map(l => ({ l, d: dist(l.pts) })).filter(x => x.d <= r).sort((a, b) => a.d - b.d).map(x => x.l)
+  }
+
+  /** The line picked for the details panel (clicked), by the two cards it joins. */
+  edge: { s: number; t: number } | null = null
+
+  /** Every relation a line between cards s and t carries, both directions, as relation indices. */
+  relationsBetween(s: number, t: number): number[] {
+    const out: number[] = []
+    for (let k = 0; k < this.tree.rels.length; k += 2) {
+      const ra = this.rep(this.tree.rels[k]), rb = this.rep(this.tree.rels[k + 1])
+      if ((ra === s && rb === t) || (ra === t && rb === s)) out.push(k >> 1)
+    }
+    return out
   }
 
   /** The element pairs a line between cards s and t carries, both directions, busiest first. */
@@ -1038,7 +1073,7 @@ export class Renderer {
       lab.bg.width = cw; lab.bg.height = ch
       lab.bg.tint = sp.kind === Kind.Out ? mix(OUT, BG, 0.75) : sp.kind === Kind.In ? mix(IN, BG, 0.75) : 0x111827
       lab.bg.alpha = 0.92
-      lab.text.tint = sp.kind === Kind.Out ? OUT : sp.kind === Kind.In ? IN : 0xcbd5e1
+      lab.text.tint = sp.kind === Kind.Out ? OUT : sp.kind === Kind.In ? IN : sp.kind === Kind.Runtime ? RUNTIME : 0xcbd5e1
       lab.text.position.set(x + 6, y + (ch - px * 1.25) / 2)
       lab.text.alpha = 1
       lab.bg.visible = lab.text.visible = true
@@ -1164,6 +1199,31 @@ function stretches(pts: number[]): [number, number][] {
   return []
 }
 const ALONG = [0.5, 0.65, 0.35]
+
+/** A polyline cut into dashes of `on` px with `off` px gaps, each dash its own short polyline. */
+export function dashes(pts: number[], on = 7, off = 5): number[][] {
+  const out: number[][] = []
+  let left = on, drawing = true, cur: number[] = [pts[0], pts[1]]
+  for (let k = 2; k < pts.length; k += 2) {
+    let x = pts[k - 2], y = pts[k - 1]
+    const dx = pts[k] - x, dy = pts[k + 1] - y
+    let len = Math.hypot(dx, dy)
+    const ux = len ? dx / len : 0, uy = len ? dy / len : 0
+    while (len > 0) {
+      const step = Math.min(left, len)
+      x += ux * step; y += uy * step; len -= step; left -= step
+      if (drawing) cur.push(x, y)
+      if (left <= 0) {
+        if (drawing && cur.length >= 4) out.push(cur)
+        drawing = !drawing
+        left = drawing ? on : off
+        cur = [x, y]
+      }
+    }
+  }
+  if (drawing && cur.length >= 4) out.push(cur)
+  return out
+}
 
 function arrowHeads(g: Graphics, segs: number[], color: number, alpha: number, L: number) {
   if (!segs.length) return

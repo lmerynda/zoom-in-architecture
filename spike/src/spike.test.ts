@@ -5,7 +5,7 @@ import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
+import { clipToScreen, dashes, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -63,7 +63,7 @@ describe('Tree', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
     const e = aggregateEdges(t, i => t.childUnder(0, i))
-    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1 }])
+    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false }])
   })
 
   it('lights a rolled-up edge only for relations that cross the focus', () => {
@@ -569,5 +569,42 @@ describe('linePoint', () => {
     expect(next.x - first.x).toBeCloseTo((40 + 4) * 9.6 * (px / 16))
     // Lines past the end clamp to the last.
     expect(linePoint(0, 0, 2400, 1500, 300, 40, 9999)).toEqual(linePoint(0, 0, 2400, 1500, 300, 40, 300))
+  })
+})
+
+describe('relation kinds', () => {
+  const m: ModelJson = {
+    name: 'k',
+    elements: [el('a', null), el('b', null), el('c', null)],
+    relations: [
+      { source: 'a', target: 'b', title: 'Item', kind: 'types' },
+      { source: 'a', target: 'b', title: 'load', kind: 'code', lines: [3, 9] },
+      { source: 'b', target: 'c', title: 'GET /x', evidence: [{ at: 'b.ts:4', line: 4, code: 'fetch()' }] },
+      { source: 'c', target: 'a', title: 'Shape', kind: 'types' },
+    ],
+  }
+  it('leaves type-only imports out unless asked, and reads an old link with evidence as runtime', () => {
+    const t = new Tree(m)
+    expect(t.relKind).toEqual(['code', 'runtime'])
+    expect(t.relLines).toEqual([[3, 9], []])
+    expect(new Tree(m, { types: true }).relKind).toEqual(['types', 'code', 'runtime', 'types'])
+  })
+  it('marks an edge runtime if any relation is, and types-only if every one is', () => {
+    const t = new Tree(m, { types: true })
+    const e = aggregateEdges(t, i => i)
+    const at = (a: string, b: string) => e.find(x => t.els[x.s].id === a && t.els[x.t].id === b)!
+    expect([at('a', 'b').runtime, at('a', 'b').typesOnly]).toEqual([false, false])
+    expect(at('b', 'c').runtime).toBe(true)
+    expect(at('c', 'a').typesOnly).toBe(true)
+  })
+})
+
+describe('dashes', () => {
+  it('cuts a line into dashes and gaps along its whole length, round corners too', () => {
+    const d = dashes([0, 0, 20, 0, 20, 10], 7, 5)
+    expect(d.length).toBe(3)
+    expect(d[0]).toEqual([0, 0, 7, 0])
+    expect(d[1]).toEqual([12, 0, 19, 0])
+    expect(d[2]).toEqual([20, 4, 20, 10])
   })
 })

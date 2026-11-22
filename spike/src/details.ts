@@ -279,3 +279,66 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
   panel.classList.add('outline')
   panel.hidden = false
 }
+
+/** What a relation is, in words. */
+const KIND_WORD = { runtime: 'calls at runtime', code: 'uses in code', types: 'type-only import' } as const
+
+/**
+ * The panel for a picked arrow: the two cards it joins, how many relations it carries of each
+ * kind, and every one of them, direction by direction: which file uses which, what it names, and
+ * the lines that make it, each opening the code there. A runtime call shows its cited lines.
+ */
+export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number, rels: number[], act: PanelActions) {
+  panel.classList.remove('outline')
+  const head = el('div', 'd-head')
+  head.append(el('span', 'd-kind', 'Arrow'), el('h2', '', `${tree.els[s].title} ↔ ${tree.els[t].title}`))
+  const count = (kind: string) => rels.filter(k => tree.relKind[k] === kind).length
+  const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${KIND_WORD[k]}`).join(' · ')
+  const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
+  const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
+  const section = (from: number, to: number) => {
+    const mine = rels.filter(k => inside(from, tree.rels[k * 2]) && inside(to, tree.rels[k * 2 + 1]))
+    if (!mine.length) return []
+    const box = el('section', 'd-rels d-edge')
+    box.append(el('h3', '', `${tree.els[from].title} → ${tree.els[to].title} · ${mine.length}`))
+    const ul = el('ul')
+    // Runtime calls first, then uses, then type-only imports; by file name within each.
+    const order = { runtime: 0, code: 1, types: 2 }
+    mine.sort((a, b) => order[tree.relKind[a]] - order[tree.relKind[b]] || tree.els[tree.rels[a * 2]].title.localeCompare(tree.els[tree.rels[b * 2]].title))
+    for (const k of mine) {
+      const a = tree.rels[k * 2], b = tree.rels[k * 2 + 1], kind = tree.relKind[k]
+      const li = el('li', `k-${kind}`)
+      const pair = el('button', 'd-rel')
+      pair.append(el('i', '', kind === 'runtime' ? '⇢' : '→'), el('b', '', `${tree.els[a].title} → ${tree.els[b].title}`))
+      pair.title = `${KIND_WORD[kind]}: go to ${tree.els[a].title}`
+      pair.onclick = () => act.go(a)
+      li.append(pair)
+      const why = el('div', 'd-why')
+      why.append(el('span', 'd-kindtag', KIND_WORD[kind]))
+      if (tree.relTitles[k]) why.append(el('span', 'd-names', tree.relTitles[k]))
+      const path = tree.els[a].metadata?.path
+      // The lines that make it: a use's own lines in its file, a runtime call's cited lines.
+      for (const line of tree.relLines[k]) {
+        if (!path) break
+        const b2 = el('button', 'cite', `line ${line}`)
+        b2.title = `${path}:${line}: open the code here`
+        b2.onclick = () => act.openPath(path, line, a)
+        why.append(b2)
+      }
+      for (const ev of tree.relEvidence[k] ?? []) {
+        const file = ev.at.replace(/:\d+(-\d+)?$/, '')
+        if (ev.code == null || !files.has(file)) { why.append(el('span', 'd-names', ev.at)); continue }
+        const b2 = el('button', 'cite', ev.at.split('/').pop()!)
+        b2.title = `${ev.at}: ${ev.code.trim()}`
+        b2.onclick = () => act.openPath(file, ev.line, a)
+        why.append(b2)
+      }
+      li.append(why)
+      ul.append(li)
+    }
+    box.append(ul)
+    return [box]
+  }
+  panel.replaceChildren(head, el('p', 'd-rank', summary || 'nothing on this map'), ...section(s, t), ...section(t, s), el('p', 'd-hint', 'Esc puts the arrow down.'))
+  panel.hidden = false
+}

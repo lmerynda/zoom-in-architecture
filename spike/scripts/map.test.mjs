@@ -19,7 +19,12 @@ describe('buildModel', () => {
   it('publishes a clean map without errors or warnings', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings).toEqual([])
-    expect(r.stats).toEqual({ nodes: 15, files: 39, relations: 34, links: 3, unplaced: 0 })
+    // 37 relations: 31 code uses, 3 type-only imports (kept, marked), 3 runtime links.
+    expect(r.stats).toEqual({ nodes: 15, files: 39, relations: 37, links: 3, unplaced: 0 })
+    const kinds = r.model.relations.reduce((m, x) => ({ ...m, [x.kind]: (m[x.kind] ?? 0) + 1 }), {})
+    expect(kinds).toEqual({ code: 31, types: 3, runtime: 3 })
+    // A code use says why it exists: the lines of its file that name what it brings in.
+    expect(r.model.relations.filter(x => x.kind === 'code').every(x => x.lines?.length > 0)).toBe(true)
   })
 
   it('nests nodes by id and files under the node that holds them', () => {
@@ -144,7 +149,7 @@ describe('buildModel', () => {
     expect(loose.errors).toEqual([])
     expect(loose.warnings).toHaveLength(3)
     // The link to a deleted file is skipped; the one with a stale line still draws, its line marked as gone.
-    expect(loose.stats.relations).toBe(34)
+    expect(loose.stats.relations).toBe(37)
     expect(loose.model.relations.find(x => x.title === 'GET /api/orders').evidence[0]).toEqual({ at: 'web/src/api.ts:40', line: 40, code: null })
   })
 

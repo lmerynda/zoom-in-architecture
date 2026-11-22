@@ -151,6 +151,52 @@ try {
   await shot('04-line-carries')
   await page.mouse.move(5, 500)
 
+  // 4c. Arrows say what kind they are, and a picked arrow says why it exists, line by line.
+  await page.evaluate(() => { localStorage.removeItem('zoom.showTypes') })
+  await open('model=knights-of-darkness&in=backend')
+  const legend = await page.evaluate(() => [...document.querySelectorAll('#arrows span, #arrows button')].map(e => e.textContent))
+  check('the arrow legend names runtime calls, code uses and type-only imports', ['uses in code', 'calls at runtime', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
+  const types = async () => page.evaluate(() => window.__spike.tree.relKind.filter(k => k === 'types').length)
+  const hidden = await types()
+  await page.click('#arrows button')
+  await page.waitForFunction(() => window.__spike.tree.relKind.includes('types'), { timeout: 15000 }).catch(() => {})
+  const shown = await types()
+  check('type-only imports are hidden until shown, then drawn', hidden === 0 && shown > 0, JSON.stringify({ hidden, shown }))
+  await page.click('#arrows button')
+  await page.waitForFunction(() => !window.__spike.tree.relKind.includes('types'), { timeout: 15000 }).catch(() => {})
+  await landed()
+  // A point on a drawn line, off the cards.
+  const spot = await page.evaluate(async () => {
+    const s = window.__spike
+    s.select(-1)
+    await new Promise(r => setTimeout(r, 300))
+    for (const l of s.renderer.lines) for (let k = 2; k < l.pts.length; k += 2) {
+      const x = (l.pts[k - 2] + l.pts[k]) / 2, y = (l.pts[k - 1] + l.pts[k + 1]) / 2
+      if (s.renderer.hoverAt(x, y) <= 0 && s.renderer.linesAt(x, y)[0] === l) return [x, y]
+    }
+    return null
+  })
+  if (spot) { await page.mouse.move(spot[0], spot[1]); await page.mouse.down(); await page.mouse.up() }
+  await sleep(300)
+  const arrow = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, rows: document.querySelectorAll('#details .d-edge li').length, lines: document.querySelectorAll('#details .d-why .cite').length, picked: !!window.__spike.renderer.edge }))
+  check('clicking an arrow lists every relation it carries, with the lines that make it', arrow.kind === 'Arrow' && arrow.rows > 0 && arrow.lines > 0 && arrow.picked, JSON.stringify({ spot, ...arrow }))
+  await shot('04c-arrow-picked')
+  const line = await page.evaluate(async () => {
+    const b = document.querySelector('#details .d-why .cite'), want = b.textContent.replace('line ', '')
+    const names = b.closest('li').querySelector('.d-names')?.textContent ?? ''
+    b.click()
+    for (let k = 0; k < 200 && document.querySelector('.reader').hidden; k++) await new Promise(r => setTimeout(r, 25))
+    await new Promise(r => setTimeout(r, 200))
+    const at = document.querySelector('.reader pre .at')
+    return { want, at: at?.querySelector('i')?.textContent.trim(), text: at?.textContent ?? '', names }
+  })
+  const named = line.names.split(/[, +]+/).filter(n => /^[A-Za-z_]/.test(n))
+  check('a line of an arrow opens the code that makes it', line.want === line.at && named.some(n => line.text.includes(n)), JSON.stringify(line))
+  await page.keyboard.press('Escape')
+  await page.evaluate(() => window.__spike.renderer.edge && document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('Escape')
+  await sleep(100)
+
   // 5. Opening a cited line opens it in this endpoint's card, at that line.
   await open('model=knights-of-darkness&view=requests')
   const cite = await page.evaluate(async () => {
