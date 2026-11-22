@@ -88,6 +88,17 @@ try {
   await landed()
   check('Alt+↑ goes to the parent', (await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)) === 'backend')
 
+  // Search frames a container it finds without selecting it.
+  await page.evaluate(() => window.__spike.select(-1))
+  await focusMap()
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await page.keyboard.type('Game server')
+  await sleep(150)
+  await page.keyboard.press('Enter')
+  await landed()
+  const found = await page.evaluate(() => ({ selected: window.__spike.renderer.selected, here: window.__spike.renderer.breadcrumb().map(i => window.__spike.tree.els[i].id) }))
+  check('search frames a container without selecting it', found.selected === -1 && found.here.includes('backend'), JSON.stringify(found))
+
   // Right-click is a plain menu: go in, or read code and copy a path.
   const [mx, my] = await page.evaluate(() => { const s = window.__spike, i = s.id('backend.military'), r = s.renderer.screenRectOf(i); return [r[0] + r[2] / 2, r[1] + r[3] / 2] })
   await page.mouse.click(mx, my, { button: 'right' })

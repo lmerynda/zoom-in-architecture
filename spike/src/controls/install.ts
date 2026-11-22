@@ -148,7 +148,8 @@ export function installControls(c: Ctx) {
     { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
-  const palette = new Palette(tree, commands, i => goSelect(i))
+  // A container found by search is framed, to look into; a leaf is selected, to read about.
+  const palette = new Palette(tree, commands, i => (tree.children[i].length ? go(i) : goSelect(i)))
   document.getElementById('travel')?.addEventListener('click', () => palette.open())
   document.getElementById('help')?.addEventListener('click', () => help.toggle(true))
   const tooltip = new Tooltip(tree, i => { const r = renderer.relationsOf(i); return { uses: new Set(r.out.map(x => x.other)).size, usedBy: new Set(r.inn.map(x => x.other)).size } })

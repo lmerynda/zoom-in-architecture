@@ -58,6 +58,15 @@ try {
     await shot(`01-war-${want}`)
   }
 
+  // A selection's own children are part of it: none is dimmed.
+  const inside = await page.evaluate(async () => {
+    const s = window.__spike, b = s.id('backend')
+    s.select(b)
+    await new Promise(r => setTimeout(r, 200))
+    return s.tree.children[b].filter(i => s.renderer.dimmed(i)).map(i => s.tree.els[i].title)
+  })
+  check('a selection does not dim what it holds', inside.length === 0, JSON.stringify(inside))
+
   // 2. The panel lists every relation, however many.
   const counts = await page.evaluate(() => {
     const s = window.__spike

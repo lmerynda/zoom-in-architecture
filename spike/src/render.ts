@@ -419,7 +419,8 @@ export class Renderer {
     const hot = i === this.hover
     const sel = i === this.selected
     // With a selection, cards unrelated to it fade back; their children decide for themselves.
-    const dim = this.selected > 0 && this.related[i] !== this.frameNo ? 0.32 : 1
+    // What a selection holds (an endpoint's steps, a folder's files) is part of it, never dimmed.
+    const dim = this.selected > 0 && this.related[i] !== this.frameNo && !this.tree.isAncestor(this.selected, i) ? 0.32 : 1
     const ends = this.endpoint[i] === this.frameNo && !sel
     const endColor = this.endKind[i] === 2 ? IN : OUT
     const fl = this.flash.get(i)
@@ -820,7 +821,9 @@ export class Renderer {
 
     // Busy screens get quieter lines; a selection pushes everything else into the background.
     // Many edges at rest fade to faint strokes (96 in a busy component); focus draws its own bright.
-    const base = sel ? 0.1 : focus > 0 ? 0.22 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
+    // Hovering brightens the hovered card's own edges and leaves the rest as they were; only a
+    // selection pushes everything else back.
+    const base = sel ? 0.1 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
     // Thin lines draw first, so a heavy one sharing their gutter stays on top and reads as heavy.
     const style: [Graphics, number, number, number][] = [
       [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95],
@@ -877,7 +880,7 @@ export class Renderer {
 
   /** Whether card i was drawn dimmed last frame (out of the selection's play). */
   dimmed(i: number): boolean {
-    return this.selected > 0 && this.related[i] !== this.frameNo
+    return this.selected > 0 && this.related[i] !== this.frameNo && !this.tree.isAncestor(this.selected, i)
   }
 
   /** Whether an arrow to or from the focus ended at card i last frame. */
