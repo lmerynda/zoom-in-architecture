@@ -42,6 +42,9 @@ const join2 = (...parts) => {
   return p.length > 1 ? p.replace(/\/$/, '') : p
 }
 const VERBS = { get: 'GET', post: 'POST', put: 'PUT', delete: 'DELETE', patch: 'PATCH' }
+/** A view file as a handler names it: its path under templates/ or views/ (viewKey), without the extension (viewName). */
+const viewKey = p => p.replace(/^.*?(?:^|\/)(?:templates|views|Views)\//, '')
+const viewName = p => viewKey(p).replace(/\.[^./]+$/, '')
 
 /** What one marked route line declares: a prefix for its file, a mount of another router, or an endpoint. */
 function classify(lines, i, lang) {
@@ -366,8 +369,7 @@ export function endpoints(graph) {
       for (const e of out.get(hp) ?? []) {
         const t = byPath.get(e.to)
         if (t?.lang === 'view') {
-          const key = e.to.replace(/^.*?(?:^|\/)(?:templates|views|Views)\//, ''), bare = key.replace(/\.[^./]+$/, '')
-          if (said.some(s => s === key || s === bare)) views.push(e.to)
+          if (said.some(s => s === viewKey(e.to) || s === viewName(e.to))) views.push(e.to)
         } else if (namesOf(e).some(n => used.has(n))) direct.push(e)
       }
       direct.sort((a, b) => at(a) - at(b))
@@ -410,7 +412,6 @@ export function endpoints(graph) {
       }
       for (const e of lead) if (!steps.includes(e.to)) visit(e.to, 1, text, hp)
       const types = data.map(e => e.to).filter(p => !steps.includes(p))
-      const redirect = said.find(s => s.startsWith('redirect:'))
       // What comes back: FastAPI's response_model, the type a typed handler returns (Task<ArticleEnvelope>,
       // a @ResponseBody method's type), or JSON the body writes (c.JSON, res.json, jsonify).
       const sig = hc.lines.slice(body.start, Math.min(body.start + 4, hc.lines.length)).filter(l => !/^\s*(@|\[)/.test(l)).join(' ')
@@ -419,8 +420,25 @@ export function endpoints(graph) {
       // A framework's result type (IActionResult, ObjectResult) says how, not what: it is not the model.
       const model = call.match(/response_model\s*=\s*([\w.[\]]+)/)?.[1] ?? java ?? (typed && !/^(I?ActionResult|ObjectResult|JsonResult|String|Object|Void)$/.test(typed) ? typed : null)
       const json = !!model || /^(ObjectResult|JsonResult)$/.test(typed ?? '') || /\bc\.(JSON|IndentedJSON)\s*\(|\bres(?:\.status\([^)]*\))?\.json\s*\(|\bjsonify\s*\(|\bJSONResponse\s*\(|\bResults\.(Json|Ok|Created)\s*\(|\breturn\s+(Ok|Json|Created|CreatedAtAction|CreatedAtRoute)\s*\(|\bStatusCode\s*\(\s*[\w.]+\s*,/.test(text)
-      const response = { ...(redirect ? { redirect: redirect.slice('redirect:'.length) || '/' } : {}), ...(model ? { model } : {}), ...(json ? { json } : {}) }
-      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, types, views, response })
+      // Each way the handler can answer, once, in the order its source gives them: a view it
+      // renders, a redirect ("redirect:/owners/" + owner.getId() goes to /owners/{id}), or the body
+      // it returns. A handler with more than one branches there.
+      const kept = clean(raw, hc.lang, true)
+      const said0 = value => {
+        const hits = [`"${value}"`, `'${value}'`].map(q => kept.indexOf(q))
+        for (const [n, v] of hc.constOf) if (v === value && used.has(n)) hits.push(kept.search(new RegExp(`\\b${n}\\b`)))
+        return Math.min(...hits.filter(x => x >= 0), Infinity)
+      }
+      const answers = views.map(v => ({ kind: 'view', view: v, name: viewName(v), at: Math.min(said0(viewName(v)), said0(viewKey(v))) }))
+      for (const m of kept.matchAll(/(["'])redirect:([^"'\n]*)\1(\s*\+\s*([\w.]+)(\s*\(\s*\))?)?/g)) {
+        const param = m[4]?.split('.').pop().replace(/^get(?=[A-Z])/, '').replace(/^./, c => c.toLowerCase())
+        const redirect = `${m[2] || '/'}${param ? `{${param}}` : ''}`
+        if (!answers.some(a => a.redirect === redirect)) answers.push({ kind: 'redirect', redirect, at: m.index })
+      }
+      answers.sort((a, b) => a.at - b.at)
+      if (json || !answers.length) answers.push({ kind: 'body', ...(model ? { model } : {}), ...(json ? { json } : {}) })
+      const responses = answers.map(({ at, ...a }) => a)
+      result.push({ method: ep.method, path: full, file: hp, line: hp === path ? ep.line : from + 1, name, steps, types, responses })
     }
   }
   return result.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method))

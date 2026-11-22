@@ -13,14 +13,11 @@ const TYPE = { color: 'gray', shape: 'rectangle' }
 const stem = p => posix.basename(p).replace(/\.[^.]+$/, '')
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'root'
 
-/** What the endpoint answers with, in words. */
-function answer(ep) {
-  const parts = []
-  if (ep.views.length) parts.push(`renders ${ep.views.map(stem).join(' or ')}`)
-  if (ep.response.redirect) parts.push(`redirects to ${ep.response.redirect}`)
-  if (!parts.length) parts.push(ep.response.model ? `returns ${ep.response.model} as JSON` : ep.response.json ? 'returns JSON' : 'returns what the handler returns')
-  return parts.join(', or ')
-}
+/** One way an endpoint answers, in words: "renders owners/ownersList", "redirects to /owners/{id}". */
+const said = r => r.kind === 'view' ? `renders ${r.name}` : r.kind === 'redirect' ? `redirects to ${r.redirect}` : r.model ? `returns ${r.model} as JSON` : r.json ? 'returns JSON' : 'returns what the handler returns'
+/** What the endpoint answers with, in words: each of its answers. */
+const answer = ep => ep.responses.map(said).join(', or ')
+const sentence = s => `${s[0].toUpperCase()}${s.slice(1)}.`
 
 /**
  * Groups of endpoints that act on the same thing, read from the words of their route names at
@@ -157,11 +154,15 @@ export function buildRequests(graph, map, model) {
     const endpoint = (e, eid, gid, prefix, short) => {
         const handler = `${stem(e.file)}${e.name ? `.${e.name}` : ''}`
         elements.push({ id: eid, parent: gid, title: titleOf(e, prefix, short), kind: 'component', description: `${e.method} ${e.path}: ${handler} ${answer(e)}.`, technology: '', tags: [], features: [], color: 'indigo', shape: 'rectangle', metadata: {} })
-        // The request's path, in order: handler, the files it uses, the views it renders.
-        const steps = [...e.steps, ...e.views]
+        // The request's path, in order: handler, the files it uses, and the view it renders when that
+        // is its one answer. A handler that can answer more than one way branches: each view it may
+        // render, and each answer, is a card of its own off the step that gives it, not a next step.
+        const views = e.responses.filter(r => r.kind === 'view').map(r => r.view)
+        const branches = e.responses.length > 1
+        const steps = branches ? e.steps : [...e.steps, ...views]
         const sid = new Map()
         // Two files of one name (users/models.go, articles/models.go) are told apart by their folder.
-        const shown = [...steps, ...e.types]
+        const shown = [...steps, ...e.types, ...(branches ? views : [])]
         const name = p => shown.some(q => q !== p && stem(q) === stem(p)) ? `${posix.basename(posix.dirname(p))}/${stem(p)}` : stem(p)
         steps.forEach((p, k) => {
           const base = fileEl.get(p)
@@ -185,12 +186,26 @@ export function buildRequests(graph, map, model) {
           sid.set(p, id)
           elements.push({ ...copy(base), id, parent: eid, title: name(p), ...TYPE, metadata: { ...base.metadata, role: 'type' } })
         })
-        const rid = `${eid}.response`
-        elements.push({ id: rid, parent: eid, title: `${steps.length + 1} · Response`, kind: 'component', description: `${answer(e)[0].toUpperCase()}${answer(e).slice(1)}.`, technology: '', tags: [], features: [], ...RESPONSE, metadata: {} })
+        if (branches) views.forEach((p, k) => {
+          const base = fileEl.get(p)
+          if (!base) return
+          const id = `${eid}.v${k + 1}`
+          sid.set(p, id)
+          elements.push({ ...copy(base), id, parent: eid, title: name(p), ...CODE, metadata: { ...base.metadata, role: 'view' } })
+        })
         for (const r of graph.edges) if (!r.types && sid.has(r.from) && sid.has(r.to)) relations.push({ source: sid.get(r.from), target: sid.get(r.to), title: r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ') })
-        // Back out: the page it renders, or the handler's own return.
-        for (const v of e.views) if (sid.has(v)) relations.push({ source: sid.get(v), target: rid, title: 'HTML page' })
-        if (!e.views.length || e.response.redirect) relations.push({ source: sid.get(e.file), target: rid, title: e.response.redirect ? 'redirect' : e.response.model ?? (e.response.json ? 'JSON' : 'returns') })
+        // Back out: the page it renders, or the handler's own answer (a redirect, a body). One answer
+        // ends the numbered path; each of several is a Response card of its own.
+        e.responses.forEach((r, k) => {
+          const rid = branches ? `${eid}.response-${k + 1}` : `${eid}.response`
+          const title = branches ? `Response · ${r.kind === 'redirect' ? `redirect ${r.redirect}` : said(r)}` : `${steps.length + 1} · Response`
+          const metadata = { role: 'response', answer: r.kind, ...(r.kind === 'view' ? { view: r.name } : {}), ...(r.redirect ? { redirect: r.redirect } : {}), ...(r.model ? { model: r.model } : {}) }
+          elements.push({ id: rid, parent: eid, title, kind: 'component', description: sentence(said(r)), technology: '', tags: [], features: [], ...RESPONSE, metadata })
+          const from = r.kind === 'view' ? sid.get(r.view) : sid.get(e.file)
+          if (from) relations.push({ source: from, target: rid, title: r.kind === 'view' ? 'HTML page' : r.kind === 'redirect' ? 'redirect' : r.model ?? (r.json ? 'JSON' : 'returns') })
+        })
+        // The handler renders each view it may answer with.
+        if (branches) for (const p of views) if (sid.has(p) && !relations.some(x => x.source === sid.get(e.file) && x.target === sid.get(p))) relations.push({ source: sid.get(e.file), target: sid.get(p), title: 'renders' })
         // Out to the stores and services: the map's own links from these files, with their evidence.
         for (const p of steps) for (const l of linksFrom.get(p) ?? []) {
           const to = fileEl.has(l.to) ? top(fileEl.get(l.to).parent) : top(l.to)

@@ -7,7 +7,8 @@ import { endpoints } from './routes.mjs'
 
 const fixture = name => buildGraph(join(import.meta.dirname, `../test/fixtures/${name}`))
 // Steps in order (>), then the types the handler only names (+), then the views (|).
-const brief = eps => eps.map(e => `${e.method} ${e.path} ${e.name}: ${e.steps.map(s => s.split('/').pop()).join(' > ')}${e.types.length ? ` + ${e.types.map(s => s.split('/').pop()).join(', ')}` : ''}${e.views.length ? ` | ${e.views.map(v => v.split('/').pop()).join(', ')}` : ''}`)
+const viewsOf = e => e.responses.filter(r => r.kind === 'view').map(r => r.view)
+const brief = eps => eps.map(e => `${e.method} ${e.path} ${e.name}: ${e.steps.map(s => s.split('/').pop()).join(' > ')}${e.types.length ? ` + ${e.types.map(s => s.split('/').pop()).join(', ')}` : ''}${viewsOf(e).length ? ` | ${viewsOf(e).map(v => v.split('/').pop()).join(', ')}` : ''}`)
 
 describe('endpoints', () => {
   it('reads Spring endpoints under their class prefix, through fields, constants and views', () => {
@@ -22,9 +23,9 @@ describe('endpoints', () => {
       'GET /cart/items items: CartController.java > OrderRepository.java | list.html',
       'GET /orders list: OrderController.java | list.html',
     ])
-    expect(eps.find(e => e.path === '/cart').response).toEqual({ redirect: '/cart/items' })
+    expect(eps.find(e => e.path === '/cart').responses).toEqual([{ kind: 'redirect', redirect: '/cart/items' }])
     // A REST handler's answer is the type inside ResponseEntity and Optional; a wildcard says nothing.
-    expect(eps.filter(e => e.path.startsWith('/api')).map(e => e.response)).toEqual([{ model: 'List<Order>', json: true }, {}, {}])
+    expect(eps.filter(e => e.path.startsWith('/api')).map(e => e.responses)).toEqual([[{ kind: 'body', model: 'List<Order>', json: true }], [{ kind: 'body' }], [{ kind: 'body' }]])
   })
 
   it('follows a service only through the method the handler calls on it', () => {
@@ -69,6 +70,19 @@ describe('endpoints', () => {
     expect(brief([greet])).toEqual(['POST /owners/greet greet: OwnerController.java > Mailer.java > ClinicService.java > OwnerRepository.java + Owner.java'])
   })
 
+  it('reads each way a handler answers, in source order: the views it renders, its redirects, its body', () => {
+    const eps = endpoints(fixture('clinic'))
+    const find = eps.find(e => e.path === '/owners' && e.method === 'GET')
+    // A page out of range, none found, one found (by its id), or the list a helper renders.
+    expect(find.responses).toEqual([
+      { kind: 'redirect', redirect: '/owners' },
+      { kind: 'view', view: 'src/main/resources/templates/owners/findOwners.html', name: 'owners/findOwners' },
+      { kind: 'redirect', redirect: '/owners/{id}' },
+      { kind: 'view', view: 'src/main/resources/templates/owners/ownersList.html', name: 'owners/ownersList' },
+    ])
+    expect(eps.find(e => e.path === '/owners/find').responses).toEqual([{ kind: 'view', view: 'src/main/resources/templates/owners/findOwners.html', name: 'owners/findOwners' }])
+  })
+
   it('reads FastAPI endpoints under the prefixes of the routers that mount them', () => {
     const eps = endpoints(fixture('api'))
     expect(brief(eps)).toEqual([
@@ -76,7 +90,7 @@ describe('endpoints', () => {
       'GET /api/v1/items/{id} read_item: items.py > crud.py > db.py + models.py',
       'GET /api/v1/items/health health: items.py',
     ])
-    expect(eps[0].response).toEqual({ model: 'Item', json: true })
+    expect(eps[0].responses).toEqual([{ kind: 'body', model: 'Item', json: true }])
   })
 })
 
@@ -89,7 +103,7 @@ describe('endpoints of Express and Gin routers', () => {
       // A named handler is the function the route passes; the service is reached by its require name.
       'POST /api/orders create: orders.controller.js > orders.service.js',
     ])
-    expect(eps.map(e => e.response)).toEqual([{ json: true }, { json: true }])
+    expect(eps.map(e => e.responses)).toEqual([[{ kind: 'body', json: true }], [{ kind: 'body', json: true }]])
   })
 
   it('reads Gin routes under the group their register function is called with, handlers anywhere in the package', () => {
@@ -97,7 +111,7 @@ describe('endpoints of Express and Gin routers', () => {
     // router.GET("") and router.GET("/") are one endpoint; Pay lives in another file of the package.
     // SaveNote(id string, meta interface{}) has a body past its signature's braces, and it reaches the store.
     expect(brief(eps)).toEqual(['GET /api/orders List: routers.go > models.go', 'POST /api/orders/:id/note Note: pay.go > notes.go > models.go', 'POST /api/orders/:id/pay Pay: pay.go > models.go'])
-    expect(eps.every(e => e.response.json)).toBe(true)
+    expect(eps.every(e => e.responses.length === 1 && e.responses[0].json)).toBe(true)
   })
 })
 
@@ -135,7 +149,8 @@ describe('buildRequests', () => {
     const ep = r.elements.find(e => e.parent === 'web.cart' && e.title === 'GET /cart/items')
     expect(kids(ep.id)).toEqual(['1 · items()', '2 · OrderRepository', '3 · list', '4 · Response'])
     expect(el(`${ep.id}.s1`).technology).toBe('CartController')
-    expect(el(`${ep.id}.response`).description).toBe('Renders list.')
+    // The view is named as the handler names it.
+    expect(el(`${ep.id}.response`).description).toBe('Renders orders/list.')
     // The handler's card marks its route line, so its code opens at the endpoint.
     expect(el(`${ep.id}.s1`).metadata.marks.split(' ')[0]).toBe('15:route')
     const rel = (a, b) => r.relations.find(x => x.source === a && x.target === b)
@@ -186,7 +201,29 @@ describe('buildRequests of a request path', () => {
     expect(built.errors).toEqual([])
     const create = ep('POST', '/owners/new')
     expect(kids(create.id).map(e => e.title)).toEqual(['1 · processCreationForm()', '2 · ClinicService', '3 · OwnerRepository', '4 · Mailer', 'OwnerForm', 'Owner', '5 · Response'])
-    expect(kids(create.id).map(e => e.metadata.role)).toEqual(['step', 'step', 'step', 'step', 'type', 'type', undefined])
+    expect(kids(create.id).map(e => e.metadata.role)).toEqual(['step', 'step', 'step', 'step', 'type', 'type', 'response'])
     expect(rel(`${create.id}.s1`, `${create.id}.t1`).title).toBe('OwnerForm')
+  })
+
+  it('ends a handler with one answer at its view, then the response, with no store it never calls', () => {
+    const find = ep('GET', '/owners/find')
+    expect(kids(find.id).map(e => e.title)).toEqual(['1 · initFindForm()', '2 · findOwners', '3 · Response'])
+    expect(rel(`${find.id}.s2`, `${find.id}.response`).title).toBe('HTML page')
+    expect(r.relations.filter(x => x.source.startsWith(`${find.id}.`) && x.target === 'db')).toEqual([])
+  })
+
+  it('branches where the handler branches: one Response card per answer, off the step that gives it', () => {
+    const list = ep('GET', '/owners')
+    expect(kids(list.id).map(e => e.title)).toEqual([
+      '1 · processFindForm()', '2 · OwnerRepository', 'Owner', 'findOwners', 'ownersList',
+      'Response · redirect /owners', 'Response · renders owners/findOwners', 'Response · redirect /owners/{id}', 'Response · renders owners/ownersList',
+    ])
+    expect(kids(list.id).filter(e => e.metadata.role === 'response').map(e => [e.id.slice(list.id.length), e.metadata.answer, e.metadata.redirect ?? e.metadata.view])).toEqual([
+      ['.response-1', 'redirect', '/owners'], ['.response-2', 'view', 'owners/findOwners'], ['.response-3', 'redirect', '/owners/{id}'], ['.response-4', 'view', 'owners/ownersList'],
+    ])
+    // Redirects come from the handler; a page from the view the handler renders.
+    expect(rel(`${list.id}.s1`, `${list.id}.response-3`).title).toBe('redirect')
+    expect(rel(`${list.id}.s1`, `${list.id}.v2`)).toBeTruthy()
+    expect(rel(`${list.id}.v2`, `${list.id}.response-4`).title).toBe('HTML page')
   })
 })
