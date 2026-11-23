@@ -73,7 +73,8 @@ try {
   // The real map publishes, and the open viewer gets its tab live.
   writeFileSync(scratch, JSON.stringify(map))
   const t0 = Date.now()
-  const published = zoom('publish', repo, scratch, '--name', 'shop')
+  // With what its end-to-end tests ran (a trace as zoom trace writes it): seen marks in the viewer.
+  const published = zoom('publish', repo, scratch, '--name', 'shop', '--trace', join(process.cwd(), 'test/fixtures/polyglot-trace.json'))
   check('the map publishes', published.code === 0, published.out.trim().split('\n').pop())
   await page.waitForFunction(() => [...document.querySelectorAll('#models a')].some(a => a.textContent === 'Shop'), { timeout: 15000 })
   check('its tab appears without a reload', await page.evaluate(() => window.__sameDocument === true), `${Date.now() - t0} ms`)
@@ -323,7 +324,7 @@ try {
 
   // Live, from the project's side: publish --watch uploads again when the code changes, and a new
   // file goes beside the files it talks to.
-  watcher = spawn(process.execPath, [cli, 'publish', repo, scratch, '--name', 'shop', '--watch', '--to', base], { cwd: join(repo, '..'), stdio: ['ignore', 'pipe', 'inherit'] })
+  watcher = spawn(process.execPath, [cli, 'publish', repo, scratch, '--name', 'shop', '--watch', '--to', base, '--trace', join(process.cwd(), 'test/fixtures/polyglot-trace.json')], { cwd: join(repo, '..'), stdio: ['ignore', 'pipe', 'inherit'] })
   await new Promise((ok, fail) => { watcher.stdout.on('data', d => { if (String(d).includes('watching')) ok() }); watcher.on('exit', fail) })
   writeFileSync(join(repo, 'web/src/ui/checkout.ts'), "import { cart } from './cart'\nexport const checkout = () => cart()\n")
   writeFileSync(join(repo, 'web/src/main.ts'), `${readFileSync(join(repo, 'web/src/main.ts'), 'utf8')}import { checkout } from './ui/checkout'\ncheckout()\n`)
@@ -387,6 +388,14 @@ try {
     const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
+  const traced = await page.evaluate(async () => {
+    const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen')].map(p => p.textContent).join(' | ')
+    s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()
+    const other = t.els.findIndex(e => e.metadata?.method && e.id !== 'server.api-orders.e1'); s.select(other); await new Promise(r => setTimeout(r, 100)); const unseen = text()
+    s.select(t.byId.get('server')); await new Promise(r => setTimeout(r, 100)); const coverage = text()
+    return { seen, unseen, coverage, legend: document.getElementById('arrows').textContent }
+  })
+  check('a traced map says what its tests ran: requests, statuses, tables, coverage, and what they never called', /Seen in tests: 3 requests · 200 ×2 · 401 ×1/.test(traced.seen) && /Tables: orders: SELECT/.test(traced.seen) && /Not seen in tests/.test(traced.unseen) && /Seen in tests: 1 of 1 endpoints/.test(traced.coverage) && /not seen in tests/.test(traced.legend), JSON.stringify(traced))
   check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · all()' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
   await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.api-orders.e1')) })
   await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})

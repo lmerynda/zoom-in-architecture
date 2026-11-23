@@ -18,9 +18,9 @@ export interface PanelActions {
 }
 
 /** One relation as the panel lists it: the card on the other side, what it reaches there, and the cited lines. */
-export interface RelationRow { other: number; names: string[]; evidence: EvidenceJson[] }
+export interface RelationRow { other: number; names: string[]; evidence: EvidenceJson[]; seen: number }
 
-type Rel = { other: number; title: string; evidence?: EvidenceJson[] }
+type Rel = { other: number; title: string; evidence?: EvidenceJson[]; seen?: number }
 
 /**
  * The relations of element i grouped one row per card on the other side. A container's are listed
@@ -31,10 +31,11 @@ type Rel = { other: number; title: string; evidence?: EvidenceJson[] }
  */
 export function relationRows(tree: Tree, i: number, rels: Rel[]): RelationRow[] {
   const rollUp = (o: number) => (tree.children[i].length ? tree.childUnder(tree.lca(i, o), o) : o)
-  const byOther = new Map<number, { names: Set<string>; evidence: Map<string, EvidenceJson> }>()
+  const byOther = new Map<number, { names: Set<string>; evidence: Map<string, EvidenceJson>; seen: number }>()
   for (const r of rels) {
     const o = rollUp(r.other)
-    const row = byOther.get(o) ?? { names: new Set(), evidence: new Map() }
+    const row = byOther.get(o) ?? { names: new Set(), evidence: new Map(), seen: 0 }
+    row.seen += r.seen ?? 0
     const name = o === r.other ? r.title : tree.els[r.other].title
     // A relation named after the element it reaches (an import of KingdomDto) says nothing twice.
     if (name && name !== tree.els[o].title && name !== 'uses') row.names.add(name)
@@ -42,7 +43,7 @@ export function relationRows(tree: Tree, i: number, rels: Rel[]): RelationRow[] 
     byOther.set(o, row)
   }
   return [...byOther]
-    .map(([other, r]) => ({ other, names: [...r.names], evidence: [...r.evidence.values()] }))
+    .map(([other, r]) => ({ other, names: [...r.names], evidence: [...r.evidence.values()], seen: r.seen }))
     .sort((a, b) => Number(b.evidence.length > 0) - Number(a.evidence.length > 0) || b.names.length - a.names.length || tree.els[a.other].title.localeCompare(tree.els[b.other].title))
 }
 
@@ -140,6 +141,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       b.append(el('i', '', cls === 'out' ? '→' : '←'), el('b', '', tree.els[r.other].title))
       if (r.names.length) b.append(el('span', '', r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ')))
       b.title = `${title === 'Uses' ? 'Uses' : 'Used by'} ${tree.els[r.other].title}: go there`
+      if (r.seen) b.append(el('em', 'd-seen-tag', `seen ×${r.seen}`))
       b.onclick = () => act.go(r.other)
       li.append(b)
       if (r.evidence.length) {
@@ -188,6 +190,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     ...(path.length ? [crumbs] : []),
     ...fileBox,
     ...(rank ? [el('p', 'd-rank', rank)] : []),
+    ...seenLines(tree, i),
     ...(tags.childElementCount ? [tags] : []),
     ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
     // What the scanner saw here but could not follow: the map has no arrow for it.
@@ -315,6 +318,8 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
       li.append(pair)
       const why = el('div', 'd-why')
       why.append(el('span', 'd-kindtag', KIND_WORD[kind]))
+      if (tree.relSeen[k]) why.append(el('em', 'd-seen-tag', `seen in tests ×${tree.relSeen[k]}`))
+      else if (tree.traced && kind === 'runtime') why.append(el('em', 'd-seen-tag none', 'not seen in tests'))
       if (tree.relTitles[k]) why.append(el('span', 'd-names', tree.relTitles[k]))
       const path = tree.els[a].metadata?.path
       // The lines that make it: a use's own lines in its file, a runtime call's cited lines.
@@ -341,4 +346,26 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   }
   panel.replaceChildren(head, el('p', 'd-rank', summary || 'nothing on this map'), ...section(s, t), ...section(t, s), el('p', 'd-hint', 'Esc puts the arrow down.'))
   panel.hidden = false
+}
+
+/**
+ * What the project's own end-to-end tests showed of element i, on a traced map: an app's endpoint
+ * coverage, an endpoint's requests (statuses, tables) or that no test called it, a file that ran,
+ * the tables seen in a store. On an untraced map, nothing: absence there means not looked at.
+ */
+export function seenLines(tree: Tree, i: number): HTMLElement[] {
+  const t = tree.traced, m = tree.els[i].metadata
+  if (!t || !m) return []
+  const out: string[] = []
+  let cls = 'd-seen'
+  if (m.seen?.includes('/')) out.push(`Seen in tests: ${m.seen.replace('/', ' of ')} endpoints`)
+  else if (m.method && m.seen === '0') { out.push('Not seen in tests: no test called it, so its path is inferred from code only'); cls = 'd-seen none' }
+  else if (m.method && m.seen) out.push(`Seen in tests: ${m.seen} request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses}` : ''}`)
+  else if (m.seen && m.seen !== '0') out.push(`Ran in tests: ${m.seen} time${m.seen === '1' ? '' : 's'}`)
+  if (m.tables) out.push(`Tables: ${m.tables}`)
+  if (!out.length) return []
+  const p = el('p', cls)
+  p.append(...out.flatMap((s, k) => (k ? [el('br'), s] : [s])))
+  p.title = `From ${t.command}, run ${new Date(t.at).toLocaleString()}`
+  return [p]
 }

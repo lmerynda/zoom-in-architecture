@@ -1,7 +1,8 @@
 // Black-box checks that the map never gives a wrong answer: what the details panel lists is
 // what the map shows, Back returns to the place before, and opening code lands on the card and
 // line asked for. Runs against uploaded maps (knights-of-darkness, petclinic); a map that is not
-// uploaded here is a failure, not a skip.
+// uploaded here is a failure, not a skip. knights-of-darkness is expected published with --trace (zoom trace of its
+// acceptance tests), as the map-repo skill does.
 // usage: node scripts/answers-test.mjs [outDir]   (dev server running)
 import puppeteer from 'puppeteer-core'
 import { mkdirSync } from 'node:fs'
@@ -155,7 +156,7 @@ try {
   await page.evaluate(() => { localStorage.removeItem('zoom.showTypes') })
   await open('model=knights-of-darkness&in=backend')
   const legend = await page.evaluate(() => [...document.querySelectorAll('#arrows span, #arrows button')].map(e => e.textContent))
-  check('the arrow legend names runtime calls, code uses and type-only imports', ['uses in code', 'calls at runtime', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
+  check('the arrow legend names code uses, calls seen and not seen in tests, and type-only imports', ['uses in code', 'calls seen in tests', 'calls not seen in tests', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
   const types = async () => page.evaluate(() => window.__spike.tree.relKind.filter(k => k === 'types').length)
   const hidden = await types()
   await page.click('#arrows button')

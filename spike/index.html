@@ -136,6 +136,11 @@
     .d-names { color: var(--text); }
     .d-why .cite { background: none; border: 0; padding: 0; font: 11px ui-monospace, Consolas, monospace; color: #fde68a; cursor: pointer; text-decoration: underline dotted; }
     .d-why .cite:hover { color: #fff; }
+    /* What the project's own tests showed: green when seen, amber when not. */
+    #details p.d-seen { margin: 8px 0 0; padding-left: 8px; border-left: 2px solid rgba(74, 222, 128, 0.6); color: #bbf7d0; font-size: 12px; line-height: 1.5; }
+    #details p.d-seen.none { border-left-color: rgba(251, 191, 36, 0.6); color: #fde68a; }
+    .d-seen-tag { font-style: normal; font-size: 10px; color: #86efac; flex: none; }
+    .d-seen-tag.none { color: #fde68a; }
     .d-none { color: var(--dim); font-size: 11px; padding: 2px 6px; }
     #code { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
@@ -195,6 +200,7 @@
     #arrows span[class^="a-"]:not(.a-head)::before { content: ''; display: inline-block; width: 22px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid #8193bd; }
     #arrows .a-runtime::before { border-top-color: #c4b5fd !important; }
     #arrows .a-types::before { border-top-style: dashed !important; }
+    #arrows .a-unseen::before { border-top-color: #c4b5fd !important; border-top-style: dashed !important; }
     #arrows button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     body.reading #arrows { display: none; }
     @media (max-width: 1099px) { #arrows { bottom: 58px; } body:has(#details:not([hidden]):not(.outline)) #arrows { display: none; } }

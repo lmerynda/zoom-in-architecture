@@ -660,7 +660,7 @@ export class Renderer {
     // and a part that talks to everything both rank high, and the last number tells them apart.
     const rk = this.ranking, sibs = this.tree.children[this.tree.parent[i]]?.length - 1
     const place = rk ? `${rankBadge ? '' : `#${rk.rank[i]} · `}${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}${sibs > 0 ? ` · ${rk.partners[i]} of ${sibs} siblings` : ''}` : ''
-    const subText = [place, kind, el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
+    const subText = [place, kind, seenText(el, !!this.tree.traced), el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
     const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity
@@ -746,15 +746,15 @@ export class Renderer {
 
   /** Relations crossing element i's boundary: from it or anything inside it, to the outside and back. */
   relationsOf(i: number) {
-    type Rel = { other: number; title: string; evidence?: EvidenceJson[] }
+    type Rel = { other: number; title: string; evidence?: EvidenceJson[]; seen: number }
     const out: Rel[] = [], inn: Rel[] = []
     const r = this.tree.rels
     const inside = (n: number) => n === i || this.tree.isAncestor(i, n)
     for (let k = 0; k < r.length; k += 2) {
-      const title = this.tree.relTitles[k >> 1] || 'uses', evidence = this.tree.relEvidence[k >> 1]
+      const title = this.tree.relTitles[k >> 1] || 'uses', evidence = this.tree.relEvidence[k >> 1], seen = this.tree.relSeen[k >> 1]
       const si = inside(r[k]), ti = inside(r[k + 1])
-      if (si && !ti) out.push({ other: r[k + 1], title, evidence })
-      if (ti && !si) inn.push({ other: r[k], title, evidence })
+      if (si && !ti) out.push({ other: r[k + 1], title, evidence, seen })
+      if (ti && !si) inn.push({ other: r[k], title, evidence, seen })
     }
     return { out, inn }
   }
@@ -826,8 +826,9 @@ export class Renderer {
       this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
-      // A type-only import is drawn dashed: coupling at compile time, not use.
-      if (e.typesOnly) strokes[kind][tier].push(...dashes(clipped))
+      // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
+      // project's own tests, a runtime call no test made (inferred from code only).
+      if (e.typesOnly || (e.runtime && this.tree.traced && !e.seen)) strokes[kind][tier].push(...dashes(clipped))
       else strokes[kind][tier].push(clipped)
       st.edges++
       const n = pts.length
@@ -1088,6 +1089,18 @@ export class Renderer {
     this.chipLayer.addChild(bg, text)
     return { bg, text }
   }
+}
+
+/**
+ * What the project's own tests showed of a card, on a traced map: an app's endpoints seen, an
+ * endpoint's requests (or that none came), a file or step that ran. Nothing on an untraced map.
+ */
+export function seenText(el: { metadata?: Record<string, string> }, traced: boolean): string {
+  const s = el.metadata?.seen
+  if (!traced || s == null) return ''
+  if (s.includes('/')) return `${s} endpoints seen in tests`
+  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `seen in tests ×${s}`
+  return s === '0' ? '' : `ran in tests ×${s}`
 }
 
 /** 1234 → 1.2k, for badges. */

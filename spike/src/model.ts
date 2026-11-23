@@ -35,6 +35,8 @@ export interface RelationJson {
   kind?: RelKind
   /** Lines of the source's file that name what it uses there: why the relation exists. */
   lines?: number[]
+  /** How many times the project's own end-to-end tests made this call (zoom trace); absent: not seen, or not traced. */
+  seen?: number
 }
 
 export type RelKind = 'code' | 'types' | 'runtime'
@@ -46,7 +48,7 @@ export interface ModelJson {
   elements: ElementJson[]
   relations: RelationJson[]
   /** What an uploaded map was built from: the project's commit, whether it had uncommitted changes, and when. */
-  published?: { commit?: string; dirty?: boolean; at: string }
+  published?: { commit?: string; dirty?: boolean; at: string; traced?: { at: string; command: string; exit: number; seen: number; total: number } }
 }
 
 /** A sibling-level edge: relations between descendants of two children of one container, rolled up. */
@@ -91,6 +93,10 @@ export class Tree {
   /** Per relation: its kind, and the lines of its source file that make it (empty for runtime links). */
   readonly relKind: RelKind[]
   readonly relLines: number[][]
+  /** Per relation: how often the project's own tests made it; 0 when not seen. */
+  readonly relSeen: number[]
+  /** The run of the project's own tests this map was traced with, if it was: then unseen means not seen, not unknown. */
+  readonly traced: NonNullable<ModelJson['published']>['traced'] | null
 
   /** `types`: keep type-only imports too (off: they are left out, as compile-time coupling only). */
   constructor(model: ModelJson, { types = false }: { types?: boolean } = {}) {
@@ -122,6 +128,8 @@ export class Tree {
     this.relEvidence = []
     this.relKind = []
     this.relLines = []
+    this.relSeen = []
+    this.traced = model.published?.traced ?? null
     for (const r of model.relations) {
       const kind: RelKind = r.kind ?? (r.evidence ? 'runtime' : 'code')
       if (kind === 'types' && !types) continue
@@ -133,6 +141,7 @@ export class Tree {
       this.relEvidence.push(r.evidence)
       this.relKind.push(kind)
       this.relLines.push(r.lines ?? [])
+      this.relSeen.push(r.seen ?? 0)
     }
     this.rels = Int32Array.from(pairs)
   }
@@ -209,6 +218,8 @@ export interface ShownEdge {
   /** Some folded relation is a call at runtime; every one is a type-only import. */
   runtime: boolean
   typesOnly: boolean
+  /** Some folded relation was seen in the project's own tests. */
+  seen: boolean
 }
 
 /**
@@ -226,11 +237,12 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: true }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: true, seen: false }))
     e.count++
     const kind = tree.relKind[k >> 1]
     if (kind === 'runtime') e.runtime = true
     if (kind !== 'types') e.typesOnly = false
+    if (tree.relSeen[k >> 1] > 0) e.seen = true
     if (e.s !== s) e.both = true
     if (inFocus) {
       const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])
