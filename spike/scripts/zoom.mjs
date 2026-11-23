@@ -6,12 +6,15 @@
 //                                                         (--folders: an overview by folder; --under: one part)
 //   node scripts/zoom.mjs check <repo> <map.json> [--uncited]   what is wrong or missing in a map (--uncited: marked lines no link cites)
 //   node scripts/zoom.mjs audit <repo> <map.json>         files whose users sit mostly in a sibling node
-//   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>] [--to <url>] [--watch]
+//   node scripts/zoom.mjs publish <repo> <map.json> [--name <name>] [--to <url>] [--watch] [--trace <file>]
 //                                                         check, then upload the map, its models and the shown files'
 //                                                         source to the viewer (default http://localhost:5180, or ZOOM_URL);
 //                                                         --watch uploads again whenever the repo's code changes
 //   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from;
 //                                                         on stderr, the commit it was built from
+//   node scripts/zoom.mjs trace <repo> [--out <file>] -- <command…>   run the project's own end-to-end tests with
+//                                                         tracing attached (JVM servers, via JAVA_TOOL_OPTIONS) and write
+//                                                         what they executed, per endpoint; publish --trace <file> adds it
 //   node scripts/zoom.mjs follow <repo> <map.json> [--since <rev>]   move evidence whose line moved since <rev>
 //                                                         (default HEAD) to the one line that reads as it did; rewrites the map
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
@@ -23,6 +26,8 @@ import { join, posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, toName } from './map.mjs'
+import { observe, runTraced } from './trace.mjs'
+import { tmpdir } from 'node:os'
 
 /** Files whose change can change the map: code, project manifests and server-side views. */
 const SOURCE = /\.(cs|rs|java|kt|go|py|tsx?|mts|cts|jsx?|mjs|cjs|vue|svelte|csproj|html|cshtml|razor|jinja2?|j2)$|(^|[/\\])(Cargo\.toml|package\.json|tsconfig[^/\\]*\.json|pom\.xml|build\.gradle(\.kts)?|go\.mod|pyproject\.toml|setup\.py)$/
@@ -133,10 +138,13 @@ const report = r => {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const args = process.argv.slice(2)
+  const argv = process.argv.slice(2), dash = argv.indexOf('--')
+  // After --, the project's own command, untouched by the options below.
+  const command = dash >= 0 ? argv.slice(dash + 1) : []
+  const args = dash >= 0 ? argv.slice(0, dash) : argv
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); const since = opt('--since'); Object.assign(args, { name, under, to, json, folders, uncited, watching, since }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); const since = opt('--since'); const out = opt('--out'); const trace = opt('--trace'); Object.assign(args, { name, under, to, json, folders, uncited, watching, since, out, trace }); return args })()
   const service = args.to ?? process.env.ZOOM_URL ?? 'http://localhost:5180'
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
@@ -162,7 +170,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       if (r.errors.length) process.exitCode = 1
     } else if (cmd === 'publish' && a && b) {
       const name = args.name ?? toName(a)
-      const r = bundle(a, readMap(b), { name })
+      const observed = args.trace ? JSON.parse(readFileSync(args.trace, 'utf8')) : null
+      const r = bundle(a, readMap(b), { name, observed })
       report(r)
       if (!r.bundle) { console.log('not published: fix the errors above'); process.exitCode = 1 }
       else {
@@ -177,7 +186,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
           if (running) { again = true; return }
           running = true
           try {
-            const next = bundle(a, readMap(b), { name, loose: true })
+            const next = bundle(a, readMap(b), { name, loose: true, observed })
             if (!next.bundle) console.log(`not uploaded: ${next.errors[0]}`)
             else { await upload(next.bundle, service); console.log(`${new Date().toLocaleTimeString()} uploaded "${name}" again (${next.stats.files} files${next.warnings.length ? `, ${next.warnings.length} warnings` : ''})`) }
           } catch (e) { console.log(`not uploaded: ${e.message}`) }
@@ -188,6 +197,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         watch(b, () => { clearTimeout(timer); timer = setTimeout(send, 400) })
         console.log(`watching ${a}; Ctrl+C stops`)
       }
+    } else if (cmd === 'trace' && a && command.length) {
+      // The project's tests run as the project runs them; only the tracing is added.
+      const t = await runTraced(a, command, { log: s => process.stderr.write(s) })
+      const o = { at: new Date().toISOString(), command: command.join(' '), exit: t.code, ms: t.ms, ...observe(t.spans) }
+      const file = args.out ?? join(tmpdir(), `zoom-trace-${args.name ?? toName(a)}.json`)
+      writeFileSync(file, JSON.stringify(o, null, 1))
+      console.log(`traced ${o.command} (exit ${t.code}, ${Math.round(t.ms / 1000)} s): ${o.spans} spans, ${o.endpoints.length} endpoints seen, ${o.endpoints.reduce((n, e) => n + e.count, 0)} requests; wrote ${file}`)
+      if (!o.spans) { console.log('no spans arrived: is the server a JVM, and does the command start it?'); process.exitCode = 1 }
     } else if (cmd === 'audit' && a && b) {
       const found = auditPlacement(buildGraph(a), readMap(b))
       console.log(`${found.length} files used mostly from a sibling node (a feature's own interfaces can stay; the rest may move):`)

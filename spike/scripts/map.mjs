@@ -8,6 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
 import { buildRequests } from './requests.mjs'
+import { markObserved } from './observed.mjs'
 import { isName } from './store.mjs'
 
 /** Node kinds a map may use, and how the viewer draws them. */
@@ -305,7 +306,7 @@ export function followEvidence(repo, map, before, marked = () => false) {
  * Requests view when the code has endpoints, and the source of every file the model shows, so
  * the service never needs the repository. `bundle` is null when the map has errors.
  */
-export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
+export function bundle(repo, map, { name = toName(repo), loose = false, observed = null } = {}) {
   // The viewer serves models/<name>.json only for plain names.
   if (!isName(name)) throw new Error(`"${name}" is not a model name: use letters, digits, ".", "-" and "_"`)
   const t0 = Date.now()
@@ -318,10 +319,12 @@ export function bundle(repo, map, { name = toName(repo), loose = false } = {}) {
     if (statSync(file).size <= MAX_SOURCE) sources[p] = readFileSync(file, 'utf8')
   }
   const requests = buildRequests(graph, map, built.model)
+  // What the project's own end-to-end tests ran (zoom trace): seen versus only inferred.
+  const coverage = observed ? markObserved(built.model, requests, observed) : null
   const ms = Date.now() - t0
   return {
     name, ...built, ms,
-    bundle: { name, map, model: { ...built.model, buildMs: ms }, requests: requests && { ...requests, buildMs: ms }, sources, published: { ...revision(graph.repo), at: new Date().toISOString() } },
+    bundle: { name, map, model: { ...built.model, buildMs: ms }, requests: requests && { ...requests, buildMs: ms }, sources, published: { ...revision(graph.repo), at: new Date().toISOString(), ...(observed ? { traced: { at: observed.at, command: observed.command, exit: observed.exit, seen: coverage.seen, total: coverage.total } } : {}) } },
   }
 }
 
