@@ -4,3 +4,4 @@ public/models/
 shots/
 # Local maps of other codebases (scripts/zoom.mjs publish) and their configs.
 imports/
+.cache/
