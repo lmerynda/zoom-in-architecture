@@ -178,9 +178,11 @@ export function installControls(c: Ctx) {
     { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
   ]
-  // A container found by search is framed, to look into; a leaf is selected, to read about.
+  // A container found by search is framed, to look into, and the selection put down, so the panel
+  // and the address name what was found, not what was selected before (Back brings that back); a
+  // leaf is selected, to read about.
   const palette = new Palette(tree, commands, {
-    go: i => { if (tree.children[i].length) { go(i); remember(i) } else goSelect(i) },
+    go: i => { if (tree.children[i].length) { leave(); c.select(-1); c.fit(i); remember(i) } else goSelect(i) },
     feature,
     recent: () => recent.map(id => tree.byId.get(id) ?? -1),
   })

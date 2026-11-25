@@ -31,6 +31,8 @@ export class Reader {
   /** Called with the line at the top as the reader scrolls, and with 0 when it closes. */
   onLine: (line: number) => void = () => {}
   onClose: () => void = () => {}
+  /** The "← back to <parent>" button: after closing, go to the card it names. */
+  onBack: () => void = () => {}
 
   constructor() {
     this.root.setAttribute('role', 'dialog')
@@ -41,7 +43,7 @@ export class Reader {
     const close = el('button', 'reader-close', 'Close')
     close.title = 'Close the code (Esc)'
     close.onclick = () => this.close()
-    this.backBtn.onclick = () => this.close()
+    this.backBtn.onclick = () => { this.close(); this.onBack() }
     this.copy.onclick = () => {
       void navigator.clipboard?.writeText(`${this.path}:${this.line}`).then(() => { this.copy.textContent = 'Copied'; setTimeout(() => { this.copy.textContent = 'Copy path:line' }, 1200) }, () => {})
     }

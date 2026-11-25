@@ -295,6 +295,8 @@ async function main() {
     const src = await code.prepared(i)
     reading = { id: tree.els[i].id, line }
     document.body.classList.add('reading')
+    // "← back to POST /market/{id}/buy" goes to the endpoint it names, selected; Close and Esc stay on the file.
+    reader.onBack = () => { const p = tree.parent[i]; if (p > 0) controls.goSelect(p) }
     reader.open(path, tree.els[i].title, tree.els[tree.parent[i]].title, line, src, () => void openCode(i, line))
   }
   const actions: PanelActions = {

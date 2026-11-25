@@ -177,6 +177,41 @@ try {
   await landed()
   const whole = await page.evaluate(() => window.__spike.renderer.breadcrumb().length === 0 && window.__spike.last().inView > 0)
   check('empty space shows Fit whole map, and it works', empty && whole, JSON.stringify({ empty, whole }))
+
+  // Search to a part puts the old selection down: the panel, the address and a reload all name the
+  // part found, and Back brings the old selection back.
+  await open('model=knights-of-darkness&at=devtools')
+  await landed()
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('/')
+  await page.keyboard.type('War')
+  await sleep(300)
+  const warRow = await page.evaluate(() => document.querySelector('.palette .row.on b')?.textContent)
+  await page.keyboard.press('Enter')
+  await landed()
+  await sleep(400)
+  const foundQ = await page.evaluate(() => ({ at: new URLSearchParams(location.search).get('at'), in: new URLSearchParams(location.search).get('in'), panel: document.querySelector('#details h2')?.textContent }))
+  check('search to a part puts the old selection down: panel and address name the part found', warRow === 'War' && foundQ.at === null && foundQ.in === 'backend.military' && foundQ.panel === 'War', JSON.stringify({ warRow, ...foundQ }))
+  await page.reload({ waitUntil: 'load' })
+  await ready()
+  await landed()
+  const reopened = await page.evaluate(() => ({ crumb: window.__spike.renderer.breadcrumb().map(i => window.__spike.tree.els[i].id).at(-1), selected: window.__spike.renderer.selected }))
+  check('a reload reopens the part found, not the old selection', reopened.crumb === 'backend.military' && reopened.selected <= 0, JSON.stringify(reopened))
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('Backspace')
+  await landed()
+  await sleep(300)
+  check('Back brings the old selection back', await page.evaluate(() => new URLSearchParams(location.search).get('at') === 'devtools'))
+
+  // The reader's "← back to <parent>" goes to the card it names, selected; Close stays on the file.
+  await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+  await page.waitForFunction(() => !document.querySelector('.reader').hidden, { timeout: 15000 })
+  const backText = await page.evaluate(() => document.querySelector('.reader-back').textContent)
+  await page.click('.reader-back')
+  await landed()
+  await sleep(300)
+  const backAt = await page.evaluate(() => ({ reader: document.querySelector('.reader').hidden, at: new URLSearchParams(location.search).get('at'), title: document.querySelector('#details h2')?.textContent }))
+  check('"← back to <parent>" closes the reader and selects the parent it names', backAt.reader && backText === `← back to ${backAt.title}` && backAt.at !== null && !backAt.at.endsWith('marketController'), JSON.stringify({ backText, ...backAt }))
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)
