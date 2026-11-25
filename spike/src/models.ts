@@ -50,12 +50,13 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
   button.textContent = current === 'synthetic' ? `Synthetic · ${n === '10000' ? '10k' : '1k'}` : open?.title ?? current
   button.title = 'Open another model'
   menu.id = 'model-menu'
-  button.setAttribute('aria-haspopup', 'true')
   button.setAttribute('aria-controls', menu.id)
   button.setAttribute('aria-expanded', 'false')
   // The menu's state is on the button for a screen reader, however the menu was closed.
   new MutationObserver(() => button.setAttribute('aria-expanded', String(!menu.hidden))).observe(menu, { attributes: true, attributeFilter: ['hidden'] })
-  button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) menu.querySelector<HTMLElement>('a.on, a')?.focus() }
+  button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) (menu.querySelector<HTMLElement>('a.on') ?? menu.querySelector<HTMLElement>('a'))?.focus() }
+  // A list of links shown by a button (a disclosure): Tab past its last link, or Shift+Tab out, closes it.
+  nav.addEventListener('focusout', e => { if (!nav.contains(e.relatedTarget as Node | null)) menu.hidden = true })
   nav.replaceChildren(button, menu)
   return open
 }

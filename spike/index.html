@@ -94,7 +94,7 @@
     .d-outline ul { list-style: none; margin: 0; padding: 0; }
     .d-outline .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
     .d-outline .d-rel:hover, .d-outline .d-rel:focus-visible { background: rgba(251, 191, 36, 0.12); }
-    .d-outline .d-rel:focus-visible, .d-rels button:focus-visible, .d-path button:focus-visible { outline-offset: -2px; }
+    .d-outline .d-rel:focus-visible, .d-rels button:focus-visible, .d-path button:focus-visible, #crumbs button:focus-visible { outline-offset: -2px; }
     .d-outline .d-rel span { color: var(--dim); font-size: 11px; }
     /* Wide: a column of its own beside the map, the minimap at its foot. */
     @media (min-width: 1100px) {
@@ -326,7 +326,8 @@
     .palette input { width: 100%; background: none; border: 0; border-bottom: 1px solid #1e293b; color: #f1f5f9; font: 17px 'Segoe UI', sans-serif; padding: 16px 18px; outline: none; }
     .palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
     .palette .row { display: grid; grid-template-columns: 86px auto 1fr; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
-    .palette .row.on { background: rgba(251, 191, 36, 0.14); }
+    .palette .row.on { background: rgba(251, 191, 36, 0.14); box-shadow: inset 3px 0 #fbbf24; }
+    .palette input:focus-visible { box-shadow: inset 0 -2px #fbbf24; }
     /* On the amber highlight the path needs a lighter grey to keep 4.5:1. */
     .palette .row.on .sub { color: #a7b4c8; }
     .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }

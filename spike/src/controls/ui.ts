@@ -58,6 +58,7 @@ export class Palette {
   private items: Item[] = []
   private active = 0
   private opener: HTMLElement | null = null
+  private statusTimer = 0
   isOpen = false
 
   constructor(public tree: Tree, private commands: () => Command[], private act: SearchActions) {
@@ -174,7 +175,9 @@ export class Palette {
         row.setAttribute('aria-selected', String(k++ === 0))
         row.setAttribute('aria-label', `${it.label}, ${it.kind}${it.sub ? `, ${it.sub}` : ''}`)
         row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
-        row.onmousedown = e => { e.preventDefault(); this.close(true); it.run() }
+        // Mousedown keeps focus in the box; the click runs it, as assistive technology sends one.
+        row.onmousedown = e => e.preventDefault()
+        row.onclick = () => { this.close(true); it.run() }
         return row
       }),
     ]))
@@ -183,7 +186,10 @@ export class Palette {
     const first = this.list.querySelector('.row')
     if (first) this.input.setAttribute('aria-activedescendant', first.id)
     else this.input.removeAttribute('aria-activedescendant')
-    this.status.textContent = note ? note.textContent ?? '' : `${this.items.length} result${this.items.length === 1 ? '' : 's'}`
+    // The count is said once typing pauses, not at every key.
+    const said = note ? note.textContent ?? '' : `${this.items.length} result${this.items.length === 1 ? '' : 's'}`
+    clearTimeout(this.statusTimer)
+    this.statusTimer = window.setTimeout(() => { if (this.status.textContent !== said) this.status.textContent = said }, 400)
   }
 }
 
@@ -216,6 +222,7 @@ export class Menu {
       b.onclick = () => { this.close(); it.run() }
       return b
     }))
+    if (this.root.hidden) this.back = document.activeElement instanceof HTMLElement ? document.activeElement : null
     this.root.hidden = false
     const r = this.root.getBoundingClientRect()
     this.root.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`
@@ -223,7 +230,15 @@ export class Menu {
     this.root.querySelector('button')?.focus()
   }
 
-  close() { this.root.hidden = true }
+  /** Where focus was when the menu opened: Esc gives it back there, not to the page. */
+  private back: HTMLElement | null = null
+  close() {
+    if (this.root.hidden) return
+    const focusIn = this.root.contains(document.activeElement)
+    this.root.hidden = true
+    if (focusIn && this.back?.isConnected) this.back.focus({ preventScroll: true })
+    this.back = null
+  }
 }
 
 /**

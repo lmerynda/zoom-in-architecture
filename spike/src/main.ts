@@ -328,15 +328,27 @@ async function main() {
     if (focused) [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)?.focus()
   }
   const select = (i: number) => {
-    // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page.
+    // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page,
+    // and back to the card's row in the outline when the selection is put down.
     const inPanel = details.contains(document.activeElement)
+    const was = renderer.selected
     renderer.selected = i > 0 ? i : -1
     renderer.edge = null
     showDetails()
-    if (i <= 0) return
+    if (i <= 0) {
+      if (was > 0) $('announce').textContent = 'Selection cleared'
+      if (inPanel) {
+        // Its row when the outline lists it; else the outline's heading, so focus stays in the panel.
+        const row = [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.querySelector('b')?.textContent === tree.els[was]?.title)
+        const heading = details.querySelector<HTMLElement>('h2')
+        if (heading) heading.tabIndex = -1
+        ;(row ?? heading ?? app.canvas).focus()
+      }
+      return
+    }
     const heading = details.querySelector<HTMLElement>('h2')
     if (heading) heading.tabIndex = -1
-    if (inPanel) heading?.focus({ preventScroll: true })
+    if (inPanel) { heading?.focus({ preventScroll: true }); heading?.scrollIntoView({ block: 'nearest' }) }
     // A screen reader hears what was selected and how connected it is.
     $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }

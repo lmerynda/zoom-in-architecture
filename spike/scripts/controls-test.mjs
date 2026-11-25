@@ -226,12 +226,31 @@ try {
   const combo = await page.evaluate(() => {
     const i = document.querySelector('.palette input'), on = document.querySelector('.palette .row.on')
     const sub = on?.querySelector('.sub')
-    return { role: i.getAttribute('role'), expanded: i.getAttribute('aria-expanded'), list: document.getElementById(i.getAttribute('aria-controls'))?.getAttribute('role'), active: i.getAttribute('aria-activedescendant') === on?.id && on?.getAttribute('role') === 'option' && on?.getAttribute('aria-selected') === 'true', second: [...document.querySelectorAll('.palette .row')].indexOf(on) === 1, status: document.querySelector('.palette [role=status]')?.textContent, subColor: sub && getComputedStyle(sub).color }
+    // The path's contrast on the highlight, composited over the palette as drawn.
+    const rgba = c => { const m = c.match(/[\d.]+/g).map(Number); return [m[0], m[1], m[2], m[3] ?? 1] }
+    const over = (fg, bg) => fg.slice(0, 3).map((v, k) => v * fg[3] + bg[k] * (1 - fg[3]))
+    const lum = ([r, g, b]) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+    const box = over(rgba(getComputedStyle(document.querySelector('.palette')).backgroundColor), [4, 6, 12]), row = over(rgba(getComputedStyle(on).backgroundColor), box), text = over(rgba(getComputedStyle(sub).color), row)
+    // The highlight itself is marked by an amber edge, at 3:1 against the row.
+    const edge = getComputedStyle(on).boxShadow.match(/rgba?\([^)]*\)/)?.[0]
+    return { role: i.getAttribute('role'), expanded: i.getAttribute('aria-expanded'), list: document.getElementById(i.getAttribute('aria-controls'))?.getAttribute('role'), active: i.getAttribute('aria-activedescendant') === on?.id && on?.getAttribute('role') === 'option' && on?.getAttribute('aria-selected') === 'true', second: [...document.querySelectorAll('.palette .row')].indexOf(on) === 1, subRatio: ratio(text, row), edgeRatio: edge ? ratio(rgba(edge), row) : 0 }
   })
+  await sleep(500)
+  combo.status = await page.evaluate(() => document.querySelector('.palette [role=status]')?.textContent)
   check('search is a combobox over a listbox, its highlight the active option, its count announced', combo.role === 'combobox' && combo.expanded === 'true' && combo.list === 'listbox' && combo.active && combo.second && /\d+ results?/.test(combo.status), JSON.stringify(combo))
-  check('the highlighted result\'s path stays at 4.5:1 on the amber highlight', combo.subColor === 'rgb(167, 180, 200)', combo.subColor)
+  check('the highlighted result path reads at 4.5:1, and the highlight has a 3:1 edge', combo.subRatio >= 4.5 && combo.edgeRatio >= 3, JSON.stringify(combo))
   await page.keyboard.press('Escape')
   check('Esc gives focus back to the map it was opened from', await page.evaluate(() => document.activeElement === document.querySelector('#stage canvas')))
+  // Assistive technology activates an option with a click, not a mousedown.
+  await page.click('#travel')
+  await page.keyboard.type('Market and merchant bots')
+  await sleep(300)
+  await page.evaluate(() => document.querySelector('.palette .row.on').click())
+  await sleep(300)
+  const ran = await page.evaluate(() => ({ open: !document.querySelector('.palette').hidden, focus: document.activeElement?.id }))
+  check('a click on an option runs it and gives focus back to the Search button', !ran.open && ran.focus === 'travel', JSON.stringify(ran))
+  await open('model=knights-of-darkness')
 
   // One visible focus ring everywhere, and selecting from the outline keeps focus in the panel.
   await page.evaluate(() => document.querySelector('#details .d-outline button').focus())
@@ -242,6 +261,10 @@ try {
   await sleep(600)
   const after = await page.evaluate(() => ({ focus: document.activeElement?.tagName, inPanel: document.getElementById('details').contains(document.activeElement), said: document.getElementById('announce').textContent }))
   check('selecting from the outline moves focus to the new heading and announces it', after.focus === 'H2' && after.inPanel && /^Selected .+: uses \d+, used by \d+$/.test(after.said), JSON.stringify(after))
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  const putDown = await page.evaluate(() => ({ inPanel: document.getElementById('details').contains(document.activeElement), on: document.activeElement?.tagName, said: document.getElementById('announce').textContent }))
+  check('Esc puts the selection down with focus kept in the panel, and says so', putDown.inPanel && putDown.said === 'Selection cleared', JSON.stringify(putDown))
 
   // State in words: the open view, and whether a menu is open.
   const state = await page.evaluate(async () => {
@@ -255,6 +278,23 @@ try {
     document.body.click(); await new Promise(r => setTimeout(r, 50))
     return { current, before, lensOpen, modelOpen, after: [lens.getAttribute('aria-expanded'), model.getAttribute('aria-expanded')] }
   })
+  // Menus: the map list opens on the open map, Tab out of either menu closes it, and the card menu gives focus back.
+  await page.click('.model-current')
+  const onOpen = await page.evaluate(() => document.activeElement?.classList.contains('on'))
+  await page.evaluate(() => [...document.querySelectorAll('.model-menu a')].at(-1).focus())
+  await page.keyboard.press('Tab')
+  const modelClosed = await page.evaluate(() => document.querySelector('.model-menu').hidden)
+  await page.click('.lens-current')
+  for (let k = 0; k < 8; k++) await page.keyboard.press('Tab')
+  const lensClosed = await page.evaluate(() => document.querySelector('.lens-menu').hidden && document.querySelector('.lens-current').getAttribute('aria-expanded') === 'false')
+  await focusMap()
+  await page.evaluate(() => window.__spike.select(window.__spike.id('backend')))
+  await page.keyboard.down('Shift'); await page.keyboard.press('F10'); await page.keyboard.up('Shift')
+  await sleep(200)
+  const menuOpen = await page.evaluate(() => !document.querySelector('.menu').hidden)
+  await page.keyboard.press('Escape')
+  const menuBack = await page.evaluate(() => document.activeElement === document.querySelector('#stage canvas'))
+  check('the map list opens on the open map and Tab out closes it; Colour by closes on Tab out; the card menu gives focus back', onOpen && modelClosed && lensClosed && menuOpen && menuBack, JSON.stringify({ onOpen, modelClosed, lensClosed, menuOpen, menuBack }))
   check('the open view is aria-current and menus say whether they are open', state.current.join() === 'Architecture' && state.before.join() === 'false,false' && state.lensOpen === 'true' && state.modelOpen === 'true' && state.after.join() === 'false,false', JSON.stringify(state))
 
   // A phone, and 200% zoom (800 CSS px): the bar wraps and every control in it stays on screen and

@@ -45,6 +45,8 @@ export class LensBar {
       if (e.key === 'Escape') { this.menu.hidden = true; this.button.focus(); e.stopPropagation() }
     })
     addEventListener('click', e => { if (!this.root.contains(e.target as Node)) this.menu.hidden = true })
+    // Tab or Shift+Tab out of the menu closes it, so it never stays open behind the focus.
+    this.root.addEventListener('focusout', e => { if (!this.root.contains(e.relatedTarget as Node | null)) this.menu.hidden = true })
     const ramp = el('div', 'lens-ramp')
     ramp.style.background = `linear-gradient(90deg, ${[0, 0.2, 0.4, 0.6, 0.8, 1].map(v => hex(heatColor(v))).join(', ')})`
     this.legend.append(el('span', 'lens-label'), el('span', 'lens-lo'), ramp, el('span', 'lens-hi'), el('span', 'lens-range'))
