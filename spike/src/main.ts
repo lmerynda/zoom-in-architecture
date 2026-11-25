@@ -188,7 +188,9 @@ async function main() {
     const top = box('top'), panel = box('details'), mini = box('minimap')
     const t = (top?.bottom ?? 0) + 8
     // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
-    const sheet = panel && panel.top > H / 2 ? panel : null
+    // The outline bar opens while the pointer or focus is on it: it frames as the bar it is at rest,
+    // or a card searched to while hovering it would be framed above the centre that names the place.
+    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('outline') ? { top: H - 46 } : panel) : null
     const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = sheet ? sheet.top - 12 : H - 28
     const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]
@@ -296,7 +298,13 @@ async function main() {
     reading = { id: tree.els[i].id, line }
     document.body.classList.add('reading')
     // "← back to POST /market/{id}/buy" goes to the endpoint it names, selected; Close and Esc stay on the file.
-    reader.onBack = () => { const p = tree.parent[i]; if (p > 0) controls.goSelect(p) }
+    // Resolved by id when pressed: a live update may have renumbered the cards meanwhile.
+    const fileId = tree.els[i].id
+    reader.onBack = () => {
+      const f = tree.byId.get(fileId) ?? -1, p = f > 0 ? tree.parent[f] : -1
+      if (p > 0) controls.goSelect(p)
+      else if (p === 0) { select(-1); fit(0) }
+    }
     reader.open(path, tree.els[i].title, tree.els[tree.parent[i]].title, line, src, () => void openCode(i, line))
   }
   const actions: PanelActions = {
@@ -327,9 +335,21 @@ async function main() {
     outlined = here
     // Keyboard focus in the outline stays on the same card across a redraw.
     const focused = details.contains(document.activeElement) ? (document.activeElement as HTMLElement).textContent : null
+    const was = outlinedBefore
+    outlinedBefore = here
     renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j))
-    if (focused) [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)?.focus()
+    // Or, when that card is not listed here, the outline's heading: focus stays in the panel.
+    if (focused != null) {
+      const row = [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)
+      const h = details.querySelector<HTMLElement>('h2')
+      if (h) h.tabIndex = -1
+      ;(row ?? h)?.focus({ preventScroll: true })
+    }
+    // A screen reader hears the place when it changes.
+    if (here !== was) $('announce').textContent = here > 0 ? `In ${tree.els[here].title}: ${tree.children[here].length} inside` : `Whole map: ${tree.children[0].length} parts`
   }
+  /** The place the outline last named, to announce only a change of place. */
+  let outlinedBefore = -1
   const select = (i: number) => {
     edgeReturn = { selected: -1, list: null }
     // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page,

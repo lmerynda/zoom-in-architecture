@@ -212,6 +212,47 @@ try {
   await sleep(300)
   const backAt = await page.evaluate(() => ({ reader: document.querySelector('.reader').hidden, at: new URLSearchParams(location.search).get('at'), title: document.querySelector('#details h2')?.textContent }))
   check('"← back to <parent>" closes the reader and selects the parent it names', backAt.reader && backText === `← back to ${backAt.title}` && backAt.at !== null && !backAt.at.endsWith('marketController'), JSON.stringify({ backText, ...backAt }))
+
+  // In Requests, the reader's three ways out: back goes to the endpoint, Close and Esc stay on the step.
+  const readStep = async () => {
+    await open('model=knights-of-darkness&view=requests&at=backend.market.e1.s1')
+    await landed()
+    await page.evaluate(() => document.querySelector('#stage canvas').focus())
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => !document.querySelector('.reader').hidden, { timeout: 15000 })
+    return page.evaluate(() => document.querySelector('.reader-back').textContent)
+  }
+  const atNow = () => page.evaluate(() => ({ reader: document.querySelector('.reader').hidden, at: new URLSearchParams(location.search).get('at') }))
+  const stepBack = await readStep()
+  await page.click('.reader-back')
+  await landed()
+  const viaBack = await atNow()
+  await readStep()
+  await page.click('.reader-close')
+  await sleep(300)
+  const viaClose = await atNow()
+  await readStep()
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  const viaEsc = await atNow()
+  check('in Requests, back goes to the endpoint it names; Close and Esc stay on the step', /← back to POST \/market\/\{id\}\/buy/.test(stepBack) && viaBack.reader && viaBack.at === 'backend.market.e1' && viaClose.reader && viaClose.at === 'backend.market.e1.s1' && viaEsc.reader && viaEsc.at === 'backend.market.e1.s1', JSON.stringify({ stepBack, viaBack, viaClose, viaEsc }))
+
+  // A phone, with the pointer resting on the outline bar (which opens under it): search to a part
+  // still names that part, because the bar frames as the bar it is at rest.
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await open('model=knights-of-darkness&at=devtools')
+  await landed()
+  await page.mouse.move(200, 820)
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('/')
+  await page.keyboard.type('War')
+  await sleep(300)
+  await page.keyboard.press('Enter')
+  await landed()
+  await sleep(600)
+  const phone = await page.evaluate(() => ({ in: new URLSearchParams(location.search).get('in'), panel: document.querySelector('#details h2')?.textContent }))
+  check('on a phone, with the outline bar open under the pointer, search to a part names that part', phone.in === 'backend.military' && phone.panel === 'War', JSON.stringify(phone))
+  await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)
