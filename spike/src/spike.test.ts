@@ -63,7 +63,25 @@ describe('Tree', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
     const e = aggregateEdges(t, i => t.childUnder(0, i))
-    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false, seen: false }])
+    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false, seen: false, traceable: false }])
+  })
+
+  it('judges a runtime call against the trace only when it starts inside a part where code ran in it', () => {
+    const traced = { at: '2026-11-23T00:00:00Z', command: 'mvn verify', exit: 0, seen: 1, total: 2 }
+    // Code ran in a (a.a2.x); nothing ran in b, so b's calls say nothing either way.
+    const els = model.elements.map(e => (e.id === 'a.a2.x' ? { ...e, metadata: { seen: '12' } } : e.id === 'b.b1' ? { ...e, metadata: { seen: '0' } } : e))
+    const relations = [
+      { source: 'a.a1', target: 'b', title: 'reads', kind: 'runtime' as const, seen: 3 },
+      { source: 'a.a2', target: 'b', title: 'writes', kind: 'runtime' as const },
+      { source: 'b.b1', target: 'a.a1', title: 'calls', kind: 'runtime' as const },
+      { source: 'b.b1', target: 'a.a2', title: 'imports' },
+    ]
+    const t = new Tree({ ...model, elements: els, relations, published: { at: traced.at, traced } })
+    expect(t.relTraceable).toEqual([true, true, false, false])
+    // Untraced, nothing is judged: absence there means not looked at.
+    expect(new Tree({ ...model, elements: els, relations }).relTraceable).toEqual([false, false, false, false])
+    const e = aggregateEdges(t, i => t.childUnder(0, i))
+    expect(e.map(x => ({ seen: x.seen, traceable: x.traceable }))).toEqual([{ seen: true, traceable: true }])
   })
 
   it('lights a rolled-up edge only for relations that cross the focus', () => {

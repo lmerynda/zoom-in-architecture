@@ -95,6 +95,13 @@ export class Tree {
   readonly relLines: number[][]
   /** Per relation: how often the project's own tests made it; 0 when not seen. */
   readonly relSeen: number[]
+  /**
+   * Per relation: whether the trace could have seen it, so that unseen means not made in the tests.
+   * The trace watches only the processes it ran, the top-level parts where some code ran in the tests
+   * (`metadata.seen`): a call from a browser, a test client in another runtime or a person is never
+   * in it, seen or not.
+   */
+  readonly relTraceable: boolean[]
   /** The run of the project's own tests this map was traced with, if it was: then unseen means not seen, not unknown. */
   readonly traced: NonNullable<ModelJson['published']>['traced'] | null
 
@@ -129,7 +136,11 @@ export class Tree {
     this.relKind = []
     this.relLines = []
     this.relSeen = []
+    this.relTraceable = []
     this.traced = model.published?.traced ?? null
+    const top = (i: number) => { while (this.depth[i] > 1) i = this.parent[i]; return i }
+    const ran = new Set<number>()
+    if (this.traced) for (let i = 1; i < n; i++) { const s = this.els[i].metadata?.seen; if (s && s !== '0' && !s.startsWith('0/')) ran.add(top(i)) }
     for (const r of model.relations) {
       const kind: RelKind = r.kind ?? (r.evidence ? 'runtime' : 'code')
       if (kind === 'types' && !types) continue
@@ -142,11 +153,13 @@ export class Tree {
       this.relKind.push(kind)
       this.relLines.push(r.lines ?? [])
       this.relSeen.push(r.seen ?? 0)
+      this.relTraceable.push(kind === 'runtime' && ran.has(top(s)))
     }
     this.rels = Int32Array.from(pairs)
   }
 
   get size() { return this.els.length }
+
 
   /** Pre-order: every parent comes before its children. */
   dfs(): number[] {
@@ -218,6 +231,8 @@ export interface ShownEdge {
   /** Some folded relation is a call at runtime; every one is a type-only import. */
   runtime: boolean
   typesOnly: boolean
+  /** Some folded runtime call is one the trace could have seen (see Tree.relTraceable). */
+  traceable: boolean
   /** Some folded relation was seen in the project's own tests. */
   seen: boolean
 }
@@ -237,12 +252,13 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: true, seen: false }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: true, seen: false, traceable: false }))
     e.count++
     const kind = tree.relKind[k >> 1]
     if (kind === 'runtime') e.runtime = true
     if (kind !== 'types') e.typesOnly = false
     if (tree.relSeen[k >> 1] > 0) e.seen = true
+    if (tree.relTraceable[k >> 1]) e.traceable = true
     if (e.s !== s) e.both = true
     if (inFocus) {
       const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])

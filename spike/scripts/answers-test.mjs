@@ -156,7 +156,16 @@ try {
   await page.evaluate(() => { localStorage.removeItem('zoom.showTypes') })
   await open('model=knights-of-darkness&in=backend')
   const legend = await page.evaluate(() => [...document.querySelectorAll('#arrows span, #arrows button')].map(e => e.textContent))
-  check('the arrow legend names code uses, calls seen and not seen in tests, and type-only imports', ['uses in code', 'calls seen in tests', 'calls not seen in tests', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
+  check('the arrow legend names code uses, runtime calls, calls not seen in tests, and type-only imports', ['uses in code', 'calls at runtime', 'calls not seen in tests', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
+  // The trace watches only the apps the tests ran: a call into them from outside (the test client,
+  // the browser, a person) is never called unseen; a store call from inside them can be.
+  const traceable = await page.evaluate(() => {
+    const s = window.__spike, t = s.tree
+    const rel = (a, b) => { for (let k = 0; k < t.rels.length; k += 2) if (t.els[t.rels[k]].id === a && t.els[t.rels[k + 1]].id === b) return k >> 1; return -1 }
+    const caller = rel('devtools.client', 'backend.market.offers.marketController'), store = rel('backend.auth.userJpaRepository', 'db')
+    return { caller: t.relTraceable[caller], store: t.relTraceable[store], seen: t.relSeen[store] > 0 }
+  })
+  check('a call from outside the traced apps is never drawn as not seen in tests', traceable.caller === false && traceable.store === true && traceable.seen, JSON.stringify(traceable))
   const types = async () => page.evaluate(() => window.__spike.tree.relKind.filter(k => k === 'types').length)
   const hidden = await types()
   await page.click('#arrows button')

@@ -141,7 +141,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       b.append(el('i', '', cls === 'out' ? '→' : '←'), el('b', '', tree.els[r.other].title))
       if (r.names.length) b.append(el('span', '', r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ')))
       b.title = `${title === 'Uses' ? 'Uses' : 'Used by'} ${tree.els[r.other].title}: go there`
-      if (r.seen) b.append(el('em', 'd-seen-tag', `seen ×${r.seen}`))
+      if (r.seen) b.append(seenTag(r.seen))
       b.onclick = () => act.go(r.other)
       li.append(b)
       if (r.evidence.length) {
@@ -318,8 +318,13 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
       li.append(pair)
       const why = el('div', 'd-why')
       why.append(el('span', 'd-kindtag', KIND_WORD[kind]))
-      if (tree.relSeen[k]) why.append(el('em', 'd-seen-tag', `seen in tests ×${tree.relSeen[k]}`))
-      else if (tree.traced && kind === 'runtime') why.append(el('em', 'd-seen-tag none', 'not seen in tests'))
+      if (tree.relSeen[k]) why.append(seenTag(tree.relSeen[k]))
+      else if (tree.relTraceable[k]) why.append(el('em', 'd-seen-tag none', 'not seen in tests'))
+      else if (tree.traced && kind === 'runtime') {
+        const tag = el('em', 'd-seen-tag outside', 'outside the trace')
+        tag.title = 'The trace watched only the apps the tests ran; this call starts outside them, so the run says nothing of it'
+        why.append(tag)
+      }
       if (tree.relTitles[k]) why.append(el('span', 'd-names', tree.relTitles[k]))
       const path = tree.els[a].metadata?.path
       // The lines that make it: a use's own lines in its file, a runtime call's cited lines.
@@ -346,6 +351,13 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   }
   panel.replaceChildren(head, el('p', 'd-rank', summary || 'nothing on this map'), ...section(s, t), ...section(t, s), el('p', 'd-hint', 'Esc puts the arrow down.'))
   panel.hidden = false
+}
+
+/** How often the project's own tests made a call, as a tag: a readable count and what it counts. */
+export function seenTag(n: number): HTMLElement {
+  const tag = el('em', 'd-seen-tag', `seen in tests ×${n.toLocaleString('en')}`)
+  tag.title = `The project's own end-to-end tests made this call ${n.toLocaleString('en')} time${n === 1 ? '' : 's'}`
+  return tag
 }
 
 /**

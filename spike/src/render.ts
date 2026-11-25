@@ -827,8 +827,9 @@ export class Renderer {
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
-      // project's own tests, a runtime call no test made (inferred from code only).
-      if (e.typesOnly || (e.runtime && this.tree.traced && !e.seen)) strokes[kind][tier].push(...dashes(clipped))
+      // project's own tests, a runtime call the trace could have seen and no test made. A call from
+      // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
+      if (e.typesOnly || (e.runtime && e.traceable && !e.seen)) strokes[kind][tier].push(...dashes(clipped))
       else strokes[kind][tier].push(clipped)
       st.edges++
       const n = pts.length

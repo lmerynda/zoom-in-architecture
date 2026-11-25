@@ -364,8 +364,8 @@ async function main() {
     const kinds = new Set(raw.relations.map(r => r.kind ?? (r.evidence ? 'runtime' : 'code')))
     const item = (cls: string, text: string) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s }
     const parts: HTMLElement[] = [item('a-head', 'Arrows'), item('a-code', 'uses in code')]
-    if (kinds.has('runtime')) parts.push(item('a-runtime', raw.published?.traced ? 'calls seen in tests' : 'calls at runtime'))
-    // A map traced with the project's own tests tells seen calls from ones inferred from code only.
+    if (kinds.has('runtime')) parts.push(item('a-runtime', 'calls at runtime'))
+    // A map traced with the project's own tests tells the calls it could have seen and no test made.
     if (kinds.has('runtime') && raw.published?.traced) parts.push(item('a-unseen', 'calls not seen in tests'))
     if (kinds.has('types')) {
       parts.push(item('a-types', 'type-only imports'))
