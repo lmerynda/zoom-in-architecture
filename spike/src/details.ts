@@ -1,4 +1,5 @@
 import { kindName, type EvidenceJson, type Tree } from './model'
+import { count } from './render'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag)
@@ -353,10 +354,14 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   panel.hidden = false
 }
 
-/** How often the project's own tests made a call, as a tag: a readable count and what it counts. */
+/**
+ * A call the project's own tests made, as a tag. The count stays in the tooltip: it is what the
+ * trace recorded for the link (spans of its code, or its endpoint's requests), not a count of this
+ * one call, and the row needs its room for what the call reaches.
+ */
 export function seenTag(n: number): HTMLElement {
-  const tag = el('em', 'd-seen-tag', `seen in tests ×${n.toLocaleString('en')}`)
-  tag.title = `The project's own end-to-end tests made this call ${n.toLocaleString('en')} time${n === 1 ? '' : 's'}`
+  const tag = el('em', 'd-seen-tag', 'seen in tests')
+  tag.title = `Seen in the project's own end-to-end tests: ${count(n)} recorded in the trace for this link`
   return tag
 }
 
@@ -370,10 +375,10 @@ export function seenLines(tree: Tree, i: number): HTMLElement[] {
   if (!t || !m) return []
   const out: string[] = []
   let cls = 'd-seen'
-  if (m.seen?.includes('/')) out.push(`Seen in tests: ${m.seen.replace('/', ' of ')} endpoints`)
+  if (m.seen?.includes('/')) out.push(`Seen in tests: ${m.seen.split('/').map(n => count(+n)).join(' of ')} endpoints`)
   else if (m.method && m.seen === '0') { out.push('Not seen in tests: no test called it, so its path is inferred from code only'); cls = 'd-seen none' }
-  else if (m.method && m.seen) out.push(`Seen in tests: ${m.seen} request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses}` : ''}`)
-  else if (m.seen && m.seen !== '0') out.push(`Ran in tests: ${m.seen} time${m.seen === '1' ? '' : 's'}`)
+  else if (m.method && m.seen) out.push(`Seen in tests: ${count(+m.seen)} request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses.replace(/×(d+)/g, (_, n) => `×${count(+n)}`)}` : ''}`)
+  else if (m.seen && m.seen !== '0') out.push(`Ran in tests: ${count(+m.seen)} time${m.seen === '1' ? '' : 's'}`)
   if (m.tables) out.push(`Tables: ${m.tables}`)
   if (!out.length) return []
   const p = el('p', cls)

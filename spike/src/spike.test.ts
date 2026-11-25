@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
-import { aggregateEdges, plainDoc, Tree, type ModelJson } from './model'
+import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
@@ -66,22 +66,30 @@ describe('Tree', () => {
     expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false, seen: false, traceable: false }])
   })
 
-  it('judges a runtime call against the trace only when it starts inside a part where code ran in it', () => {
+  it('judges a runtime call against the trace only when a file inside a part where code ran makes it', () => {
     const traced = { at: '2026-11-23T00:00:00Z', command: 'mvn verify', exit: 0, seen: 1, total: 2 }
     // Code ran in a (a.a2.x); nothing ran in b, so b's calls say nothing either way.
-    const els = model.elements.map(e => (e.id === 'a.a2.x' ? { ...e, metadata: { seen: '12' } } : e.id === 'b.b1' ? { ...e, metadata: { seen: '0' } } : e))
+    // Files have paths; a call from a component (a.a2.x's parent) has no file the trace could count it by.
+    const file = (id: string) => ({ path: `${id}.ts` })
+    const els = model.elements.map(e => (e.id === 'a.a2.x' ? { ...e, metadata: { seen: '12', ...file(e.id) } } : e.id === 'b.b1' ? { ...e, metadata: { seen: '0', ...file(e.id) } } : e.id === 'a.a1' ? { ...e, metadata: file(e.id) } : e))
     const relations = [
       { source: 'a.a1', target: 'b', title: 'reads', kind: 'runtime' as const, seen: 3 },
-      { source: 'a.a2', target: 'b', title: 'writes', kind: 'runtime' as const },
+      { source: 'a.a2.x', target: 'b', title: 'writes', kind: 'runtime' as const },
+      { source: 'a.a2', target: 'b', title: 'from a component', kind: 'runtime' as const },
       { source: 'b.b1', target: 'a.a1', title: 'calls', kind: 'runtime' as const },
       { source: 'b.b1', target: 'a.a2', title: 'imports' },
     ]
     const t = new Tree({ ...model, elements: els, relations, published: { at: traced.at, traced } })
-    expect(t.relTraceable).toEqual([true, true, false, false])
+    expect(t.relTraceable).toEqual([true, true, false, false, false])
     // Untraced, nothing is judged: absence there means not looked at.
-    expect(new Tree({ ...model, elements: els, relations }).relTraceable).toEqual([false, false, false, false])
+    expect(new Tree({ ...model, elements: els, relations }).relTraceable).toEqual([false, false, false, false, false])
     const e = aggregateEdges(t, i => t.childUnder(0, i))
     expect(e.map(x => ({ seen: x.seen, traceable: x.traceable }))).toEqual([{ seen: true, traceable: true }])
+  })
+
+  it('reads a trace mark as code that ran only when it counts something', () => {
+    expect(['12', '63/67', '1/2'].map(ranInTests)).toEqual([true, true, true])
+    expect([undefined, '', '0', '0/67'].map(ranInTests)).toEqual([false, false, false, false])
   })
 
   it('lights a rolled-up edge only for relations that cross the focus', () => {

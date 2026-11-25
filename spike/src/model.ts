@@ -140,7 +140,7 @@ export class Tree {
     this.traced = model.published?.traced ?? null
     const top = (i: number) => { while (this.depth[i] > 1) i = this.parent[i]; return i }
     const ran = new Set<number>()
-    if (this.traced) for (let i = 1; i < n; i++) { const s = this.els[i].metadata?.seen; if (s && s !== '0' && !s.startsWith('0/')) ran.add(top(i)) }
+    if (this.traced) for (let i = 1; i < n; i++) if (ranInTests(this.els[i].metadata?.seen)) ran.add(top(i))
     for (const r of model.relations) {
       const kind: RelKind = r.kind ?? (r.evidence ? 'runtime' : 'code')
       if (kind === 'types' && !types) continue
@@ -153,13 +153,14 @@ export class Tree {
       this.relKind.push(kind)
       this.relLines.push(r.lines ?? [])
       this.relSeen.push(r.seen ?? 0)
-      this.relTraceable.push(kind === 'runtime' && ran.has(top(s)))
+      // The trace counts a call by the file that makes it: one drawn from a component, with no file,
+      // could never be seen, so it is not judged either.
+      this.relTraceable.push(kind === 'runtime' && ran.has(top(s)) && !!this.els[s].metadata?.path)
     }
     this.rels = Int32Array.from(pairs)
   }
 
   get size() { return this.els.length }
-
 
   /** Pre-order: every parent comes before its children. */
   dfs(): number[] {
@@ -235,6 +236,11 @@ export interface ShownEdge {
   traceable: boolean
   /** Some folded relation was seen in the project's own tests. */
   seen: boolean
+}
+
+/** A trace mark that says some code ran in the tests: a count above 0, or coverage of at least one ("63/67", not "0/67"). */
+export function ranInTests(seen: string | undefined): boolean {
+  return !!seen && seen !== '0' && !seen.startsWith('0/')
 }
 
 /**

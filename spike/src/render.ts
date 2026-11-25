@@ -829,7 +829,9 @@ export class Renderer {
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
       // project's own tests, a runtime call the trace could have seen and no test made. A call from
       // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
-      if (e.typesOnly || (e.runtime && e.traceable && !e.seen)) strokes[kind][tier].push(...dashes(clipped))
+      const dashed = e.typesOnly || (e.runtime && e.traceable && !e.seen)
+      this.lines[this.lines.length - 1].dashed = dashed
+      if (dashed) strokes[kind][tier].push(...dashes(clipped))
       else strokes[kind][tier].push(clipped)
       st.edges++
       const n = pts.length
@@ -921,7 +923,7 @@ export class Renderer {
   screenRectOf(i: number) { return this.screenRect(i) }
 
   /** The lines drawn last frame, in screen px, with the cards they join and how much they carry. */
-  private lines: { s: number; t: number; count: number; pts: number[] }[] = []
+  private lines: { s: number; t: number; count: number; pts: number[]; dashed?: boolean }[] = []
 
   /** The lines passing within `r` px of a screen point: a shared trunk is several. */
   linesAt(x: number, y: number, r = 6): { s: number; t: number; count: number }[] {
@@ -1100,8 +1102,13 @@ export function seenText(el: { metadata?: Record<string, string> }, traced: bool
   const s = el.metadata?.seen
   if (!traced || s == null) return ''
   if (s.includes('/')) return `${s} endpoints seen in tests`
-  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `seen in tests ×${s}`
-  return s === '0' ? '' : `ran in tests ×${s}`
+  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `seen in tests ×${count(+s)}`
+  return s === '0' ? '' : `ran in tests ×${count(+s)}`
+}
+
+/** A trace count as people read it: 48872 → 48,872. */
+export function count(n: number): string {
+  return n.toLocaleString('en')
 }
 
 /** 1234 → 1.2k, for badges. */

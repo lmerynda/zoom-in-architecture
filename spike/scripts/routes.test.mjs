@@ -173,6 +173,9 @@ describe('buildRequests', () => {
     expect(rel(`${ep.id}.s2`, 'db').evidence.map(e => e.at)).toEqual(['src/main/java/shop/OrderRepository.java:3'])
     // The buyer's link names the app, not an endpoint: it reaches the app once, not every endpoint.
     expect(rel('buyer', 'web').title).toBe('shops')
+    // A caller's link is a call at runtime, like the map link it comes from, not a use in code.
+    expect(rel('buyer', 'web').kind).toBe('runtime')
+    expect(rel(`${ep.id}.s2`, 'db').kind).toBe('runtime')
     expect(r.relations.filter(x => x.source === 'buyer')).toHaveLength(1)
   })
 

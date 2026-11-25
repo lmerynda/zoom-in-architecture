@@ -395,7 +395,7 @@ try {
     s.select(t.byId.get('server')); await new Promise(r => setTimeout(r, 100)); const coverage = text()
     return { seen, unseen, coverage, legend: document.getElementById('arrows').textContent }
   })
-  check('a traced map says what its tests ran: requests, statuses, tables, coverage, and what they never called', /Seen in tests: 3 requests · 200 ×2 · 401 ×1/.test(traced.seen) && /Tables: orders: SELECT/.test(traced.seen) && /Not seen in tests/.test(traced.unseen) && /Seen in tests: 1 of 1 endpoints/.test(traced.coverage) && /not seen in tests/.test(traced.legend), JSON.stringify(traced))
+  check('a traced map says what its tests ran: requests, statuses, tables, coverage, and what they never called; with every call seen, the legend names no dash', /Seen in tests: 3 requests · 200 ×2 · 401 ×1/.test(traced.seen) && /Tables: orders: SELECT/.test(traced.seen) && /Not seen in tests/.test(traced.unseen) && /Seen in tests: 1 of 1 endpoints/.test(traced.coverage) && !/not seen in tests/.test(traced.legend), JSON.stringify(traced))
   check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · all()' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
   await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.api-orders.e1')) })
   await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})
