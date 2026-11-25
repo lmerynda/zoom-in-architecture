@@ -152,6 +152,38 @@ try {
   await shot('04-line-carries')
   await page.mouse.move(5, 500)
 
+  // 4b'. A click on a stretch several arrows share lists them all, heaviest first, as the hover
+  // tooltip names them; picking one opens that arrow.
+  await open('model=knights-of-darkness')
+  const trunk = await page.evaluate(() => {
+    const s = window.__spike
+    for (const l of s.renderer.lines) for (let k = 2; k < l.pts.length; k += 2) for (const u of [0.25, 0.5, 0.75]) {
+      const x = l.pts[k - 2] + (l.pts[k] - l.pts[k - 2]) * u, y = l.pts[k - 1] + (l.pts[k + 1] - l.pts[k - 1]) * u
+      if (s.renderer.pick(x, y) > 0) continue
+      const here = s.renderer.linesAt(x, y)
+      if (here.length > 1) return { at: [x, y], n: here.length }
+    }
+    return null
+  })
+  if (trunk) { await page.mouse.click(trunk.at[0], trunk.at[1]); await sleep(400) }
+  const listed = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, rows: [...document.querySelectorAll('#details .d-lines button')].map(b => b.textContent) }))
+  check('a click on a shared trunk lists every arrow there, as the tooltip does', !!trunk && listed.kind === 'Arrows' && listed.rows.length === trunk.n, JSON.stringify({ trunk, listed }))
+  if (listed.rows.length) { await page.click('#details .d-lines button'); await sleep(300) }
+  check('picking one of them opens that arrow', await page.evaluate(() => document.querySelector('#details .d-kind')?.textContent === 'Arrow'))
+  await page.keyboard.press('Escape')
+
+  // 4b''. By keyboard: a Uses row opens the same arrow panel, and Esc comes back to the selection.
+  await open('model=knights-of-darkness&at=backend')
+  await page.evaluate(() => document.querySelector('#details .d-rels.out .d-inspect').focus())
+  await page.keyboard.press('Enter')
+  await sleep(300)
+  const inspected = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, title: document.querySelector('#details h2')?.textContent, focus: document.activeElement?.tagName, rels: document.querySelectorAll('#details .d-edge li').length }))
+  check('a Uses row inspects the arrow by keyboard: every relation, focus on its heading', inspected.kind === 'Arrow' && inspected.title === 'Game server ↔ Game database' && inspected.focus === 'H2' && inspected.rels >= 15, JSON.stringify(inspected))
+  await page.keyboard.press('Escape')
+  await sleep(300)
+  const returned = await page.evaluate(() => ({ title: document.querySelector('#details h2')?.textContent, kind: document.querySelector('#details .d-kind')?.textContent, focus: document.activeElement?.tagName }))
+  check('Esc puts the arrow down and returns to the selection it was inspected from', returned.title === 'Game server' && returned.focus === 'H2', JSON.stringify(returned))
+
   // 4c. Arrows say what kind they are, and a picked arrow says why it exists, line by line.
   await page.evaluate(() => { localStorage.removeItem('zoom.showTypes') })
   await open('model=knights-of-darkness&in=backend')
@@ -164,12 +196,15 @@ try {
     const s = window.__spike, t = s.tree
     const line = s.renderer.lines.find(l => [t.els[l.s].id, t.els[l.t].id].sort().join() === 'backend,devtools')
     if (!line) return null
-    const k = Math.floor(line.pts.length / 4) * 2
-    return { dashed: line.dashed, at: [(line.pts[k - 2] + line.pts[k]) / 2, (line.pts[k - 1] + line.pts[k + 1]) / 2] }
+    return { dashed: line.dashed }
   })
-  if (outside) { await page.mouse.click(outside.at[0], outside.at[1]); await sleep(400) }
+  // Its evidence, opened from Development tools' Uses row (the line shares its whole route here).
+  await page.evaluate(() => window.__spike.select(window.__spike.id('devtools')))
+  await sleep(300)
+  await page.evaluate(() => [...document.querySelectorAll('#details .d-rels.out li')].find(li => /Game server/.test(li.textContent))?.querySelector('.d-inspect')?.click())
+  await sleep(400)
   const picked = await page.evaluate(() => document.getElementById('details').textContent)
-  check('a call from outside the traced parts is drawn plain and, picked, says it is outside the trace', outside?.dashed === false && /outside the trace/.test(picked) && !/not seen in tests/.test(picked.replace(/outside the trace/g, '')), JSON.stringify({ outside, picked: picked.slice(0, 160) }))
+  check('a call from outside the traced parts is drawn plain and its arrow says it is outside the trace', outside?.dashed === false && /outside the trace/.test(picked) && !/not seen in tests/.test(picked.replace(/outside the trace/g, '')), JSON.stringify({ outside, picked: picked.slice(0, 160) }))
   await page.keyboard.press('Escape')
   await open('model=knights-of-darkness&in=backend')
   const types = async () => page.evaluate(() => window.__spike.tree.relKind.filter(k => k === 'types').length)
@@ -188,7 +223,9 @@ try {
     await new Promise(r => setTimeout(r, 300))
     for (const l of s.renderer.lines) for (let k = 2; k < l.pts.length; k += 2) {
       const x = (l.pts[k - 2] + l.pts[k]) / 2, y = (l.pts[k - 1] + l.pts[k + 1]) / 2
-      if (s.renderer.hoverAt(x, y) <= 0 && s.renderer.linesAt(x, y)[0] === l) return [x, y]
+      // A stretch only this arrow runs along: a shared trunk lists its arrows instead (4b').
+      const here = s.renderer.linesAt(x, y)
+      if (s.renderer.hoverAt(x, y) <= 0 && here.length === 1 && here[0] === l) return [x, y]
     }
     return null
   })

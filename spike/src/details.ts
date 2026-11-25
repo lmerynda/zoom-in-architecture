@@ -16,6 +16,19 @@ export interface PanelActions {
   openPath: (path: string, line: number, near: number) => void
   /** Opens element i's own code at its start. */
   read: (i: number) => void
+  /** Lists every relation between element a and element b, as a picked arrow does. */
+  inspect: (a: number, b: number) => void
+}
+
+/** Every relation between the subtrees of a and b, both directions, as relation indices. */
+export function relationsAcross(tree: Tree, a: number, b: number): number[] {
+  const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
+  const out: number[] = []
+  for (let k = 0; k < tree.rels.length; k += 2) {
+    const s = tree.rels[k], t = tree.rels[k + 1]
+    if ((inside(a, s) && inside(b, t)) || (inside(b, s) && inside(a, t))) out.push(k >> 1)
+  }
+  return out
 }
 
 /** One relation as the panel lists it: the card on the other side, what it reaches there, and the cited lines. */
@@ -145,6 +158,13 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       if (r.seen) b.append(seenTag(r.seen))
       b.onclick = () => act.go(r.other)
       li.append(b)
+      // The arrow's own evidence, by keyboard as well as by clicking the arrow on the map.
+      const n = relationsAcross(tree, i, r.other).length
+      const why = el('button', 'd-inspect', `${n} relation${n === 1 ? '' : 's'}`)
+      why.setAttribute('aria-label', `Inspect the ${n} relation${n === 1 ? '' : 's'} between ${e.title} and ${tree.els[r.other].title}`)
+      why.title = 'Every relation and the lines that make it'
+      why.onclick = () => act.inspect(i, r.other)
+      li.append(why)
       if (r.evidence.length) {
         const n = r.evidence.length
         const toggle = el('button', 'd-cite', `${n} cited line${n === 1 ? '' : 's'}`)
@@ -286,6 +306,30 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
 
 /** What a relation is, in words. */
 const KIND_WORD = { runtime: 'calls at runtime', code: 'uses in code', types: 'type-only import' } as const
+
+/**
+ * The panel for a click on a stretch several arrows share: which arrows run there, heaviest first,
+ * each a button that opens that one arrow's panel. The hover tooltip names the same set.
+ */
+export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; t: number; count: number }[], choose: (l: { s: number; t: number }) => void) {
+  panel.classList.remove('outline')
+  const head = el('div', 'd-head')
+  const total = lines.reduce((a, l) => a + l.count, 0)
+  head.append(el('span', 'd-kind', 'Arrows'), el('h2', '', `${lines.length} arrows share this line`))
+  const p = el('p', '', `They carry ${total} relation${total === 1 ? '' : 's'} between them. Pick one to see what it carries and why.`)
+  const box = el('section', 'd-rels d-lines')
+  const ul = el('ul')
+  for (const l of lines) {
+    const li = el('li')
+    const b = el('button', 'd-rel')
+    b.append(el('b', '', `${tree.els[l.s].title} ↔ ${tree.els[l.t].title}`), el('span', '', `${l.count} relation${l.count === 1 ? '' : 's'}`))
+    b.onclick = () => choose(l)
+    li.append(b)
+    ul.append(li)
+  }
+  box.append(ul)
+  panel.replaceChildren(head, p, box)
+}
 
 /**
  * The panel for a picked arrow: the two cards it joins, how many relations it carries of each

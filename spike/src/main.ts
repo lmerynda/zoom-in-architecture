@@ -2,7 +2,7 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
-import { renderDetails, renderEdge, renderOutline, type PanelActions, type PanelRows } from './details'
+import { relationsAcross, renderDetails, renderEdge, renderLines, renderOutline, type PanelActions, type PanelRows } from './details'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -301,6 +301,13 @@ async function main() {
     go: j => controls.goSelect(j),
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
     read: j => void openCode(j, startOf(j)),
+    inspect: (a, b) => {
+      const from = renderer.selected
+      pickEdge({ s: a, t: b }, relationsAcross(tree, a, b))
+      edgeFrom = from
+      const h = details.querySelector<HTMLElement>('h2')
+      if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) }
+    },
   }
   /** In the Connections view, why a card ranks where it does among its siblings. */
   const rankText = (i: number) => {
@@ -353,13 +360,31 @@ async function main() {
     $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }
   /** Picks a line for the panel: what it carries and why, relation by relation. Null puts it down. */
-  const pickEdge = (l: { s: number; t: number } | null) => {
+  /** The selection an arrow was inspected from, by keyboard: putting the arrow down returns to it. */
+  let edgeFrom = -1
+  /**
+   * Picks a line for the panel: what it carries and why, relation by relation. Several lines (a
+   * shared trunk) list the arrows there, heaviest first, to pick one. Null puts it down.
+   */
+  const pickEdge = (l: { s: number; t: number } | { s: number; t: number; count: number }[] | null, rels?: number[]) => {
+    const back = edgeFrom
+    edgeFrom = -1
+    if (Array.isArray(l) && l.length === 1) l = l[0]
     renderer.selected = -1
-    renderer.edge = l && { s: l.s, t: l.t }
-    if (!l) return showDetails()
+    if (!l) {
+      renderer.edge = null
+      if (back > 0) { select(back); const h = details.querySelector<HTMLElement>('h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) } return }
+      return showDetails()
+    }
     rows = { uses: [], usedBy: [], mark: () => {} }
     outlined = -1
-    renderEdge(details, tree, l.s, l.t, renderer.relationsBetween(l.s, l.t), actions)
+    if (Array.isArray(l)) {
+      const lines = [...l].sort((a, b) => b.count - a.count)
+      renderer.edge = { s: lines[0].s, t: lines[0].t }
+      return renderLines(details, tree, lines, one => pickEdge(one))
+    }
+    renderer.edge = { s: l.s, t: l.t }
+    renderEdge(details, tree, l.s, l.t, rels ?? renderer.relationsBetween(l.s, l.t), actions)
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.

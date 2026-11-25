@@ -34,7 +34,7 @@ export interface Ctx {
   /** The browser's history of places: Back, Forward and the address. */
   places: Places
   /** Picks a line for the details panel, or puts it down (null). */
-  pickEdge: (l: { s: number; t: number } | null) => void
+  pickEdge: (l: { s: number; t: number } | { s: number; t: number; count: number }[] | null) => void
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
   closeTop: () => boolean
   now: () => number
@@ -239,7 +239,8 @@ export function installControls(c: Ctx) {
       tooltip.close()
       // Off the cards, on a line: the line is picked, to see what it carries and why.
       const lines = renderer.hoverAt(e.offsetX, e.offsetY) <= 0 ? renderer.linesAt(e.offsetX, e.offsetY) : []
-      if (lines.length) return void (c.pickEdge(lines[0]), (drag = null))
+      // On a shared trunk the panel lists every arrow there, as the tooltip did; one opens directly.
+      if (lines.length) return void (c.pickEdge(lines), (drag = null))
       const hit = renderer.pick(e.offsetX, e.offsetY)
       c.select(hit)
       remember(hit)
