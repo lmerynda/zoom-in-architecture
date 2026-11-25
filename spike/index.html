@@ -205,6 +205,10 @@
     /* First visit: what the map is, its counts and features to start from; it stays until Got it. */
     #welcome { position: fixed; z-index: 12; left: 12px; bottom: 12px; width: min(520px, calc(100vw - 24px)); padding: 12px 14px; background: rgba(9, 12, 20, 0.95); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 10px; font-size: 13px; color: var(--text); }
     #welcome[hidden] { display: none; }
+    /* The welcome stands where the arrow legend would: the legend waits until it is put away. */
+    body:has(#welcome:not([hidden])) #arrows { display: none; }
+    /* Narrow, the outline bar sits at the foot: the welcome stands above it, so Got it is never under it. */
+    @media (max-width: 1099px) { #welcome { bottom: 58px; max-height: calc(100vh - var(--bar, 52px) - 70px); overflow: auto; } }
     #welcome p { margin: 0 0 8px; line-height: 1.5; }
     #welcome p b { color: #fde68a; }
     #welcome .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
@@ -241,8 +245,17 @@
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #b6c2d3; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; }
     #empty button { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
     /* Reading a file: one column of code over the map, left of the details panel. */
-    .reader { position: fixed; z-index: 15; top: calc(var(--bar, 52px) + 12px); left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: rgba(5, 8, 14, 0.97); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .reader { position: fixed; z-index: 15; top: calc(var(--bar, 52px) + 12px); left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: #05080e; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .reader[hidden] { display: none; }
+    /* A phone: the reader takes the screen under the bar; its header wraps so the file's name and line, and Copy, keep their own rows. */
+    @media (max-width: 759px) {
+      .reader { top: var(--bar, 52px); left: 0; right: 0; bottom: 0; border-radius: 0; border-width: 1px 0 0; }
+      .reader .reader-head { flex-wrap: wrap; row-gap: 4px; }
+      .reader .reader-names { flex: 1 1 100%; flex-wrap: wrap; row-gap: 2px; }
+      .reader .reader-title { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .reader .reader-where { white-space: normal; overflow-wrap: anywhere; }
+    }
+    @media (max-width: 1099px) { body.reading #details { display: none; } }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
     .reader-title { font-weight: 650; color: #f1f5f9; font-size: 14px; white-space: nowrap; }
@@ -305,6 +318,12 @@
     .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .palette .row b { color: #e2e8f0; font-weight: 600; }
     .palette .row .sub { color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* A phone: kind and name on one line, the path whole on the next, so same-named files stay apart. */
+    @media (max-width: 599px) {
+      .palette .row { grid-template-columns: auto 1fr; gap: 2px 8px; }
+      .palette .row b { overflow-wrap: anywhere; }
+      .palette .row .sub { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+    }
     .palette .group { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); padding: 10px 10px 4px; }
     .palette .none { color: #94a3b8; font-size: 13px; padding: 10px 10px 8px; }
     /* Tooltips */
@@ -322,9 +341,15 @@
     .tip-desc { color: #94a3b8; line-height: 1.45; margin-bottom: 6px; }
     .tip-counts { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
     /* Controls screen */
-    .help-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(3, 5, 10, 0.85); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; overflow: auto; }
+    /* Centred when it fits; when it does not (a phone, 200% zoom) it starts at the top and scrolls, never cut on either side. */
+    .help-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(3, 5, 10, 0.85); backdrop-filter: blur(6px); display: flex; align-items: flex-start; justify-content: center; overflow: auto; }
     .help-overlay[hidden] { display: none; }
-    .help-box { display: flex; flex-direction: column; align-items: center; padding: 24px 0; }
+    .help-box { display: flex; flex-direction: column; align-items: center; padding: 24px 0; margin: auto; width: min(100%, 1040px); min-width: 0; }
+    @media (max-width: 599px) {
+      .help-grid { padding: 0 14px; gap: 20px; grid-template-columns: 1fr; }
+      .help-overlay h2 { font-size: 22px; letter-spacing: 0.2em; }
+      .help-row b { white-space: normal; }
+    }
     .help-close { margin-top: 20px; background: rgba(148, 163, 184, 0.12); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 18px; border-radius: 8px; cursor: pointer; }
     .help-overlay h2 { font: 300 30px 'Segoe UI', sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: #f1f5f9; margin: 0 0 22px; }
     .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; max-width: 1040px; width: 100%; padding: 0 24px; }

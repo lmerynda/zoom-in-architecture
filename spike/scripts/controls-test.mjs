@@ -233,6 +233,42 @@ try {
     await page.click('#arrows .a-toggle')
     const opened = await page.evaluate(() => ({ items: [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).length, expanded: document.querySelector('#arrows .a-toggle').getAttribute('aria-expanded') }))
     check(`at ${width} px the arrow legend opens on its button`, opened.items > 2 && opened.expanded === 'true', JSON.stringify(opened))
+
+    // Help keeps all its columns on screen: one column, scrolling, nothing cut on either side.
+    await page.click('#help')
+    await sleep(200)
+    const help = await page.evaluate(() => [...document.querySelectorAll('.help-col')].map(c => { const r = c.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)] }))
+    check(`at ${width} px Help keeps every column on screen`, help.length >= 3 && help.every(([l, r]) => l >= 0 && r <= width), JSON.stringify(help))
+    await page.keyboard.press('Escape')
+
+    // Search keeps a file's path readable, so two files of one name stay apart.
+    await focusMap()
+    await page.keyboard.press('/')
+    await page.keyboard.type('MarketTransaction')
+    await sleep(400)
+    const paths = await page.evaluate(() => [...document.querySelectorAll('.palette .row .sub')].map(s => Math.round(s.getBoundingClientRect().width)))
+    check(`at ${width} px search rows show each path`, paths.length > 1 && paths.every(w => w > 100), JSON.stringify(paths))
+    await page.keyboard.press('Escape')
+
+    // The reader names the file and line on a row of its own, clear of Copy.
+    await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+    await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 }).catch(() => {})
+    const reader = await page.evaluate(() => {
+      const r = s => { const e = document.querySelector(s); const b = e?.getBoundingClientRect(); return b ? [b.left, b.top, b.right, b.bottom] : null }
+      const where = r('.reader-where'), title = r('.reader-title'), acts = r('.reader-actions')
+      const overlap = (a, b) => a && b && a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+      return { where: where && where[2] - where[0], titleOverActions: overlap(title, acts), whereOverActions: overlap(where, acts), right: acts && acts[2] }
+    })
+    check(`at ${width} px the reader names file and line clear of its buttons`, reader.where > 100 && !reader.titleOverActions && !reader.whereOverActions && reader.right <= width, JSON.stringify(reader))
+
+    // A first visit: Got it is the topmost thing at its centre, not the outline bar.
+    await page.evaluate(() => localStorage.removeItem('zoom.introSeen'))
+    await page.goto(`${base}?model=knights-of-darkness`, { waitUntil: 'load' })
+    await page.waitForFunction(() => window.__spike?.ready && !document.getElementById('welcome').hidden, { timeout: 60000 })
+    const ok = await page.evaluate(() => { const b = document.querySelector('#welcome .ok').getBoundingClientRect(); const x = b.left + b.width / 2, y = b.top + b.height / 2; return { top: document.elementFromPoint(x, y)?.className, y: Math.round(y), legend: document.getElementById('arrows').getClientRects().length } })
+    check(`at ${width} px the welcome's Got it can be pressed, and the legend waits`, ok.top === 'ok' && ok.legend === 0, JSON.stringify(ok))
+    await page.click('#welcome .ok')
+    check(`at ${width} px Got it puts the welcome away`, await page.evaluate(() => document.getElementById('welcome').hidden))
   }
   await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
