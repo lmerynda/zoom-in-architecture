@@ -365,8 +365,9 @@ async function main() {
     const item = (cls: string, text: string) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s }
     const parts: HTMLElement[] = [item('a-head', 'Arrows'), item('a-code', 'uses in code')]
     if (kinds.has('runtime')) parts.push(item('a-runtime', 'calls at runtime'))
-    // A map traced with the project's own tests tells the calls it could have seen and no test made.
-    if (kinds.has('runtime') && raw.published?.traced) parts.push(item('a-unseen', 'calls not seen in tests'))
+    // A map traced with the project's own tests tells the calls it could have seen and no test made,
+    // when there are any: the dash is named only where one can be drawn.
+    if (tree.relTraceable.some((t, k) => t && !tree.relSeen[k])) parts.push(item('a-unseen', 'calls not seen in tests'))
     if (kinds.has('types')) {
       parts.push(item('a-types', 'type-only imports'))
       const b = document.createElement('button')
