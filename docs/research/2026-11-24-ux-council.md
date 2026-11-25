@@ -82,4 +82,12 @@ Then A2-A7 (trace counts and effects; data changes, so maps change only when a p
 
 ## Status, 2026-11-24
 
-PR links and what each settled are added below as they open.
+Five branches, each stacked on the one before (they share the arrow legend, the panel's focus handling and the test scripts), so they merge in this order. Each passed `npm test`, `npx tsc --noEmit` and the browser checks (`answers-test`, `controls-test`, `place-test`; `publish-test` for the first), and each was reviewed by Fable and Codex before being called done; every blocking point they raised is fixed on the branch.
+
+1. `council/trace-marks-honest` (A1, part of A3). A call is judged against the trace only when a file in a part where code ran makes it; calls from a browser, a test client or a person are drawn plain and say "outside the trace". Requests callers are calls at runtime. Counts read with separators, a relation row says "seen in tests" with the count in its tooltip, and the legend names the dash only when the map has one. Stored Requests models change only when a project publishes again.
+2. `council/narrow-top-bar` (B8-B13). Below 900 px the bar wraps and everything in it stays reachable, titles and chips start below it, the arrow legend folds into one button, the welcome stands clear of the outline bar and an open sheet, Help is one scrolling column that opens at its top, the reader keeps the file's path and its buttons apart, and search shows each path. Checked at 390, 320 and 800 px (200% zoom).
+3. `council/keyboard-a11y` (C15-C17, C19, C20). One focus ring, search as a combobox with its count said once typing pauses, focus kept in the panel after selecting and after Esc, selections and places announced, menus that say their state and close on Tab out, the card menu giving focus back.
+4. `council/arrow-evidence` (D21, C18). A shared trunk lists every arrow on it with the relations each carried when clicked; each Uses and Used by row opens the same arrow panel by keyboard; Esc goes back one step at a time.
+5. `council/search-keeps-place` (E27, E28). Search to a part puts the old selection down, so the panel, the address and a reload name the part found, Back bringing the old selection back; the reader's back goes to the card it names.
+
+Left, in order: A2-A7 (per-table effects on store arrows, counts with units and attribution, "14/15 seen" on mixed aggregates, untested endpoints visible, tables against Uses, the run behind the marks), then the focus review's endpoint inventory. Also left: B14 (a sheet you can shrink), D22-D26, E29-E31 and the visual system (F). Raised in review and not yet done: the endpoint found by search opens as a place rather than selected (a design call); every Uses row carries a second tab stop even for one relation.
