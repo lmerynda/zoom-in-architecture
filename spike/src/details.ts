@@ -162,7 +162,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       const n = relationsAcross(tree, i, r.other).length
       const why = el('button', 'd-inspect', `${n} relation${n === 1 ? '' : 's'}`)
       why.setAttribute('aria-label', `Inspect the ${n} relation${n === 1 ? '' : 's'} between ${e.title} and ${tree.els[r.other].title}`)
-      why.title = 'Every relation and the lines that make it'
+      why.title = 'Every relation between the two, both directions, and the lines that make it'
       why.onclick = () => act.inspect(i, r.other)
       li.append(why)
       if (r.evidence.length) {
@@ -306,24 +306,26 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
 
 /** What a relation is, in words. */
 const KIND_WORD = { runtime: 'calls at runtime', code: 'uses in code', types: 'type-only import' } as const
+const KIND_ONE = { runtime: 'call at runtime', code: 'use in code', types: 'type-only import' } as const
 
 /**
  * The panel for a click on a stretch several arrows share: which arrows run there, heaviest first,
  * each a button that opens that one arrow's panel. The hover tooltip names the same set.
  */
-export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; t: number; count: number }[], choose: (l: { s: number; t: number }) => void) {
+export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; t: number; count: number }[], choose: (l: { s: number; t: number }, k: number) => void) {
   panel.classList.remove('outline')
+  panel.hidden = false
   const head = el('div', 'd-head')
   const total = lines.reduce((a, l) => a + l.count, 0)
   head.append(el('span', 'd-kind', 'Arrows'), el('h2', '', `${lines.length} arrows share this line`))
   const p = el('p', '', `They carry ${total} relation${total === 1 ? '' : 's'} between them. Pick one to see what it carries and why.`)
   const box = el('section', 'd-rels d-lines')
   const ul = el('ul')
-  for (const l of lines) {
+  for (const [k, l] of lines.entries()) {
     const li = el('li')
     const b = el('button', 'd-rel')
     b.append(el('b', '', `${tree.els[l.s].title} ↔ ${tree.els[l.t].title}`), el('span', '', `${l.count} relation${l.count === 1 ? '' : 's'}`))
-    b.onclick = () => choose(l)
+    b.onclick = () => choose(l, k)
     li.append(b)
     ul.append(li)
   }
@@ -341,7 +343,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   const head = el('div', 'd-head')
   head.append(el('span', 'd-kind', 'Arrow'), el('h2', '', `${tree.els[s].title} ↔ ${tree.els[t].title}`))
   const count = (kind: string) => rels.filter(k => tree.relKind[k] === kind).length
-  const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${KIND_WORD[k]}`).join(' · ')
+  const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${count(k) === 1 ? KIND_ONE[k] : KIND_WORD[k]}`).join(' · ')
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
   const section = (from: number, to: number) => {

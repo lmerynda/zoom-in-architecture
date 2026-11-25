@@ -301,13 +301,7 @@ async function main() {
     go: j => controls.goSelect(j),
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
     read: j => void openCode(j, startOf(j)),
-    inspect: (a, b) => {
-      const from = renderer.selected
-      pickEdge({ s: a, t: b }, relationsAcross(tree, a, b))
-      edgeFrom = from
-      const h = details.querySelector<HTMLElement>('h2')
-      if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) }
-    },
+    inspect: (a, b) => { pickEdge({ s: a, t: b }, { rels: relationsAcross(tree, a, b) }); focusHeading() },
   }
   /** In the Connections view, why a card ranks where it does among its siblings. */
   const rankText = (i: number) => {
@@ -335,6 +329,7 @@ async function main() {
     if (focused) [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)?.focus()
   }
   const select = (i: number) => {
+    edgeReturn = { selected: -1, list: null }
     // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page,
     // and back to the card's row in the outline when the selection is put down.
     const inPanel = details.contains(document.activeElement)
@@ -360,31 +355,62 @@ async function main() {
     $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }
   /** Picks a line for the panel: what it carries and why, relation by relation. Null puts it down. */
-  /** The selection an arrow was inspected from, by keyboard: putting the arrow down returns to it. */
-  let edgeFrom = -1
+  /**
+   * Where putting an arrow down returns: the selection it was picked over, and the list of arrows
+   * on a shared trunk when it was chosen from one. Reset by any new selection or model.
+   */
+  type Picked = { s: number; t: number; rels: number[] }
+  let edgeReturn: { selected: number; list: Picked[] | null } = { selected: -1, list: null }
+  /** An arrow, or the list of arrows on a trunk, is in the panel: the outline waits. */
+  const edgeOpen = () => renderer.edge != null || details.querySelector('.d-lines') != null
+  const focusHeading = () => { const h = details.querySelector<HTMLElement>('h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); h.scrollIntoView({ block: 'nearest' }) } }
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   /**
    * Picks a line for the panel: what it carries and why, relation by relation. Several lines (a
-   * shared trunk) list the arrows there, heaviest first, to pick one. Null puts it down.
+   * shared trunk) list the arrows there, heaviest first, to pick one; each keeps the relations it
+   * carried when clicked, however the map regroups after. Null puts it down: back to the list it was
+   * chosen from, else the selection it was picked over. Focus in the panel stays in the panel.
    */
-  const pickEdge = (l: { s: number; t: number } | { s: number; t: number; count: number }[] | null, rels?: number[]) => {
-    const back = edgeFrom
-    edgeFrom = -1
+  const pickEdge = (l: { s: number; t: number } | { s: number; t: number }[] | null, opts: { rels?: number[]; from?: Picked[] } = {}) => {
+    const inPanel = details.contains(document.activeElement)
+    const inEdge = edgeOpen()
+    if (!inEdge) edgeReturn = { selected: renderer.selected, list: null }
     if (Array.isArray(l) && l.length === 1) l = l[0]
-    renderer.selected = -1
     if (!l) {
+      const back = edgeReturn
       renderer.edge = null
-      if (back > 0) { select(back); const h = details.querySelector<HTMLElement>('h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) } return }
+      if (back.list) { const list = back.list; edgeReturn = { ...back, list: null }; showList(list); if (inPanel) focusHeading(); return }
+      edgeReturn = { selected: -1, list: null }
+      if (back.selected > 0) { select(back.selected); if (inPanel) focusHeading(); return }
+      renderer.selected = -1
       return showDetails()
     }
+    if (Array.isArray(l)) {
+      // The relations each line carries now, before the selection goes and the map regroups.
+      const picked = l.map(x => ({ s: x.s, t: x.t, rels: renderer.relationsBetween(x.s, x.t) })).filter(x => x.rels.length).sort((a, b) => b.rels.length - a.rels.length)
+      renderer.selected = -1
+      showList(picked)
+      if (inPanel) focusHeading()
+      return
+    }
+    const rels = opts.rels ?? renderer.relationsBetween(l.s, l.t)
+    const ends = { s: renderer.rep(l.s), t: renderer.rep(l.t) }
+    edgeReturn.list = opts.from ?? null
+    renderer.selected = -1
+    renderer.edge = ends
     rows = { uses: [], usedBy: [], mark: () => {} }
     outlined = -1
-    if (Array.isArray(l)) {
-      const lines = [...l].sort((a, b) => b.count - a.count)
-      renderer.edge = { s: lines[0].s, t: lines[0].t }
-      return renderLines(details, tree, lines, one => pickEdge(one))
-    }
-    renderer.edge = { s: l.s, t: l.t }
-    renderEdge(details, tree, l.s, l.t, rels ?? renderer.relationsBetween(l.s, l.t), actions)
+    renderEdge(details, tree, l.s, l.t, rels, actions)
+    $('announce').textContent = `Arrow ${tree.els[l.s].title} ↔ ${tree.els[l.t].title}: ${plural(rels.length, 'relation')}`
+    if (inPanel) focusHeading()
+  }
+  /** The arrows on a shared trunk, nothing drawn as picked until one is chosen. */
+  const showList = (picked: Picked[]) => {
+    renderer.edge = null
+    rows = { uses: [], usedBy: [], mark: () => {} }
+    outlined = -1
+    renderLines(details, tree, picked.map(p => ({ s: p.s, t: p.t, count: p.rels.length })), (_, k) => pickEdge(picked[k], { rels: picked[k].rels, from: picked }))
+    $('announce').textContent = `${picked.length} arrows share this line`
   }
 
   // Lenses: strategy-game overlays colouring every card by one measure.
@@ -402,7 +428,7 @@ async function main() {
     const path = r ? tree.els[tree.byId.get(r.id) ?? 0]?.metadata?.path : null
     return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null }
   }, () => cam.w)
-  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
   showIntro(tree, name => controls.feature(name))
 
@@ -525,6 +551,7 @@ async function main() {
     prev.destroy()
 
     tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
+    edgeReturn = { selected: -1, list: null }
     lenses.splice(0, lenses.length, ...buildLenses(next))
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
     minimap.tree = next; minimap.world = live
@@ -605,9 +632,9 @@ async function main() {
       const buttons = [...crumbs.querySelectorAll('button')]
       for (let k = 1; k < buttons.length - 2 && crumbs.scrollWidth > crumbs.clientWidth + 1; k++) { buttons[k].textContent = '…'; buttons[k].style.flex = 'none' }
       document.title = here > 0 ? `${tree.els[here].title} · ${tree.els[0].title}` : tree.els[0].title
-      if (!cam.flying) showOutline()
+      if (!cam.flying && !edgeOpen()) showOutline()
     }
-    if (!cam.flying && outlined !== here && renderer.selected <= 0 && !renderer.edge) showOutline()
+    if (!cam.flying && outlined !== here && renderer.selected <= 0 && !edgeOpen()) showOutline()
     push(cpu, performance.now() - start)
     push(delta, dt)
   }

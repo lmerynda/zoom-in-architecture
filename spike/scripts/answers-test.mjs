@@ -153,24 +153,42 @@ try {
   await page.mouse.move(5, 500)
 
   // 4b'. A click on a stretch several arrows share lists them all, heaviest first, as the hover
-  // tooltip names them; picking one opens that arrow.
-  await open('model=knights-of-darkness')
-  const trunk = await page.evaluate(() => {
+  // tooltip names them; picking one, by keyboard too, opens that arrow with the relations it carried;
+  // Esc goes back to the list, then to where it started. Also over a selection, which regroups the map.
+  const trunkAt = () => page.evaluate(() => {
     const s = window.__spike
     for (const l of s.renderer.lines) for (let k = 2; k < l.pts.length; k += 2) for (const u of [0.25, 0.5, 0.75]) {
       const x = l.pts[k - 2] + (l.pts[k] - l.pts[k - 2]) * u, y = l.pts[k - 1] + (l.pts[k + 1] - l.pts[k - 1]) * u
       if (s.renderer.pick(x, y) > 0) continue
       const here = s.renderer.linesAt(x, y)
-      if (here.length > 1) return { at: [x, y], n: here.length }
+      if (here.length > 1) return { at: [x, y], pairs: here.map(h => [h.s, h.t].sort().join()).sort() }
     }
     return null
   })
-  if (trunk) { await page.mouse.click(trunk.at[0], trunk.at[1]); await sleep(400) }
-  const listed = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, rows: [...document.querySelectorAll('#details .d-lines button')].map(b => b.textContent) }))
-  check('a click on a shared trunk lists every arrow there, as the tooltip does', !!trunk && listed.kind === 'Arrows' && listed.rows.length === trunk.n, JSON.stringify({ trunk, listed }))
-  if (listed.rows.length) { await page.click('#details .d-lines button'); await sleep(300) }
-  check('picking one of them opens that arrow', await page.evaluate(() => document.querySelector('#details .d-kind')?.textContent === 'Arrow'))
-  await page.keyboard.press('Escape')
+  const listShown = () => page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, rows: [...document.querySelectorAll('#details .d-lines button')].map(b => ({ text: b.querySelector('b').textContent, n: Number(b.querySelector('span').textContent.split(' ')[0]) })), drawnPicked: window.__spike.renderer.edge }))
+  for (const [where, q, sel] of [['the landscape', 'model=knights-of-darkness', null], ['War selected inside Game server', 'model=knights-of-darkness&in=backend', 'backend.military']]) {
+    await open(q)
+    if (sel) { await page.evaluate(id => window.__spike.select(window.__spike.id(id)), sel); await sleep(700) }
+    const trunk = await trunkAt()
+    if (trunk) { await page.mouse.click(trunk.at[0], trunk.at[1]); await sleep(400) }
+    const listed = await listShown()
+    const sorted = listed.rows.every((r, k) => k === 0 || listed.rows[k - 1].n >= r.n)
+    check(`on ${where}, a click on a shared trunk lists every arrow there, heaviest first, none drawn as picked yet`, !!trunk && listed.kind === 'Arrows' && listed.rows.length === trunk.pairs.length && sorted && listed.drawnPicked === null, JSON.stringify({ trunk, listed }))
+    if (!listed.rows.length) continue
+    // By keyboard: focus the first row, Enter.
+    await page.evaluate(() => document.querySelector('#details .d-lines button').focus())
+    await page.keyboard.press('Enter')
+    await sleep(300)
+    const opened = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, title: document.querySelector('#details h2')?.textContent, rels: document.querySelectorAll('#details .d-edge li').length, focus: document.activeElement?.tagName }))
+    check(`on ${where}, picking an arrow from the list by keyboard opens it with the relations it carried, focus on its heading`, opened.kind === 'Arrow' && opened.title === listed.rows[0].text && opened.rels === listed.rows[0].n && opened.focus === 'H2', JSON.stringify({ first: listed.rows[0], opened }))
+    await page.keyboard.press('Escape')
+    await sleep(200)
+    const backToList = await page.evaluate(() => document.querySelector('#details .d-kind')?.textContent)
+    await page.keyboard.press('Escape')
+    await sleep(300)
+    const backOut = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, at: new URLSearchParams(location.search).get('at') }))
+    check(`on ${where}, Esc goes back to the list, then to where it started`, backToList === 'Arrows' && backOut.kind !== 'Arrows' && backOut.kind !== 'Arrow' && backOut.at === sel, JSON.stringify({ backToList, backOut }))
+  }
 
   // 4b''. By keyboard: a Uses row opens the same arrow panel, and Esc comes back to the selection.
   await open('model=knights-of-darkness&at=backend')

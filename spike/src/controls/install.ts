@@ -34,7 +34,9 @@ export interface Ctx {
   /** The browser's history of places: Back, Forward and the address. */
   places: Places
   /** Picks a line for the details panel, or puts it down (null). */
-  pickEdge: (l: { s: number; t: number } | { s: number; t: number; count: number }[] | null) => void
+  pickEdge: (l: { s: number; t: number } | { s: number; t: number }[] | null) => void
+  /** An arrow, or the list of arrows on a trunk, is in the panel. */
+  edgeOpen: () => boolean
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
   closeTop: () => boolean
   now: () => number
@@ -281,7 +283,7 @@ export function installControls(c: Ctx) {
       if (menu.isOpen) return menu.close()
       if (c.closeTop()) return
       if (renderer.target > 0) return clearTarget()
-      if (renderer.edge) return c.pickEdge(null)
+      if (c.edgeOpen()) return c.pickEdge(null)
       if (renderer.selected > 0) return c.select(-1)
       return
     }
@@ -328,7 +330,7 @@ export function installControls(c: Ctx) {
       const small = h > 0 && h !== renderer.selected && renderer.screenRectOf(h)[2] < 120
       const busy = !!drag || cam.flying || palette.isOpen || menu.isOpen
       // Off the cards, over a line: say which pairs of elements it carries.
-      const lines = p && h <= 0 && !busy && !renderer.edge ? renderer.linesAt(p[0], p[1]) : []
+      const lines = p && h <= 0 && !busy && !c.edgeOpen() ? renderer.linesAt(p[0], p[1]) : []
       if (lines.length) {
         const name = (i: number) => tree.els[i].title
         const pairs = lines.flatMap(l => renderer.carried(l.s, l.t)).slice(0, 8)
