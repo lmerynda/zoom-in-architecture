@@ -51,6 +51,24 @@
       #travel { flex: 0 0 auto; }
       #models .model-current { max-width: 10em; }
     }
+    /*
+     * A phone: the bar wraps instead of pushing its controls off the screen. First row the map,
+     * Search and Help; then where you are, once you are inside something; then the view and the
+     * lens. Everything stays reachable at 320 px; the map is framed below whatever height it takes.
+     */
+    @media (max-width: 759px) {
+      #top { height: auto; min-height: 52px; flex-wrap: wrap; gap: 4px 6px; padding: 6px 8px; }
+      #models { order: 1; flex: 1 1 0; }
+      #models .model-current { max-width: 100%; }
+      #travel { order: 2; padding: 6px 10px; }
+      #help { order: 3; }
+      #crumbs { order: 4; flex: 1 1 100%; }
+      /* At the whole map the one crumb repeats the map's name. */
+      #crumbs:not(:has(button + button)) { display: none; }
+      #views { order: 5; flex: 1 1 auto; padding: 0; }
+      #views a { padding: 6px 7px; }
+      .lensbar { order: 6; }
+    }
     #crumbs .provenance { flex: none; color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
     #crumbs .provenance.stale { color: #fbbf24; }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
@@ -198,6 +216,14 @@
     #arrows { position: fixed; z-index: 11; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 5px 10px; background: rgba(9, 12, 20, 0.9); border: 1px solid var(--line); border-radius: 8px; font-size: 11px; color: var(--dim); }
     #arrows[hidden] { display: none; }
     #arrows .a-head { color: var(--text); font-weight: 600; }
+    #arrows .a-toggle { display: none; }
+    @media (max-width: 759px) {
+      #arrows { left: 8px; max-width: calc(100vw - 16px); flex-wrap: wrap; gap: 6px 12px; }
+      #arrows .a-head, #arrows:not(.open) > :not(.a-toggle) { display: none; }
+      #arrows .a-toggle { display: inline-block; color: var(--text); font-weight: 600; background: none; border: 0; padding: 6px 4px; }
+      #arrows .a-toggle::after { content: ' ▸'; color: var(--dim); }
+      #arrows.open .a-toggle::after { content: ' ▾'; }
+    }
     #arrows span[class^="a-"]:not(.a-head)::before { content: ''; display: inline-block; width: 22px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid #8193bd; }
     #arrows .a-runtime::before { border-top-color: #c4b5fd !important; }
     #arrows .a-types::before { border-top-style: dashed !important; }
@@ -215,7 +241,7 @@
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #b6c2d3; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; }
     #empty button { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
     /* Reading a file: one column of code over the map, left of the details panel. */
-    .reader { position: fixed; z-index: 15; top: 64px; left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: rgba(5, 8, 14, 0.97); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+    .reader { position: fixed; z-index: 15; top: calc(var(--bar, 52px) + 12px); left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: rgba(5, 8, 14, 0.97); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .reader[hidden] { display: none; }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
@@ -252,7 +278,7 @@
     .lens-menu button.on { color: #fde68a; font-weight: 600; }
     /* The legend hangs below the lens bar, so picking a lens never reflows the top bar. */
     /* The legend has its own place under the bar: over the map on a narrow screen, and on a wide one at the head of the details column, which steps down for it. */
-    .lens-legend { position: fixed; top: 60px; right: 12px; z-index: 13; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: rgba(9, 12, 20, 0.95); border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); }
+    .lens-legend { position: fixed; top: calc(var(--bar, 52px) + 8px); right: 12px; z-index: 13; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: rgba(9, 12, 20, 0.95); border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); }
     .lens-legend .lens-range { flex-basis: 100%; }
     @media (min-width: 1100px) {
       .lens-legend { width: 330px; }

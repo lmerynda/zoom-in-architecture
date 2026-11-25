@@ -155,7 +155,7 @@ try {
   // 4c. Arrows say what kind they are, and a picked arrow says why it exists, line by line.
   await page.evaluate(() => { localStorage.removeItem('zoom.showTypes') })
   await open('model=knights-of-darkness&in=backend')
-  const legend = await page.evaluate(() => [...document.querySelectorAll('#arrows span, #arrows button')].map(e => e.textContent))
+  const legend = await page.evaluate(() => [...document.querySelectorAll('#arrows span, #arrows button:not(.a-toggle)')].map(e => e.textContent))
   check('the arrow legend names code uses, runtime calls, calls not seen in tests, and type-only imports', ['uses in code', 'calls at runtime', 'calls not seen in tests', 'type-only imports', 'Show'].every(t => legend.includes(t)), JSON.stringify(legend))
   // The trace watches only the parts where code ran in the tests: a call into them from outside
   // (the test client, the browser, a person) is drawn plain and says so when picked.
@@ -174,11 +174,11 @@ try {
   await open('model=knights-of-darkness&in=backend')
   const types = async () => page.evaluate(() => window.__spike.tree.relKind.filter(k => k === 'types').length)
   const hidden = await types()
-  await page.click('#arrows button')
+  await page.click('#arrows button:not(.a-toggle)')
   await page.waitForFunction(() => window.__spike.tree.relKind.includes('types'), { timeout: 15000 }).catch(() => {})
   const shown = await types()
   check('type-only imports are hidden until shown, then drawn', hidden === 0 && shown > 0, JSON.stringify({ hidden, shown }))
-  await page.click('#arrows button')
+  await page.click('#arrows button:not(.a-toggle)')
   await page.waitForFunction(() => !window.__spike.tree.relKind.includes('types'), { timeout: 15000 }).catch(() => {})
   await landed()
   // A point on a drawn line, off the cards.

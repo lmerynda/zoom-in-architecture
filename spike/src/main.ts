@@ -231,6 +231,8 @@ async function main() {
   // Pixi applies a window resize a frame later; reading the screen before that keeps the old
   // size, and everything outside it is culled as off-screen.
   app.renderer.on('resize', resize)
+  // The bar wraps on a phone: what sits under it (the reader, the lens legend) follows its height.
+  new ResizeObserver(() => document.documentElement.style.setProperty('--bar', `${$('top').getBoundingClientRect().height}px`)).observe($('top'))
 
   // Selection: click a card to focus its relations; the panel lists them, each a jump.
   const details = $('details')
@@ -363,7 +365,13 @@ async function main() {
     const box = $('arrows')
     const kinds = new Set(raw.relations.map(r => r.kind ?? (r.evidence ? 'runtime' : 'code')))
     const item = (cls: string, text: string) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; return s }
-    const parts: HTMLElement[] = [item('a-head', 'Arrows'), item('a-code', 'uses in code')]
+    // On a phone the legend folds into one button that opens it; wide, it is a heading.
+    const toggle = document.createElement('button')
+    toggle.className = 'a-toggle'
+    toggle.textContent = 'Arrows'
+    toggle.setAttribute('aria-expanded', String(box.classList.contains('open')))
+    toggle.onclick = () => toggle.setAttribute('aria-expanded', String(box.classList.toggle('open')))
+    const parts: HTMLElement[] = [item('a-head', 'Arrows'), toggle, item('a-code', 'uses in code')]
     if (kinds.has('runtime')) parts.push(item('a-runtime', 'calls at runtime'))
     // A map traced with the project's own tests tells the calls it could have seen and no test made,
     // when there are any: the dash is named only where one can be drawn.

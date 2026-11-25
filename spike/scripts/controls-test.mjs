@@ -214,6 +214,27 @@ try {
     return out
   })
   check('dim text is at least 4.5:1 on the panels', Object.values(contrast).every(r => r >= 4.5), JSON.stringify(contrast))
+
+  // A phone: the bar wraps and every control in it stays on screen and reachable; the arrow legend
+  // folds into one button; the map is framed below the bar, however tall it gets.
+  for (const width of [390, 320]) {
+    await page.setViewport({ width, height: 800, isMobile: true, hasTouch: true })
+    await open('model=knights-of-darkness&in=backend')
+    const bar = await page.evaluate(() => {
+      const top = document.getElementById('top').getBoundingClientRect()
+      const off = [...document.querySelectorAll('#top button, #top a')].filter(e => e.getClientRects().length && !e.closest('[hidden]')).map(e => [e.textContent.trim().slice(0, 20), e.getBoundingClientRect()]).filter(([, r]) => r.left < 0 || r.right > innerWidth + 0.5 || r.bottom > top.bottom + 0.5).map(([t]) => t)
+      const want = ['Search', 'Help', 'Architecture', 'Connections', 'Requests'].filter(t => ![...document.querySelectorAll('#top button, #top a')].some(e => e.getClientRects().length && e.textContent.includes(t)))
+      const lens = document.querySelector('.lens-current')?.getClientRects().length > 0
+      const legend = [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).map(e => e.textContent)
+      return { off, want, lens, legend, barBottom: top.bottom, bar: getComputedStyle(document.documentElement).getPropertyValue('--bar') }
+    })
+    check(`at ${width} px every bar control is on screen`, !bar.off.length && !bar.want.length && bar.lens && Math.abs(parseFloat(bar.bar) - bar.barBottom) < 1.5, JSON.stringify(bar))
+    check(`at ${width} px the arrow legend is one button until opened`, bar.legend.length === 1 && bar.legend[0] === 'Arrows', JSON.stringify(bar.legend))
+    await page.click('#arrows .a-toggle')
+    const opened = await page.evaluate(() => ({ items: [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).length, expanded: document.querySelector('#arrows .a-toggle').getAttribute('aria-expanded') }))
+    check(`at ${width} px the arrow legend opens on its button`, opened.items > 2 && opened.expanded === 'true', JSON.stringify(opened))
+  }
+  await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)
