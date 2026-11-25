@@ -215,6 +215,48 @@ try {
   })
   check('dim text is at least 4.5:1 on the panels', Object.values(contrast).every(r => r >= 4.5), JSON.stringify(contrast))
 
+  // Assistive technology: search is a combobox whose highlighted result is the active option, and
+  // putting it away gives focus back to where it was.
+  await open('model=knights-of-darkness')
+  await focusMap()
+  await page.keyboard.press('/')
+  await page.keyboard.type('market')
+  await sleep(300)
+  await page.keyboard.press('ArrowDown')
+  const combo = await page.evaluate(() => {
+    const i = document.querySelector('.palette input'), on = document.querySelector('.palette .row.on')
+    const sub = on?.querySelector('.sub')
+    return { role: i.getAttribute('role'), expanded: i.getAttribute('aria-expanded'), list: document.getElementById(i.getAttribute('aria-controls'))?.getAttribute('role'), active: i.getAttribute('aria-activedescendant') === on?.id && on?.getAttribute('role') === 'option' && on?.getAttribute('aria-selected') === 'true', second: [...document.querySelectorAll('.palette .row')].indexOf(on) === 1, status: document.querySelector('.palette [role=status]')?.textContent, subColor: sub && getComputedStyle(sub).color }
+  })
+  check('search is a combobox over a listbox, its highlight the active option, its count announced', combo.role === 'combobox' && combo.expanded === 'true' && combo.list === 'listbox' && combo.active && combo.second && /\d+ results?/.test(combo.status), JSON.stringify(combo))
+  check('the highlighted result\'s path stays at 4.5:1 on the amber highlight', combo.subColor === 'rgb(167, 180, 200)', combo.subColor)
+  await page.keyboard.press('Escape')
+  check('Esc gives focus back to the map it was opened from', await page.evaluate(() => document.activeElement === document.querySelector('#stage canvas')))
+
+  // One visible focus ring everywhere, and selecting from the outline keeps focus in the panel.
+  await page.evaluate(() => document.querySelector('#details .d-outline button').focus())
+  await page.keyboard.press('ArrowDown')
+  const ring = await page.evaluate(() => { const s = getComputedStyle(document.activeElement); return { cls: document.activeElement.className, style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor } })
+  check('an outline row shows a 2 px amber focus ring', ring.style === 'solid' && ring.width === '2px' && ring.color === 'rgb(251, 191, 36)', JSON.stringify(ring))
+  await page.keyboard.press('Enter')
+  await sleep(600)
+  const after = await page.evaluate(() => ({ focus: document.activeElement?.tagName, inPanel: document.getElementById('details').contains(document.activeElement), said: document.getElementById('announce').textContent }))
+  check('selecting from the outline moves focus to the new heading and announces it', after.focus === 'H2' && after.inPanel && /^Selected .+: uses \d+, used by \d+$/.test(after.said), JSON.stringify(after))
+
+  // State in words: the open view, and whether a menu is open.
+  const state = await page.evaluate(async () => {
+    const current = [...document.querySelectorAll('#views a[aria-current="page"]')].map(a => a.textContent)
+    const lens = document.querySelector('.lens-current'), model = document.querySelector('.model-current')
+    const before = [lens.getAttribute('aria-expanded'), model.getAttribute('aria-expanded')]
+    lens.click(); await new Promise(r => setTimeout(r, 50))
+    const lensOpen = lens.getAttribute('aria-expanded')
+    document.body.click(); model.click(); await new Promise(r => setTimeout(r, 50))
+    const modelOpen = model.getAttribute('aria-expanded')
+    document.body.click(); await new Promise(r => setTimeout(r, 50))
+    return { current, before, lensOpen, modelOpen, after: [lens.getAttribute('aria-expanded'), model.getAttribute('aria-expanded')] }
+  })
+  check('the open view is aria-current and menus say whether they are open', state.current.join() === 'Architecture' && state.before.join() === 'false,false' && state.lensOpen === 'true' && state.modelOpen === 'true' && state.after.join() === 'false,false', JSON.stringify(state))
+
   // A phone, and 200% zoom (800 CSS px): the bar wraps and every control in it stays on screen and
   // reachable; the arrow legend folds into one button; cards and labels start below the bar.
   for (const [width, height] of [[390, 800], [320, 568], [800, 500]]) {

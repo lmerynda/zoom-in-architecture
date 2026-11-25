@@ -328,9 +328,17 @@ async function main() {
     if (focused) [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)?.focus()
   }
   const select = (i: number) => {
+    // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page.
+    const inPanel = details.contains(document.activeElement)
     renderer.selected = i > 0 ? i : -1
     renderer.edge = null
     showDetails()
+    if (i <= 0) return
+    const heading = details.querySelector<HTMLElement>('h2')
+    if (heading) heading.tabIndex = -1
+    if (inPanel) heading?.focus({ preventScroll: true })
+    // A screen reader hears what was selected and how connected it is.
+    $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }
   /** Picks a line for the panel: what it carries and why, relation by relation. Null puts it down. */
   const pickEdge = (l: { s: number; t: number } | null) => {
@@ -385,6 +393,7 @@ async function main() {
       const b = document.createElement('button')
       b.textContent = showTypes ? 'Hide' : 'Show'
       b.title = showTypes ? 'Hide type-only imports: compile-time coupling, not use' : 'Show type-only imports, dashed'
+      b.setAttribute('aria-label', showTypes ? 'Hide type-only imports' : 'Show type-only imports')
       b.onclick = () => {
         showTypes = !showTypes
         try { localStorage.setItem(TYPES_KEY, showTypes ? '1' : '0') } catch { /* private mode */ }

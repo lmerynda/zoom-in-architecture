@@ -17,6 +17,8 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
     a.textContent = label
     a.title = label
     a.className = [on ? 'on' : '', cls].filter(Boolean).join(' ')
+    // The open map and view say so in words too, not only in colour.
+    if (on) a.setAttribute('aria-current', 'page')
     return a
   }
   const open = entries.find(e => e.name === current)
@@ -47,7 +49,13 @@ export async function renderModelTabs(nav: HTMLElement, viewsNav: HTMLElement, c
   button.className = 'model-current'
   button.textContent = current === 'synthetic' ? `Synthetic · ${n === '10000' ? '10k' : '1k'}` : open?.title ?? current
   button.title = 'Open another model'
-  button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden }
+  menu.id = 'model-menu'
+  button.setAttribute('aria-haspopup', 'true')
+  button.setAttribute('aria-controls', menu.id)
+  button.setAttribute('aria-expanded', 'false')
+  // The menu's state is on the button for a screen reader, however the menu was closed.
+  new MutationObserver(() => button.setAttribute('aria-expanded', String(!menu.hidden))).observe(menu, { attributes: true, attributeFilter: ['hidden'] })
+  button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) menu.querySelector<HTMLElement>('a.on, a')?.focus() }
   nav.replaceChildren(button, menu)
   return open
 }
@@ -58,6 +66,9 @@ addEventListener('click', e => { if (!(e.target as Element).closest?.('.model-me
 // Esc closes an open menu and nothing else: it does not also clear the map's selection.
 addEventListener('keydown', e => {
   if (e.key !== 'Escape' || ![...document.querySelectorAll<HTMLElement>('.model-menu')].some(m => !m.hidden)) return
+  const inside = (document.activeElement as Element | null)?.closest?.('#models')
   close()
+  // Focus that was in the menu goes back to its button, not to the page.
+  if (inside) document.querySelector<HTMLElement>('.model-current')?.focus()
   e.stopImmediatePropagation()
 }, true)

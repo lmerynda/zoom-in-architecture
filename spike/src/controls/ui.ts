@@ -54,8 +54,10 @@ export class Palette {
   private root = el('div', 'palette')
   private input = el('input')
   private list = el('div', 'palette-list')
+  private status = el('div', 'sr-only')
   private items: Item[] = []
   private active = 0
+  private opener: HTMLElement | null = null
   isOpen = false
 
   constructor(public tree: Tree, private commands: () => Command[], private act: SearchActions) {
@@ -64,14 +66,23 @@ export class Palette {
     this.root.setAttribute('role', 'dialog')
     this.root.setAttribute('aria-label', 'Search')
     this.root.hidden = true
-    this.root.append(this.input, this.list)
+    // A combobox over a listbox: a screen reader hears the highlighted result as the arrows move it.
+    this.list.id = 'palette-list'
+    this.list.setAttribute('role', 'listbox')
+    this.list.setAttribute('aria-label', 'Results')
+    this.input.setAttribute('role', 'combobox')
+    this.input.setAttribute('aria-autocomplete', 'list')
+    this.input.setAttribute('aria-controls', this.list.id)
+    this.input.setAttribute('aria-expanded', 'false')
+    this.status.setAttribute('role', 'status')
+    this.root.append(this.input, this.status, this.list)
     document.body.append(this.root)
     this.input.addEventListener('input', () => this.search())
     this.input.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown') { this.move(1); e.preventDefault() }
       if (e.key === 'ArrowUp') { this.move(-1); e.preventDefault() }
-      if (e.key === 'Enter') { const it = this.items[this.active]; this.close(); it?.run() }
-      if (e.key === 'Escape') this.close()
+      if (e.key === 'Enter') { const it = this.items[this.active]; this.close(true); it?.run() }
+      if (e.key === 'Escape') this.close(true)
       e.stopPropagation()
     })
     // A click outside closes it; a click on a row runs that row first (mousedown, below).
@@ -79,25 +90,34 @@ export class Palette {
   }
 
   open(prefix = '') {
+    // The opener gets focus back when the search is put away (not when it was left by a click elsewhere).
+    if (!this.isOpen) this.opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
     this.isOpen = true
+    this.input.setAttribute('aria-expanded', 'true')
     this.root.hidden = false
     this.input.value = prefix
     this.search()
     this.input.focus()
   }
 
-  close() {
+  close(restore = false) {
     if (!this.isOpen) return
     this.isOpen = false
     this.root.hidden = true
-    this.input.blur()
+    this.input.setAttribute('aria-expanded', 'false')
+    this.input.removeAttribute('aria-activedescendant')
+    const back = restore && this.opener?.isConnected ? this.opener : null
+    this.opener = null
+    if (back) back.focus({ preventScroll: true })
+    else this.input.blur()
   }
 
   private move(d: number) {
     this.active = Math.max(0, Math.min(this.items.length - 1, this.active + d))
     const rows = this.list.querySelectorAll('.row')
-    rows.forEach((c, k) => c.classList.toggle('on', k === this.active))
+    rows.forEach((c, k) => { c.classList.toggle('on', k === this.active); c.setAttribute('aria-selected', String(k === this.active)) })
     rows[this.active]?.scrollIntoView({ block: 'nearest' })
+    if (rows[this.active]) this.input.setAttribute('aria-activedescendant', rows[this.active].id)
   }
 
   private element = (i: number): Item => {
@@ -148,12 +168,22 @@ export class Palette {
     this.list.replaceChildren(...(note ? [note] : []), ...groups.flatMap(([title, items]) => [
       ...(title ? [el('div', 'group', title)] : []),
       ...items.map(it => {
-        const row = el('div', k++ === 0 ? 'row on' : 'row')
+        const row = el('div', k === 0 ? 'row on' : 'row')
+        row.id = `palette-opt-${k}`
+        row.setAttribute('role', 'option')
+        row.setAttribute('aria-selected', String(k++ === 0))
+        row.setAttribute('aria-label', `${it.label}, ${it.kind}${it.sub ? `, ${it.sub}` : ''}`)
         row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
-        row.onmousedown = e => { e.preventDefault(); this.close(); it.run() }
+        row.onmousedown = e => { e.preventDefault(); this.close(true); it.run() }
         return row
       }),
     ]))
+    // Headings and the no-match note are not options: they are read through the status line instead.
+    for (const n of this.list.querySelectorAll('.group, .none')) n.setAttribute('role', 'presentation')
+    const first = this.list.querySelector('.row')
+    if (first) this.input.setAttribute('aria-activedescendant', first.id)
+    else this.input.removeAttribute('aria-activedescendant')
+    this.status.textContent = note ? note.textContent ?? '' : `${this.items.length} result${this.items.length === 1 ? '' : 's'}`
   }
 }
 

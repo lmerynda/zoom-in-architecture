@@ -24,14 +24,18 @@ export class LensBar {
   constructor(private lenses: Lens[]) {
     this.names = [['structure', 'Structure'], ...lenses.map(l => [l.name, l.name[0].toUpperCase() + l.name.slice(1)] as [LensName, string])]
     this.button.setAttribute('aria-haspopup', 'menu')
+    this.button.setAttribute('aria-expanded', 'false')
     this.menu.setAttribute('role', 'menu')
+    this.menu.id = 'lens-menu'
+    this.button.setAttribute('aria-controls', this.menu.id)
     this.menu.hidden = true
+    new MutationObserver(() => this.button.setAttribute('aria-expanded', String(!this.menu.hidden))).observe(this.menu, { attributes: true, attributeFilter: ['hidden'] })
     this.button.onclick = e => { e.stopPropagation(); this.menu.hidden = !this.menu.hidden; if (!this.menu.hidden) (this.menu.querySelector('.on') as HTMLElement | null)?.focus() }
     for (const [name, label] of this.names) {
       const b = el('button', '', label)
       b.setAttribute('role', 'menuitemradio')
       b.dataset.lens = name
-      b.onclick = () => { this.menu.hidden = true; this.onPick(name) }
+      b.onclick = () => { this.menu.hidden = true; this.onPick(name); this.button.focus() }
       this.menu.append(b)
     }
     this.menu.addEventListener('keydown', e => {
