@@ -13,7 +13,7 @@ import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from 
 import { Tree, type ModelJson } from './model'
 import { placeUrl, Places } from './places'
 import { Reader } from './reader'
-import { OPEN_A, Renderer } from './render'
+import { OPEN_A, Renderer, safeTop, setSafeTop } from './render'
 import { synthetic } from './synthetic'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -232,7 +232,11 @@ async function main() {
   // size, and everything outside it is culled as off-screen.
   app.renderer.on('resize', resize)
   // The bar wraps on a phone: what sits under it (the reader, the lens legend) follows its height.
-  new ResizeObserver(() => document.documentElement.style.setProperty('--bar', `${$('top').getBoundingClientRect().height}px`)).observe($('top'))
+  new ResizeObserver(() => {
+    const h = $('top').getBoundingClientRect().height
+    document.documentElement.style.setProperty('--bar', `${h}px`)
+    setSafeTop(h)
+  }).observe($('top'))
 
   // Selection: click a card to focus its relations; the panel lists them, each a jump.
   const details = $('details')
@@ -588,7 +592,7 @@ async function main() {
       get tree() { return tree }, get world() { return world }, get renderer() { return renderer },
       get liveVersion() { return liveVersion }, get morphing() { return morph != null }, swapModel,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
-      fit, fly: (i: number) => controls.go(i), select, setLens, unhover: () => { renderer.pointer = null }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
+      fit, safeTop, fly: (i: number) => controls.go(i), select, setLens, unhover: () => { renderer.pointer = null }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),
       resetFrames: () => { cpu.k = delta.k = 0; cpu.full = delta.full = false },
       /** Recording: stop real time, then advance the scene by exact steps. */

@@ -302,7 +302,9 @@ export class Help {
     if (on) {
       this.back = document.activeElement as HTMLElement | null
       this.root.hidden = false
-      ;(this.root.querySelector('.help-close') as HTMLElement).focus()
+      // Focus goes to Close without scrolling to it: Help opens at its top, however tall it is.
+      ;(this.root.querySelector('.help-close') as HTMLElement).focus({ preventScroll: true })
+      this.root.scrollTop = 0
     } else {
       this.root.hidden = true
       this.back?.focus?.()

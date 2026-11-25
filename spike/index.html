@@ -56,7 +56,7 @@
      * Search and Help; then where you are, once you are inside something; then the view and the
      * lens. Everything stays reachable at 320 px; the map is framed below whatever height it takes.
      */
-    @media (max-width: 759px) {
+    @media (max-width: 899px) {
       #top { height: auto; min-height: 52px; flex-wrap: wrap; gap: 4px 6px; padding: 6px 8px; }
       #models { order: 1; flex: 1 1 0; }
       #models .model-current { max-width: 100%; }
@@ -67,7 +67,9 @@
       #crumbs:not(:has(button + button)) { display: none; }
       #views { order: 5; flex: 1 1 auto; padding: 0; }
       #views a { padding: 6px 7px; }
-      .lensbar { order: 6; }
+      .lensbar { order: 6; margin-left: auto; }
+      /* The lens menu opens under the bar at the screen's right edge, wherever its button wrapped to. */
+      .lens-menu { position: fixed; top: calc(var(--bar, 52px) + 4px); right: 8px; left: auto; max-width: calc(100vw - 16px); }
     }
     #crumbs .provenance { flex: none; color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
     #crumbs .provenance.stale { color: #fbbf24; }
@@ -208,7 +210,9 @@
     /* The welcome stands where the arrow legend would: the legend waits until it is put away. */
     body:has(#welcome:not([hidden])) #arrows { display: none; }
     /* Narrow, the outline bar sits at the foot: the welcome stands above it, so Got it is never under it. */
-    @media (max-width: 1099px) { #welcome { bottom: 58px; max-height: calc(100vh - var(--bar, 52px) - 70px); overflow: auto; } }
+    /* A first visit that opens on a selection: the sheet is up, so the welcome stands under the bar instead. */
+    @media (max-width: 1099px) { body:has(#details:not([hidden]):not(.outline)) #welcome { top: calc(var(--bar, 52px) + 8px); bottom: auto; } }
+    @media (max-width: 1099px) { #welcome { z-index: 16; bottom: 58px; max-height: calc(100vh - var(--bar, 52px) - 70px); overflow: auto; } }
     #welcome p { margin: 0 0 8px; line-height: 1.5; }
     #welcome p b { color: #fde68a; }
     #welcome .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
@@ -221,7 +225,7 @@
     #arrows[hidden] { display: none; }
     #arrows .a-head { color: var(--text); font-weight: 600; }
     #arrows .a-toggle { display: none; }
-    @media (max-width: 759px) {
+    @media (max-width: 899px) {
       #arrows { left: 8px; max-width: calc(100vw - 16px); flex-wrap: wrap; gap: 6px 12px; }
       #arrows .a-head, #arrows:not(.open) > :not(.a-toggle) { display: none; }
       #arrows .a-toggle { display: inline-block; color: var(--text); font-weight: 600; background: none; border: 0; padding: 6px 4px; }
@@ -248,7 +252,7 @@
     .reader { position: fixed; z-index: 15; top: calc(var(--bar, 52px) + 12px); left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: #05080e; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .reader[hidden] { display: none; }
     /* A phone: the reader takes the screen under the bar; its header wraps so the file's name and line, and Copy, keep their own rows. */
-    @media (max-width: 759px) {
+    @media (max-width: 899px) {
       .reader { top: var(--bar, 52px); left: 0; right: 0; bottom: 0; border-radius: 0; border-width: 1px 0 0; }
       .reader .reader-head { flex-wrap: wrap; row-gap: 4px; }
       .reader .reader-names { flex: 1 1 100%; flex-wrap: wrap; row-gap: 2px; }

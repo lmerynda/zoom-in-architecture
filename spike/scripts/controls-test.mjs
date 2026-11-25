@@ -215,10 +215,10 @@ try {
   })
   check('dim text is at least 4.5:1 on the panels', Object.values(contrast).every(r => r >= 4.5), JSON.stringify(contrast))
 
-  // A phone: the bar wraps and every control in it stays on screen and reachable; the arrow legend
-  // folds into one button; the map is framed below the bar, however tall it gets.
-  for (const width of [390, 320]) {
-    await page.setViewport({ width, height: 800, isMobile: true, hasTouch: true })
+  // A phone, and 200% zoom (800 CSS px): the bar wraps and every control in it stays on screen and
+  // reachable; the arrow legend folds into one button; cards and labels start below the bar.
+  for (const [width, height] of [[390, 800], [320, 568], [800, 500]]) {
+    await page.setViewport({ width, height, isMobile: width < 700, hasTouch: width < 700 })
     await open('model=knights-of-darkness&in=backend')
     const bar = await page.evaluate(() => {
       const top = document.getElementById('top').getBoundingClientRect()
@@ -226,10 +226,18 @@ try {
       const want = ['Search', 'Help', 'Architecture', 'Connections', 'Requests'].filter(t => ![...document.querySelectorAll('#top button, #top a')].some(e => e.getClientRects().length && e.textContent.includes(t)))
       const lens = document.querySelector('.lens-current')?.getClientRects().length > 0
       const legend = [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).map(e => e.textContent)
-      return { off, want, lens, legend, barBottom: top.bottom, bar: getComputedStyle(document.documentElement).getPropertyValue('--bar') }
+      return { off, want, lens, legend, welcome: !document.getElementById('welcome').hidden, barBottom: top.bottom, bar: getComputedStyle(document.documentElement).getPropertyValue('--bar') }
     })
     check(`at ${width} px every bar control is on screen`, !bar.off.length && !bar.want.length && bar.lens && Math.abs(parseFloat(bar.bar) - bar.barBottom) < 1.5, JSON.stringify(bar))
-    check(`at ${width} px the arrow legend is one button until opened`, bar.legend.length === 1 && bar.legend[0] === 'Arrows', JSON.stringify(bar.legend))
+    // Sticky titles and off-screen chips start below the bar, however tall it wraps.
+    const safe = await page.evaluate(() => ({ safeTop: window.__spike.safeTop(), bar: document.getElementById('top').getBoundingClientRect().bottom }))
+    check(`at ${width} px titles and chips keep below the bar`, safe.safeTop >= safe.bar, JSON.stringify(safe))
+    // The lens menu opens on screen wherever its button wrapped to.
+    await page.click('.lens-current')
+    const lensMenu = await page.evaluate(() => { const r = document.querySelector('.lens-menu').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)] })
+    await page.keyboard.press('Escape')
+    check(`at ${width} px the Colour by menu opens on screen`, lensMenu[0] >= 0 && lensMenu[1] <= width, JSON.stringify(lensMenu))
+    check(`at ${width} px the arrow legend is one button until opened`, bar.legend.length === 1 && bar.legend[0] === 'Arrows', JSON.stringify(bar))
     await page.click('#arrows .a-toggle')
     const opened = await page.evaluate(() => ({ items: [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).length, expanded: document.querySelector('#arrows .a-toggle').getAttribute('aria-expanded') }))
     check(`at ${width} px the arrow legend opens on its button`, opened.items > 2 && opened.expanded === 'true', JSON.stringify(opened))
@@ -239,6 +247,8 @@ try {
     await sleep(200)
     const help = await page.evaluate(() => [...document.querySelectorAll('.help-col')].map(c => { const r = c.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)] }))
     check(`at ${width} px Help keeps every column on screen`, help.length >= 3 && help.every(([l, r]) => l >= 0 && r <= width), JSON.stringify(help))
+    const helpTop = await page.evaluate(() => Math.round(document.querySelector('.help-overlay h2').getBoundingClientRect().top))
+    check(`at ${width} px Help opens at its top`, helpTop >= 0, String(helpTop))
     await page.keyboard.press('Escape')
 
     // Search keeps a file's path readable, so two files of one name stay apart.
@@ -269,6 +279,14 @@ try {
     check(`at ${width} px the welcome's Got it can be pressed, and the legend waits`, ok.top === 'ok' && ok.legend === 0, JSON.stringify(ok))
     await page.click('#welcome .ok')
     check(`at ${width} px Got it puts the welcome away`, await page.evaluate(() => document.getElementById('welcome').hidden))
+    // A first visit by a link to a selection: the sheet is up, and Got it still stands clear of it.
+    await page.evaluate(() => localStorage.removeItem('zoom.introSeen'))
+    await page.goto(`${base}?model=knights-of-darkness&at=backend`, { waitUntil: 'load' })
+    await page.waitForFunction(() => window.__spike?.ready && !document.getElementById('welcome').hidden, { timeout: 60000 })
+    await sleep(300)
+    const okSheet = await page.evaluate(() => { const b = document.querySelector('#welcome .ok').getBoundingClientRect(); return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.className })
+    check(`at ${width} px Got it stands clear of an open sheet`, okSheet === 'ok', okSheet)
+    await page.click('#welcome .ok')
   }
   await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {

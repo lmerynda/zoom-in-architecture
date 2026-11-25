@@ -19,8 +19,12 @@ const OPEN_B = 165
 const PIP = 30
 const DESC_WRAP = 500
 /** Screen insets the HUD covers; sticky labels and edge chips stay inside them. */
-// Below the top bar and the breadcrumb, so sticky titles and chips never sit under them.
+// Below the top bar, so sticky titles and chips never sit under it; the bar wraps on a phone, and
+// the page sets `top` from its measured height (setSafeTop).
 const SAFE = { top: 60, left: 12, right: 12, bottom: 14 }
+/** The top bar's height on screen, plus a margin: where sticky titles and chips may start. */
+export function setSafeTop(barHeight: number) { SAFE.top = Math.round(barHeight) + 8 }
+export const safeTop = () => SAFE.top
 const BG = 0x0b0f17
 const EDGE = 0x8193bd
 const OUT = 0xfbbf24
