@@ -328,7 +328,8 @@ async function main() {
       // flight short of its framing).
       const target = framedAt
       // By id when it fires: a live update meanwhile may number the cards anew.
-      reaiming = setTimeout(() => { const i = framedAt === target ? framedCard() : -1; if (i >= 0 && (headedFramed() || atFramed())) fit(i) }, 150)
+      // A live update moving into place re-aims it itself when it ends (stepMorph).
+      reaiming = setTimeout(() => { const i = framedAt === target && !morph ? framedCard() : -1; if (i >= 0 && (headedFramed() || atFramed())) fit(i) }, 150)
     }
     reshape()
   }
@@ -1102,10 +1103,11 @@ async function main() {
       // there or has landed there (a reader's click or wheel would have changed or stopped it).
       const stillWhole = morph.flying && (headedWhole() || atWhole())
       morph = null
-      // Or the reader asked for the whole map during the morph (the crumb, Fit): that flight aimed at
-      // a layout still moving, so it is framed again for the one now in place.
-      const askedWhole = atWhole() || headedWhole()
-      if ((refitAfterMorph && (stayed || stillWhole)) || askedWhole) fit(0)
+      // Or the reader asked for a framing during the morph (a card, the crumb, Fit), or a resize re-aimed
+      // one: that flight aimed at a layout still moving, so it is framed again for the one now in place.
+      const asked = !!framedAt && (atFramed() || headedFramed()) ? framedCard() : -1
+      if (refitAfterMorph && (stayed || stillWhole)) fit(0)
+      else if (asked >= 0) fit(asked)
       refitAfterMorph = false
     }
   }
