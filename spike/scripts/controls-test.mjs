@@ -455,9 +455,9 @@ try {
       const h = document.querySelector('.reader-head').getBoundingClientRect(), r = s => document.querySelector(s).getBoundingClientRect()
       // Where the line number is drawn: inside the row's box, not cut off, whatever the path is.
       const where = document.querySelector('.reader-where'), digits = where.querySelector('.rw-line').getBoundingClientRect(), box = where.getBoundingClientRect()
-      return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: where.textContent, lineShown: digits.left >= box.left - 0.5 && digits.right <= box.right + 0.5 }
+      return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: where.textContent, lineShown: digits.left >= box.left - 0.5 && digits.right <= box.right + 0.5, fileWhole: where.querySelector('.rw-file').scrollWidth <= where.querySelector('.rw-file').clientWidth + 1 }
     })
-    if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, its line number in view', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where) && head.lineShown, JSON.stringify(head))
+    if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, its file name whole and line number in view', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where) && head.lineShown && head.fileWhole, JSON.stringify(head))
   }
 
   // A one-word crumb is a finger wide too (Excalidraw's "AI").
