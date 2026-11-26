@@ -190,6 +190,14 @@ describe('markedEntries', () => {
     const page = [el('web', null), el('web.p', 'web', { metadata: { path: 'web/Collab.tsx', marks: '841:schedule 9:route' } })]
     const inPage = markedEntries(page, [{ kind: 'schedule', element: 'web.p', line: 841, text: 'setInterval(poll, 5000)', name: 'poll' }, { kind: 'message', element: 'web.p', line: 850, text: 'socket.onmessage = show' }])
     expect([inPage.schedule, inPage.message, inPage.route.map(r => r.line)]).toEqual([[], [], [9]])
+    // A browser app's timers are its own even in a .ts file; a worker's handler and its start stay, whatever it calls.
+    const parts = [el('web', null, { kind: 'webapp' }), el('web.api', 'web', { metadata: { path: 'web/src/api/client.ts' } }), el('worker', null, { kind: 'app' }), el('worker.q', 'worker', { metadata: { path: 'worker/src/consumer.ts' } })]
+    const both = markedEntries(parts, [
+      { kind: 'schedule', element: 'web.api', line: 133, text: 'refreshTimer = window.setInterval(async () => {' },
+      { kind: 'message', element: 'worker.q', line: 12, text: "parentPort.on('message', dispatch)" },
+      { kind: 'main', element: 'worker.q', line: 1, text: '#!/usr/bin/env node' },
+    ])
+    expect([both.schedule, both.message.map(m => m.top), both.main.map(m => m.top)]).toEqual([[], ['worker'], ['worker']])
   })
 })
 

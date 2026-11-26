@@ -60,11 +60,24 @@ describe('markObserved', () => {
     expect([at('app.e1.s1'), at('app.e1.s2'), at('app.e1.s3')]).toEqual(['3', undefined, '2'])
   })
 
-  it('marks a store link seen, and adds one a request needed but the code reading missed', () => {
+  it('marks a store link seen by its endpoint’s requests, with the tables they touched, and adds one a request needed but the code reading missed', () => {
     const { model, requests } = build()
     markObserved(model, requests, observed)
-    expect(requests.relations[0].seen).toBe(3)
-    expect(requests.relations[1]).toEqual({ source: 'app.e2.s1', target: 'db', title: 'inserts offers', kind: 'runtime', seen: 1 })
+    // The count is the endpoint's requests, said so, never calls across the link itself.
+    expect(requests.relations[0]).toMatchObject({ seen: 3, seenOf: 'requests', tables: 'updates and reads offers' })
+    // The added link says the map has none: the trace added it.
+    expect(requests.relations[1]).toEqual({ source: 'app.e2.s1', target: 'db', title: 'inserts offers', kind: 'runtime', seen: 1, seenOf: 'requests', tables: 'inserts offers', origin: 'trace' })
+  })
+
+  it('gives no store tables it cannot place: with two databases, a mapped link keeps its count but no tables, and none is added', () => {
+    const { model, requests } = build()
+    requests.elements.push({ id: 'cache', parent: null, title: 'Cache', kind: 'database', metadata: {} })
+    markObserved(model, requests, observed)
+    expect(requests.relations).toHaveLength(1)
+    expect(requests.relations[0]).toMatchObject({ seen: 3, seenOf: 'requests' })
+    expect(requests.relations[0].tables).toBeUndefined()
+    // The endpoint still says what its requests did to which tables.
+    expect(requests.elements.find(e => e.id === 'app.e2').metadata.tables).toBe('offers: INSERT')
   })
 
   it('says what each table had done to it, writes first, never one verb for all', () => {
@@ -80,6 +93,8 @@ describe('markObserved', () => {
     const at = id => model.elements.find(e => e.id === id).metadata
     expect([at('app.ctl').seen, at('app.repo').seen, at('app.svc').seen]).toEqual(['3', '2', undefined])
     expect(model.relations.map(r => r.seen)).toEqual([2, undefined])
+    // In the architecture a runtime link's count is how often its source file's code ran.
+    expect(model.relations.map(r => r.seenOf)).toEqual(['code', undefined])
     expect(at('db').tables).toBe('offers: INSERT, SELECT, UPDATE')
   })
 

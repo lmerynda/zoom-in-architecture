@@ -165,10 +165,7 @@ export function methodCounts(eps: Endpoint[]): [string, number][] {
   return [...m].sort((a, b) => methodRank(a[0]) - methodRank(b[0]) || a[0].localeCompare(b[0]))
 }
 
-/**
- * The top-level parts that call endpoints and serve none: clients. A timer in a client (a poll
- * every few seconds) is marked like a scheduled job, but it is no way into the system.
- */
+/** The top-level parts that call endpoints and serve none: clients. */
 export function clientParts(api: Api): Set<string> {
   const serving = new Set(api.endpoints.map(ep => ep.app))
   const out = new Set<string>()
@@ -190,10 +187,11 @@ export interface Marks { route: Mark[]; schedule: Mark[]; message: Mark[]; socke
 /**
  * The ways into the map's code, by kind, once per file and line: the HTTP routes its files mark,
  * and the entry points the published map lists (`entryPoints`): scheduled jobs, message and event
- * handlers, socket servers, program mains. A timer, handler or socket in a page or a component (a
- * poll, an animation, a live view) is the page's own, not a way into the system.
+ * handlers, socket entry points, program mains. A timer, handler or socket in a browser app (a
+ * webapp part) or in a page or component file (a poll, an animation, a live view) is the page's own,
+ * not a way into the system; a worker that also calls an API keeps its own.
  */
-export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'metadata'>[], entryPoints: EntryPointJson[]): Marks {
+export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'kind' | 'metadata'>[], entryPoints: EntryPointJson[]): Marks {
   const byId = new Map(els.map(e => [e.id, e]))
   const top = (e: Pick<ElementJson, 'id' | 'parent'>) => { let a = e; while (a.parent && byId.has(a.parent)) a = byId.get(a.parent)!; return a.id }
   const page = (path: string) => /\.(tsx|jsx|vue|svelte|html?)$/i.test(path)
@@ -211,8 +209,10 @@ export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'metadata
   }
   for (const ep of entryPoints) {
     const e = byId.get(ep.element), path = e?.metadata?.path
-    if (!e || !path || (ep.kind !== 'main' && page(path))) continue
-    out[ep.kind].push({ path, line: ep.line, top: top(e), ...(ep.name ? { name: ep.name } : {}) })
+    if (!e || !path) continue
+    const t = top(e)
+    if (ep.kind !== 'main' && (page(path) || byId.get(t)?.kind === 'webapp')) continue
+    out[ep.kind].push({ path, line: ep.line, top: t, ...(ep.name ? { name: ep.name } : {}) })
   }
   for (const k of ['route', 'schedule', 'message', 'socket', 'main'] as const) out[k].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
   return out

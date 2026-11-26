@@ -37,8 +37,17 @@ export interface RelationJson {
   via?: string
   /** Lines of the source's file that name what it uses there: why the relation exists. */
   lines?: number[]
-  /** How many times the project's own end-to-end tests made this call (zoom trace); absent: not seen, or not traced. */
+  /**
+   * What the project's own end-to-end tests showed near this runtime call (zoom trace); absent: not
+   * seen, or not traced. Never a count of calls across this one link: `seenOf` says what it counts.
+   */
   seen?: number
+  /** What `seen` counts: `code`, how often the source file's code ran; `requests`, the requests of the endpoint the call serves. */
+  seenOf?: 'code' | 'requests'
+  /** On a store call in the Requests view: what its endpoint's requests did to which tables ("updates kingdom_entity · reads user_entity"). */
+  tables?: string
+  /** `trace`: the map has no such link; the trace added it because a request touched a store the code reading missed. */
+  origin?: 'trace'
 }
 
 export type RelKind = 'code' | 'types' | 'runtime'
@@ -123,6 +132,10 @@ export class Tree {
   readonly relLines: number[][]
   /** Per relation: how often the project's own tests made it; 0 when not seen. */
   readonly relSeen: number[]
+  /** Per relation: what its `seen` counts ('' when not seen), the tables its requests touched, and whether only the trace knows it. */
+  readonly relSeenOf: ('code' | 'requests' | '')[]
+  readonly relTables: string[]
+  readonly relTraceOnly: boolean[]
   /** Per relation: how it travels (a map link's `via`), '' when it does not say. */
   readonly relVia: string[]
   /**
@@ -166,6 +179,9 @@ export class Tree {
     this.relKind = []
     this.relLines = []
     this.relSeen = []
+    this.relSeenOf = []
+    this.relTables = []
+    this.relTraceOnly = []
     this.relVia = []
     this.relTraceable = []
     this.traced = model.published?.traced ?? null
@@ -184,6 +200,9 @@ export class Tree {
       this.relKind.push(kind)
       this.relLines.push(r.lines ?? [])
       this.relSeen.push(r.seen ?? 0)
+      this.relSeenOf.push(r.seen ? r.seenOf ?? '' : '')
+      this.relTables.push(r.tables ?? '')
+      this.relTraceOnly.push(r.origin === 'trace')
       this.relVia.push(kind === 'runtime' ? r.via ?? '' : '')
       // The trace counts a call by the file that makes it: one drawn from a component, with no file,
       // could never be seen, so it is not judged either.

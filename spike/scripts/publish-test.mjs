@@ -400,6 +400,17 @@ try {
     return labels
   })
   check('the Requests landscape’s store arrow says how it travels, then what it keeps', reqLabels.includes('JPA · orders'), JSON.stringify(reqLabels))
+  // Its panel tells the mapped link from what the trace measured: the endpoint's requests, the tables, and that the call itself was not counted.
+  const storePanel = await page.evaluate(async () => {
+    const s = window.__spike
+    s.select(s.tree.byId.get('server')); await new Promise(r => setTimeout(r, 300))
+    const b = [...document.querySelectorAll('#details .d-inspect')].find(x => /PostgreSQL/.test(x.getAttribute('aria-label')))
+    b?.click(); await new Promise(r => setTimeout(r, 300))
+    const text = document.querySelector('#details').innerText
+    s.select(-1)
+    return text
+  })
+  check('a store arrow’s panel tells the mapped call from the measured traffic', /1 mapped runtime link/.test(storePanel) && /\bJPA\b/.test(storePanel) && /\b3 requests of its endpoint · this call not measured/.test(storePanel) && /reads orders/.test(storePanel), storePanel.replace(/\n/g, ' | ').slice(0, 300))
   const traced = await page.evaluate(async () => {
     const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li, #details .d-table-rows li')].map(p => p.textContent).join(' | ')
     s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()
