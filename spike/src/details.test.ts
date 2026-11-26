@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrowTitle, foldEvidence, kindWord, relationRows, seenText, tableRows } from './details'
+import { arrowTitle, foldEvidence, kindWord, offPath, relationRows, seenText, tableRows } from './details'
 import { Tree, type ModelJson } from './model'
 
 const el = (id: string, parent: string | null, extra = {}) => ({ id, parent, title: id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -91,5 +91,14 @@ describe('arrowTitle', () => {
   it('says ↔ only when both ways have a relation', () => {
     expect(arrowTitle(t, at('a'), at('b'), [...k('a.x'), ...k('b')])).toBe('a ↔ b')
     expect(arrowTitle(t, at('a'), at('b'), [])).toBe('a → b')
+  })
+})
+
+describe('offPath', () => {
+  it('names the tested tables no store call on the code path names', () => {
+    expect(offPath(['kingdom_entity', 'market_offer_entity'], ['kingdoms (JPA)'])).toEqual(['market_offer_entity'])
+    expect(offPath(['spy_report_entity', 'user_entity'], ['reads spy_report_entity · reads user_entity'])).toEqual([])
+    expect(offPath(['orders'], [])).toEqual(['orders'])
+    expect(offPath([], ['x'])).toEqual([])
   })
 })

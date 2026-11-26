@@ -1,4 +1,5 @@
-import { kindName, type EvidenceJson, type Tree } from './model'
+import { clientParts, endpointOf, featureFacts, filterApi, groupApi, methodCounts, routeParams, servedBy, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
+import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
@@ -8,8 +9,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return e
 }
 
-/** What the panel can ask of the page: travel, select, and open code. */
-export interface PanelActions {
+/** What the panel can ask of the page: travel, select, open code, and open the surface. */
+export interface PanelActions extends ApiActions {
   /** Selects element i and frames it, recording the place left behind. */
   go: (i: number) => void
   /** Opens a file of the map at a line; `near` picks among cards showing the same file. */
@@ -76,6 +77,25 @@ export function foldEvidence(evidence: EvidenceJson[]): { code: string | null; a
   return [...out.values()].sort((a, b) => a.at.length - b.at.length)
 }
 
+/**
+ * A card's part in a request: its role, or in maps built before cards carried one, what its title
+ * says ("2 · OwnerRepository" a step, "6 · Response" the response).
+ */
+export function stepRole(e: Pick<ElementJson, 'title' | 'metadata'>): string | undefined {
+  if (e.metadata?.role) return e.metadata.role
+  if (/^\d+ · Response$/.test(e.title)) return 'response'
+  return /^\d+ · /.test(e.title) && e.metadata?.path ? 'step' : undefined
+}
+const stepNumber = (e: Pick<ElementJson, 'title' | 'metadata'>) => Number(e.metadata?.step ?? e.title.match(/^(\d+) · /)?.[1] ?? 0)
+
+/** The endpoints at or under element i of this tree (the Requests view), by id. */
+export function endpointDescendants(tree: Tree, i: number): string[] {
+  const out: string[] = []
+  const walk = (n: number) => { if (endpointOf(tree.els[n])) out.push(tree.els[n].id); else for (const k of tree.children[n]) walk(k) }
+  walk(i)
+  return out
+}
+
 /** A card's kind in words: "Component", "21 files", "File". */
 export function kindWord(tree: Tree, i: number): string {
   const e = tree.els[i], n = tree.children[i].length
@@ -93,7 +113,7 @@ const EMPTY: PanelRows = { uses: [], usedBy: [], mark: () => {} }
  * The details panel for the selected element: what it is, where it sits, its file, and every
  * relation it has as one line each, Uses then Used by. A line's cited code opens on click.
  */
-export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, i: number, act: PanelActions, rank?: string): PanelRows {
+export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, i: number, act: PanelActions, rank?: string, surface: Surface | null = null): PanelRows {
   panel.classList.remove('outline')
   if (i <= 0) { panel.hidden = true; panel.replaceChildren(); return EMPTY }
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
@@ -191,11 +211,11 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
   }
   // A request's path: its numbered steps in the order the request runs, then what stands beside
   // them (the types it names, its branches and answers). Each a jump to its card.
-  const kids = tree.children[i], roleOf = (k: number) => tree.els[k].metadata?.role
+  const kids = tree.children[i], roleOf = (k: number) => stepRole(tree.els[k])
   const path2: HTMLElement[] = []
   if (kids.some(k => roleOf(k) === 'step')) {
     const box = el('section', 'd-steps')
-    const order = (k: number) => (roleOf(k) === 'step' ? Number(tree.els[k].metadata?.step) : 1e3 + ['view', 'response', 'type'].indexOf(roleOf(k) ?? '') )
+    const order = (k: number) => (roleOf(k) === 'step' ? stepNumber(tree.els[k]) : 1e3 + ['view', 'response', 'type'].indexOf(roleOf(k) ?? '') )
     const steps = [...kids].sort((a, b) => order(a) - order(b))
     const onPath = (k: number) => roleOf(k) === 'step' || (roleOf(k) === 'response' && /^\d+ · /.test(tree.els[k].title))
     box.append(el('h3', '', 'The request, in order'))
@@ -213,18 +233,24 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     if (aside.children.length) box.append(el('h3', 'd-beside', `Beside it · ${aside.children.length}`), aside)
     path2.push(box)
   }
+  // An endpoint is told by its effect first, its steps one expand away; a file that handles
+  // requests leads with what it serves; a part with a surface says what it offers.
+  const endpoint = !!endpointOf(e) && tree.children[i].length > 0
+  const api = surface?.api ?? null
+  const lead = surface && !endpoint ? surfaceLead(tree, i, surface, act) : []
   panel.replaceChildren(
     head,
     ...(path.length ? [crumbs] : []),
     ...fileBox,
     ...(rank ? [el('p', 'd-rank', rank)] : []),
-    ...seenLines(tree, i),
-    ...unseenList(tree, i, act),
+    ...lead,
+    ...seenLines(tree, i, !endpoint),
+    ...(lead.length ? [] : unseenList(tree, i, act)),
     ...(tags.childElementCount ? [tags] : []),
-    ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
+    ...(e.description && !endpoint ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
     // What the scanner saw here but could not follow: the map has no arrow for it.
     ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
-    ...path2,
+    ...(endpoint ? endpointEffects(tree, i, act, api, path2) : path2),
     section('Uses', 'out', 'uses', uses),
     section('Used by', 'in', 'usedBy', usedBy),
   )
@@ -272,7 +298,7 @@ function proof(evidence: EvidenceJson[], files: Set<string>, open: (path: string
  * the map ranks them (the busiest first). Arrow keys move along it; Enter selects. It is how a
  * keyboard or a screen reader walks the map.
  */
-export function renderOutline(panel: HTMLElement, tree: Tree, here: number, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, select: (i: number) => void) {
+export function renderOutline(panel: HTMLElement, tree: Tree, here: number, relationsOf: (i: number) => { out: Rel[]; inn: Rel[] }, select: (i: number) => void, lead: HTMLElement[] = []) {
   const e = tree.els[here]
   const head = el('div', 'd-head')
   head.append(el('span', 'd-kind', here > 0 ? kindWord(tree, here) : 'Whole map'), el('h2', '', e.title))
@@ -313,7 +339,7 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
     if (ev.key === 'ArrowUp') { items[Math.max(0, at - 1)]?.focus(); ev.preventDefault() }
   })
   box.append(ul)
-  panel.replaceChildren(head, ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []), el('p', 'd-hint', 'Nothing selected: click a card, or pick one here, to see what it uses and what uses it.'), box)
+  panel.replaceChildren(head, ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []), ...lead, el('p', 'd-hint', 'Nothing selected: click a card, or pick one here, to see what it uses and what uses it.'), box)
   panel.classList.add('outline')
   panel.hidden = false
 }
@@ -554,7 +580,7 @@ function pathOf(tree: Tree, i: number): string {
   return out.join(' › ')
 }
 
-export function seenLines(tree: Tree, i: number): HTMLElement[] {
+export function seenLines(tree: Tree, i: number, tables = true): HTMLElement[] {
   const t = tree.traced, m = tree.els[i].metadata
   if (!t || !m) return []
   const { lines, unseen } = seenText(tree, i)
@@ -569,7 +595,7 @@ export function seenLines(tree: Tree, i: number): HTMLElement[] {
   }
   // The tables the tests touched: one row each, what was done to it beside its name, writes first;
   // a long list shows its first rows and opens on request.
-  if (m.tables) {
+  if (m.tables && tables) {
     const rows = tableRows(m.tables), FIRST = 4
     const box = el('section', 'd-tables')
     box.append(el('h3', '', `Tables touched in tests · ${rows.length}`))
@@ -590,4 +616,416 @@ export function seenLines(tree: Tree, i: number): HTMLElement[] {
     out.push(box)
   }
   return out
+}
+
+// --- The surface: endpoints, what an endpoint does, what a file serves, where a feature meets them.
+
+/** What the panel's surface asks of the page. */
+export interface ApiActions {
+  /** Opens an endpoint by its Requests id: selected here in Requests, across to Requests from Architecture. */
+  endpoint: (id: string) => void
+  /** Lists the endpoints, filtered. */
+  list: (f: ApiFilter) => void
+}
+
+/** What the panel knows of the map's surface: its endpoints, if the map has a Requests model, and the marks behind them. */
+export interface Surface {
+  api: Api | null
+  /** The open view is Requests: an endpoint is a card here. */
+  requests: boolean
+  /** Routes and scheduled jobs marked in the map's code (the Architecture model's, when it is loaded). */
+  marks: Marks
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n === 1 ? one : many}`
+
+/** A method as a small tag, coloured by what it does. */
+function methodTag(m: string): HTMLElement {
+  const t = el('span', `d-m m-${m.toLowerCase()}`, m)
+  t.setAttribute('aria-hidden', 'true')
+  return t
+}
+
+/** One endpoint as a row: method, path, handler and what it answers; amber when no test called it. */
+function endpointRow(ep: Endpoint, open: () => void, sub = ''): HTMLLIElement {
+  const li = el('li')
+  const b = el('button', 'd-ep')
+  b.append(methodTag(ep.method), el('b', '', ep.route), el('span', '', sub || [ep.handler?.name, ep.returns && `→ ${ep.returns}`].filter(Boolean).join(' ')))
+  if (ep.seen === 0) { b.append(el('em', 'd-seen-tag none', 'untested')); b.classList.add('unseen') }
+  b.setAttribute('aria-label', `${ep.method} ${ep.route}${ep.seen === 0 ? ', not seen in tests' : ''}`)
+  b.onclick = open
+  li.append(b)
+  return li
+}
+
+/** Arrow keys walk a list's buttons, as in the outline. */
+function arrowKeys(list: HTMLElement, sel = 'button') {
+  list.addEventListener('keydown', ev => {
+    const items = [...list.querySelectorAll<HTMLElement>(sel)], at = items.indexOf(document.activeElement as HTMLElement)
+    if (ev.key === 'ArrowDown') { items[Math.min(items.length - 1, at + 1)]?.focus(); ev.preventDefault() }
+    if (ev.key === 'ArrowUp') { items[Math.max(0, at - 1)]?.focus(); ev.preventDefault() }
+  })
+}
+
+/**
+ * The endpoint list: every endpoint, grouped by the resource it is under with each group's count,
+ * filterable by method, by "no test called it" and by words; each row opens the endpoint. A line
+ * under the title says how many the tests saw and how many routes the code marks, so a route the
+ * map missed is not simply absent.
+ */
+export function renderApi(panel: HTMLElement, s: Surface, f: ApiFilter, act: ApiActions & { filter: (f: ApiFilter) => void; close: () => void }) {
+  const api = s.api!
+  panel.classList.remove('outline')
+  const scope = filterApi(api, { app: f.app, ids: f.ids })
+  const head = el('div', 'd-head')
+  const where = f.label ?? (f.app ? api.title.get(f.app) ?? '' : '')
+  head.append(el('span', 'd-kind', 'Endpoints'), el('h2', '', `${where ? `${where} · ` : ''}Endpoints · ${scope.length}`))
+  const tested = scope.filter(ep => ep.seen != null), unseen = tested.filter(ep => ep.seen === 0)
+  const routes = f.ids ? 0 : s.marks.route.filter(m => !f.app || m.top === f.app).length
+  const facts = [
+    api.traced && tested.length ? `${count(tested.length - unseen.length)} of ${count(tested.length)} seen in tests` : '',
+    routes ? `${plural(routes, 'route')} marked in code, ${count(scope.length)} placed` : '',
+  ].filter(Boolean).join(' · ')
+  const bar = el('div', 'd-filters')
+  bar.setAttribute('role', 'group')
+  bar.setAttribute('aria-label', 'Show')
+  const chip = (label: string, on: boolean, next: ApiFilter, cls = '') => {
+    const b = el('button', cls, label)
+    b.setAttribute('aria-pressed', String(on))
+    b.onclick = () => act.filter(next)
+    return b
+  }
+  bar.append(chip(`All · ${scope.length}`, !f.method && !f.unseen, { ...f, method: null, unseen: false }))
+  for (const [m, n] of methodCounts(scope)) bar.append(chip(`${m} · ${n}`, f.method === m, { ...f, method: f.method === m ? null : m }))
+  if (unseen.length) bar.append(chip(`Unseen · ${unseen.length}`, !!f.unseen, { ...f, unseen: !f.unseen }, 'unseen'))
+  const input = el('input')
+  input.type = 'search'
+  input.placeholder = 'Filter by path, handler or type'
+  input.setAttribute('aria-label', 'Filter the endpoints')
+  input.value = f.query ?? ''
+  const box = el('section', 'd-api')
+  const fill = () => {
+    const shown = filterApi(api, { ...f, query: input.value })
+    const groups = groupApi(shown, new Set(scope.map(ep => ep.app)).size > 1)
+    const status = el('p', 'd-count', shown.length === scope.length ? `${groups.length} resource${groups.length === 1 ? '' : 's'}` : `${shown.length} of ${scope.length} shown`)
+    status.setAttribute('role', 'status')
+    const lists = groups.map(g => {
+      const sec = el('section', 'd-group')
+      sec.append(el('h3', '', `${g.title} · ${g.endpoints.length}`))
+      const ul = el('ul')
+      for (const ep of g.endpoints) ul.append(endpointRow(ep, () => act.endpoint(ep.id)))
+      sec.append(ul)
+      return sec
+    })
+    box.replaceChildren(status, ...(lists.length ? lists : [el('div', 'd-none', 'No endpoint matches')]))
+  }
+  input.oninput = () => { f.query = input.value; fill() }
+  // Esc in the words clears them first, then puts the list down, as it does anywhere else in the panel.
+  input.addEventListener('keydown', ev => {
+    if (ev.key !== 'Escape') return
+    ev.preventDefault()
+    if (input.value) { input.value = ''; f.query = ''; fill() } else act.close()
+  })
+  arrowKeys(box, 'button.d-ep')
+  fill()
+  panel.replaceChildren(head, ...(facts ? [el('p', 'd-rank', facts)] : []), bar, input, box)
+  panel.hidden = false
+}
+
+/**
+ * What can be done to a part from outside it, at the head of its panel: its endpoints (with how many
+ * no test called), the endpoints a client part calls, and its scheduled jobs, each opening its list.
+ * `ids`: only these endpoints (a component's, by the handlers inside it).
+ */
+export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { app?: string; ids?: string[]; label: string; calls?: string[] }): HTMLElement[] {
+  const api = s.api
+  const eps = api ? filterApi(api, { app: scope.app, ids: scope.ids }) : []
+  const calls = api && scope.calls ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => scope.calls!.includes(c.top))) : []
+  const marks = { route: s.marks.route.filter(m => !scope.app || m.top === scope.app), schedule: s.marks.schedule.filter(m => !scope.app || m.top === scope.app) }
+  const clients = api ? clientParts(api) : new Set<string>()
+  const jobs = scope.ids ? [] : marks.schedule.filter(m => !clients.has(m.top))
+  const routesOnly = !eps.length && !scope.ids && marks.route.length > 0
+  if (!eps.length && !calls.length && !jobs.length && !routesOnly) return []
+  const box = el('section', 'd-surface')
+  box.append(el('h3', '', 'Surface'))
+  const row = el('div', 'd-actions')
+  const label = scope.ids ? scope.label : undefined
+  if (eps.length) {
+    const b = el('button', 'primary', `Endpoints · ${eps.length}`)
+    b.onclick = () => act.list({ app: scope.app ?? null, ids: scope.ids, label })
+    row.append(b)
+    const unseen = eps.filter(ep => ep.seen === 0).length
+    if (unseen) {
+      const u = el('button', 'unseen', `Unseen · ${unseen}`)
+      u.title = 'The endpoints the project’s own tests never called'
+      u.onclick = () => act.list({ app: scope.app ?? null, ids: scope.ids, label, unseen: true })
+      row.append(u)
+    }
+  }
+  if (calls.length) {
+    const b = el('button', '', `Calls ${plural(calls.length, 'endpoint')}`)
+    b.onclick = () => act.list({ ids: calls.map(ep => ep.id), label: `Called by ${scope.label}` })
+    row.append(b)
+  }
+  if (row.childElementCount) box.append(row)
+  if (routesOnly) box.append(el('p', 'd-facts', `${plural(marks.route.length, 'route')} marked in code; this map has no Requests view to list them`))
+  if (jobs.length) {
+    const toggle = el('button', 'd-more', `Scheduled jobs · ${jobs.length}`)
+    toggle.setAttribute('aria-expanded', 'false')
+    const ul = el('ul', 'd-jobs')
+    ul.hidden = true
+    for (const j of jobs) {
+      const li = el('li'), b = el('button', 'cite', `${j.path.split('/').pop()}:${j.line}`)
+      b.title = `${j.path}:${j.line}: open the code here`
+      b.onclick = () => act.openPath(j.path, j.line, -1)
+      li.append(b)
+      ul.append(li)
+    }
+    toggle.onclick = () => { ul.hidden = !ul.hidden; toggle.setAttribute('aria-expanded', String(!ul.hidden)) }
+    box.append(toggle, ul)
+  }
+  return [box]
+}
+
+/**
+ * A file that handles requests says first what it serves: its routes, in the order they stand in
+ * it, each opening that endpoint. Without a Requests model, the lines its routes are marked at.
+ */
+export function servesBox(s: Surface, path: string, act: ApiActions & PanelActions, near: number): HTMLElement[] {
+  const eps = s.api ? servedBy(s.api, path) : []
+  const marked = s.marks.route.filter(m => m.path === path)
+  if (!eps.length && !marked.length) return []
+  const box = el('section', 'd-rels d-serves')
+  box.append(el('h3', '', `Serves · ${eps.length || marked.length}`))
+  const ul = el('ul')
+  if (eps.length) for (const ep of eps) ul.append(endpointRow(ep, () => act.endpoint(ep.id), `line ${ep.handler!.line}${ep.returns ? ` · returns ${ep.returns}` : ''}`))
+  else for (const m of marked) {
+    const li = el('li'), b = el('button', 'd-rel')
+    b.append(el('i', '', '⇠'), el('b', '', `Route at line ${m.line}`))
+    b.onclick = () => act.openPath(path, m.line, near)
+    li.append(b)
+    ul.append(li)
+  }
+  arrowKeys(ul)
+  box.append(ul)
+  return [box]
+}
+
+/**
+ * What leads a card's panel about its surface: a file's Serves; a top-level part's endpoints,
+ * calls and jobs; a component's endpoints (by the handlers inside it); the whole map's, at 0.
+ */
+export function surfaceLead(tree: Tree, i: number, surface: Surface, act: PanelActions): HTMLElement[] {
+  const e = tree.els[i], file = e.metadata?.path
+  if (file) return servesBox(surface, file, act, i)
+  if (i === 0) return surfaceBox(surface, act, { label: e.title })
+  if (!tree.children[i].length) return []
+  const top = tree.parent[i] === 0
+  const ids = top ? undefined : surface.requests ? endpointDescendants(tree, i) : endpointsUnder(tree, i, surface.api)
+  return top || ids?.length ? surfaceBox(surface, act, { app: top ? e.id : undefined, ids, label: e.title, calls: top ? [e.id] : undefined }) : []
+}
+
+/** The ids of the endpoints whose handler is a file at or under element i. */
+export function endpointsUnder(tree: Tree, i: number, api: Api | null): string[] {
+  if (!api) return []
+  const files = new Set<string>()
+  const walk = (n: number) => { const p = tree.els[n].metadata?.path; if (p) files.add(p); for (const k of tree.children[n]) walk(k) }
+  walk(i)
+  return api.endpoints.filter(ep => ep.handler && files.has(ep.handler.path)).map(ep => ep.id)
+}
+
+/**
+ * The tables tests saw that no store call on the code path names: a call named "kingdoms (JPA)"
+ * or "reads kingdom_entity" covers kingdom_entity; market_offer_entity it does not.
+ */
+export function offPath(tables: string[], callTitles: string[]): string[] {
+  const flat = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const said = callTitles.map(flat).join(' ')
+  return tables.filter(t => !said.includes(flat(t.replace(/_(entity|table|tbl)$/i, ''))))
+}
+
+/** Whether a disclosure was left open, so a redraw keeps it. */
+const disclosed = { steps: false }
+
+/**
+ * An endpoint told by its effect: what it takes, what it reads and writes, what it returns (the
+ * type as written, generics and all), and who calls it, each from the map; the steps that do it are
+ * one expand away. Tested tables and the store calls the code path reaches are kept apart, and a
+ * line says when they differ.
+ */
+export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: Api | null, steps: HTMLElement[]): HTMLElement[] {
+  const e = tree.els[i], mr = endpointOf(e)!
+  const ep = api?.endpoints.find(x => x.id === e.id) ?? null
+  const kids = tree.children[i], role = (k: number) => stepRole(tree.els[k])
+  const inside = (n: number) => n === i || tree.isAncestor(i, n)
+  const out: HTMLElement[] = []
+  const section = (cls: string, title: string) => { const s = el('section', `d-rels d-effect ${cls}`); s.append(el('h3', '', title)); out.push(s); return s }
+  const rowBtn = (title: string, sub: string, go: (() => void) | null, glyph = '') => {
+    const li = el('li')
+    const b = el(go ? 'button' : 'div', 'd-rel')
+    b.append(el('i', '', glyph), el('b', '', title), ...(sub ? [el('span', '', sub)] : []))
+    if (go) (b as HTMLButtonElement).onclick = go
+    li.append(b)
+    return li
+  }
+
+  // Who handles it.
+  const first = kids.find(k => role(k) === 'step' && stepNumber(tree.els[k]) === 1) ?? kids.find(k => tree.els[k].metadata?.path)
+  if (ep?.handler && first != null) {
+    const p = el('p', 'd-handler')
+    const b = el('button', 'cite', ep.handler.name)
+    b.title = `${ep.handler.path}:${ep.handler.line}: read the handler`
+    b.onclick = () => act.read(first)
+    p.append('Handled by ', b)
+    out.push(p)
+  }
+
+  // What it takes: the path's parameters, and the types the handler names that it does not return.
+  const returns = ep?.returns ?? ''
+  const named = kids.filter(k => role(k) === 'type' && !new RegExp(`\\b${tree.els[k].title.replace(/\W/g, '')}\\b`).test(returns))
+  const params = routeParams(mr.route)
+  {
+    const s = section('takes', `Takes · ${params.length + named.length}`)
+    const ul = el('ul')
+    for (const p of params) ul.append(rowBtn(p, 'in the path', null))
+    for (const k of named) ul.append(rowBtn(tree.els[k].title, 'a type the handler names', () => act.go(k)))
+    if (!ul.childElementCount) s.append(el('div', 'd-none', 'nothing named: no path parameters or other types'))
+    else s.append(ul)
+  }
+
+  // What it reads and writes: the tables the tests saw, and the store calls on the code path.
+  {
+    const tested = e.metadata?.tables ? tableRows(e.metadata.tables) : []
+    const calls: { k: number; target: number }[] = []
+    for (let k = 0; k < tree.rels.length; k += 2) {
+      const a = tree.rels[k], b = tree.rels[k + 1]
+      if (inside(a) && !inside(b) && tree.relKind[k >> 1] === 'runtime') calls.push({ k: k >> 1, target: b })
+    }
+    const s = section('data', `Reads and writes · ${tested.length || calls.length}`)
+    if (tested.length) {
+      const writes = tested.filter(r => r.ops !== 'reads'), reads = tested.filter(r => r.ops === 'reads')
+      const ul = el('ul', 'd-table-rows')
+      for (const r of [...writes, ...reads]) { const li = el('li', r.ops === 'reads' ? 'reads' : 'writes'); li.append(el('code', '', r.table), el('span', '', r.ops)); ul.append(li) }
+      s.append(el('div', 'd-sub', `In tests: writes ${writes.length}, reads ${reads.length}`), ul)
+    }
+    if (calls.length) {
+      s.append(el('div', 'd-sub', 'On the code path'))
+      const ul = el('ul')
+      for (const c of calls) {
+        const src = tree.rels[c.k * 2]
+        const li = rowBtn(tree.els[c.target].title, [tree.relTitles[c.k], `from ${tree.els[src].title}`].filter(Boolean).join(' · '), () => act.inspect(i, c.target), '⇢')
+        const b = li.firstElementChild as HTMLElement
+        if (tree.relSeen[c.k]) b.append(seenTag(tree.relSeen[c.k]))
+        else if (tree.relTraceable[c.k]) b.append(el('em', 'd-seen-tag none', 'not seen in tests'))
+        ul.append(li)
+      }
+      s.append(ul)
+    }
+    if (!tested.length && !calls.length) s.append(el('div', 'd-none', tree.traced && ep?.seen === 0 ? 'none known: no test called it and its code path reaches no store' : 'none found: its code path reaches no store'))
+    // The two accounts differ: say which tables the tests saw that no store call on the path names,
+    // rather than let one account pass for the other.
+    const off = offPath(tested.map(r => r.table), calls.map(c => tree.relTitles[c.k]))
+    if (tested.length && off.length) {
+      const them = off.length === 1 ? 'it' : 'them'
+      s.append(el('p', 'd-note', off.length === tested.length
+        ? `No store call on the code path the map follows names the ${tested.length === 1 ? 'table' : 'tables'} the tests saw: the code that reaches ${them} was not followed.`
+        : `${off.length} of the ${tested.length} tables the tests saw ${off.length === 1 ? 'is' : 'are'} not on the code path the map follows (${off.join(', ')}): the code that reaches ${them} was not followed.`))
+    }
+    else if (!tested.length && calls.length && tree.traced) s.append(el('p', 'd-note', ep?.seen === 0 ? 'No test called it: these store calls are read from code only.' : 'The tests recorded no table for it: these store calls are read from code only.'))
+  }
+
+  // What it returns: the response as written, and the statuses the tests saw.
+  {
+    const answers = kids.filter(k => role(k) === 'response' || role(k) === 'view')
+    const s = section('returns', 'Returns')
+    const ul = el('ul')
+    for (const k of answers) {
+      const m = tree.els[k].metadata ?? {}
+      const what = m.model || (role(k) === 'response' && returns) || tree.els[k].title.replace(/^\d+ · /, '')
+      ul.append(rowBtn(what, [m.answer === 'body' ? 'as the response body' : m.answer ?? '', role(k) === 'view' ? 'a view' : ''].filter(Boolean).join(' · '), () => act.go(k)))
+    }
+    if (!answers.length && returns) ul.append(rowBtn(returns, '', null))
+    if (ul.childElementCount) s.append(ul)
+    else s.append(el('div', 'd-none', 'not known from the code'))
+    if (e.metadata?.statuses) s.append(el('div', 'd-sub', `Statuses in tests: ${e.metadata.statuses.replace(/×(\d+)/g, (_, n) => `×${count(+n)}`)}`))
+  }
+
+  // Who calls it.
+  {
+    const by = new Map<number, number[]>()
+    for (let k = 0; k < tree.rels.length; k += 2) if (inside(tree.rels[k + 1]) && !inside(tree.rels[k])) by.set(tree.rels[k], [...(by.get(tree.rels[k]) ?? []), k >> 1])
+    const s = section('callers', `Called by · ${by.size}`)
+    const ul = el('ul')
+    for (const [src, rels] of by) {
+      const li = rowBtn(tree.els[src].title, [...new Set(rels.map(k => tree.relTitles[k]).filter(Boolean))].join(' · '), () => act.go(src), '←')
+      const b = li.firstElementChild as HTMLElement
+      const seen = rels.find(k => tree.relSeen[k]), unseen = rels.some(k => tree.relTraceable[k] && !tree.relSeen[k])
+      if (seen != null) b.append(seenTag(tree.relSeen[seen]))
+      else if (unseen) b.append(el('em', 'd-seen-tag none', 'not seen in tests'))
+      else if (tree.traced && rels.some(k => tree.relKind[k] === 'runtime')) { const t = el('em', 'd-seen-tag outside', 'outside the trace'); t.title = 'The trace watched only the apps the tests ran; this caller is outside them'; b.append(t) }
+      ul.append(li)
+    }
+    if (ul.childElementCount) s.append(ul)
+    else s.append(el('div', 'd-none', 'no caller on this map'))
+  }
+
+  // The steps that do it, one expand away.
+  if (steps.length) {
+    const n = kids.filter(k => role(k) === 'step').length
+    const box = el('section', 'd-impl')
+    const toggle = el('button', 'd-more', `Implementation steps · ${n}`)
+    toggle.setAttribute('aria-expanded', String(disclosed.steps))
+    const body = el('div')
+    body.hidden = !disclosed.steps
+    body.append(...steps)
+    toggle.onclick = () => { disclosed.steps = !disclosed.steps; body.hidden = !disclosed.steps; toggle.setAttribute('aria-expanded', String(disclosed.steps)) }
+    box.append(toggle, body)
+    out.push(box)
+  }
+  return out
+}
+
+/**
+ * A feature where the parts meet the surface: the pages that show it, the endpoints that serve it
+ * with what each returns, the tables those touched in tests, and the parts that carry it. Rows in
+ * this view go there; the rest cross to the view that has them.
+ */
+export function renderFeature(panel: HTMLElement, name: string, facts: ReturnType<typeof featureFacts>, titles: (id: string) => string, act: { part: (id: string) => void } & ApiActions) {
+  panel.classList.remove('outline')
+  const head = el('div', 'd-head')
+  head.append(el('span', 'd-kind', 'Feature'), el('h2', '', name))
+  const parts: HTMLElement[] = []
+  const list = (cls: string, title: string, ids: string[]) => {
+    if (!ids.length) return
+    const s = el('section', `d-rels ${cls}`)
+    s.append(el('h3', '', `${title} · ${ids.length}`))
+    const ul = el('ul')
+    for (const id of ids) { const li = el('li'), b = el('button', 'd-rel'); b.append(el('i', '', ''), el('b', '', titles(id))); b.onclick = () => act.part(id); li.append(b); ul.append(li) }
+    arrowKeys(ul)
+    s.append(ul)
+    parts.push(s)
+  }
+  list('d-pages', 'Pages', facts.pages)
+  if (facts.endpoints.length) {
+    const s = el('section', 'd-rels d-serves')
+    s.append(el('h3', '', `Endpoints · ${facts.endpoints.length}`))
+    const ul = el('ul')
+    for (const ep of facts.endpoints) ul.append(endpointRow(ep, () => act.endpoint(ep.id)))
+    arrowKeys(ul)
+    s.append(ul)
+    parts.push(s)
+  }
+  if (facts.tables) {
+    const rows = tableRows(facts.tables)
+    const s = el('section', 'd-tables')
+    s.append(el('h3', '', `Data its endpoints touched in tests · ${rows.length}`))
+    const ul = el('ul')
+    for (const r of rows) { const li = el('li'); li.append(el('code', '', r.table), el('span', '', r.ops)); ul.append(li) }
+    s.append(ul)
+    parts.push(s)
+  }
+  list('d-parts', 'Parts that carry it', facts.parts)
+  const hint = facts.endpoints.length || facts.pages.length ? [] : [el('p', 'd-hint', 'No page or endpoint of this map carries it.')]
+  panel.replaceChildren(head, ...hint, ...parts, el('p', 'd-hint', 'Esc puts the feature down.'))
+  panel.hidden = false
 }

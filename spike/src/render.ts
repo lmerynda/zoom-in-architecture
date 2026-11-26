@@ -170,6 +170,8 @@ export class Renderer {
   lens: Lens | null = null
   /** Connections view: each node's importance and its rank among its siblings, shown on its card. */
   ranking: { weight: Float64Array; rank: Int32Array; partners: Int32Array } | null = null
+  /** A card's surface in words ("67 endpoints · 4 scheduled jobs"), set by the page once it knows the map's endpoints. */
+  surface: ((i: number) => string) | null = null
   hover = -1
   /** This frame's breadcrumb: the containers that fill the view, outermost first. */
   private here: number[] = []
@@ -581,7 +583,7 @@ export class Renderer {
         if (glyph) this.icon(v, glyph, texts, tx, y + (hh - px * ICON) / 2, px * ICON, color, la)
         st.texts++
       }
-      const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${kindName(this.tree.els[i]).toUpperCase()} · ${this.tree.children[i].length} INSIDE`
+      const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${kindName(this.tree.els[i]).toUpperCase()} · ${this.tree.children[i].length} INSIDE${this.surface?.(i) ? ` · ${this.surface(i).toUpperCase()}` : ''}`
       const meta = (v.meta ??= this.text(metaText, texts))
       if (meta.text !== metaText) meta.text = metaText
       const mpx = level * 0.62
@@ -677,7 +679,7 @@ export class Renderer {
     // and a part that talks to everything both rank high, and the last number tells them apart.
     const rk = this.ranking, sibs = this.tree.children[this.tree.parent[i]]?.length - 1
     const place = rk ? `${rankBadge ? '' : `#${rk.rank[i]} · `}${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}${sibs > 0 ? ` · ${rk.partners[i]} of ${sibs} siblings` : ''}` : ''
-    const subText = [place, kind, seenText(el, !!this.tree.traced), el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
+    const subText = [place, kind, this.surface?.(i) ?? '', seenText(el, !!this.tree.traced), el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
     const codeTop = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h).y : Infinity

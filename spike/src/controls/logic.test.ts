@@ -72,7 +72,7 @@ describe('searchMap', () => {
     expect(f.parts.at(-1)?.i).toBe(4)
   })
   it('lets an exact file path win', () => {
-    expect(searchMap(els, 'web/src/pages/index.ts').files[0]).toEqual({ i: 6, score: 110 })
+    expect(searchMap(els, 'web/src/pages/index.ts').files[0]).toEqual({ i: 6, score: 110, same: [6] })
     expect(searchMap(els, 'pages/index.ts').files[0].i).toBe(6)
   })
   it('finds a description last, and never the landscape', () => {

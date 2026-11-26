@@ -55,7 +55,8 @@ export function match(query: string, text: string): number {
 }
 
 export interface Searchable { title: string; id: string; features?: string[]; description?: string; metadata?: Record<string, string> }
-export interface Found { features: { name: string; score: number; cards: number[] }[]; parts: { i: number; score: number }[]; files: { i: number; score: number }[] }
+/** A file found shows once, however many cards show it (in Requests, one per endpoint): `same` holds them all. */
+export interface Found { features: { name: string; score: number; cards: number[] }[]; parts: { i: number; score: number }[]; files: { i: number; score: number; same: number[] }[] }
 
 /**
  * Search over a map: its features, its parts (any card that is not a file) and its files, each
@@ -82,10 +83,18 @@ export function searchMap(els: Searchable[], query: string, limit = 12): Found {
       else if (qs.length >= 3 && p.includes(qs)) s = Math.max(s, 35)
     }
     if (s < 0 && q.length >= 3 && (e.description ?? '').toLowerCase().includes(q.toLowerCase())) s = 5
-    if (s >= 0) (path ? out.files : out.parts).push({ i, score: s })
+    if (s >= 0) { if (path) out.files.push({ i, score: s, same: [i] }); else out.parts.push({ i, score: s }) }
   })
   const by = (a: { score: number }, b: { score: number }) => b.score - a.score
   out.features.sort(by); out.parts.sort(by); out.files.sort(by)
+  // One row per file, before the cap: its best card stands for every card that shows it.
+  const byPath = new Map<string, Found['files'][number]>()
+  out.files = out.files.filter(f => {
+    const p = els[f.i].metadata!.path, first = byPath.get(p)
+    if (first) { first.same.push(f.i); return false }
+    byPath.set(p, f)
+    return true
+  })
   const endpoints = out.parts.filter(p => els[p.i].metadata?.method).length
   out.features.splice(limit); out.parts.splice(Math.max(limit, endpoints + limit)); out.files.splice(limit)
   return out

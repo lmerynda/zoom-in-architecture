@@ -5,6 +5,7 @@ import type { Lens, LensName } from '../lens'
 import type { Minimap } from '../minimap'
 import type { Tree } from '../model'
 import type { PanelRows } from '../details'
+import { endpointOf, type Api, type ApiFilter } from '../endpoints'
 import type { Renderer } from '../render'
 import type { Places } from '../places'
 import { same, type View } from './logic'
@@ -42,6 +43,16 @@ export interface Ctx {
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
   closeTop: () => boolean
   now: () => number
+  /** The map's endpoints, once known; null when it has no Requests model. */
+  api: () => Api | null
+  /** The open view is Requests, where endpoints are cards. */
+  requests: boolean
+  /** Opens an endpoint by its Requests id (across to Requests from another view). */
+  endpoint: (id: string) => void
+  /** Lists the endpoints in the panel. */
+  list: (f: ApiFilter) => void
+  /** Shows a feature in the panel: its pages, endpoints and data; false when the map has nothing for it. */
+  showFeature: (name: string) => boolean
 }
 
 /** Keys typed into a field, or into a dialog over the map, are not map shortcuts. */
@@ -90,18 +101,15 @@ export function installControls(c: Ctx) {
   let recent: string[] = []
   const remember = (i: number) => { if (i > 0) recent = [tree.els[i].id, ...recent.filter(id => id !== tree.els[i].id)].slice(0, 8) }
   /**
-   * A feature: the cards that carry it are framed together, the first part among them selected,
-   * and the toast names them all.
+   * A feature: the cards that carry it are framed together, nothing selected, and the panel tells
+   * the feature: its pages, its endpoints and what they touch, the parts that carry it.
    */
   const feature = (name: string) => {
     const cards = tree.els.flatMap((e, i) => (i > 0 && e.features?.includes(name) ? [i] : []))
-    if (!cards.length) return toast.show(`No card carries ${name}`)
-    const first = cards.find(i => !tree.els[i].metadata?.path) ?? cards[0]
     leave()
-    c.select(first)
-    remember(first)
-    frame(cards)
-    toast.show(`${name}: ${cards.map(i => tree.els[i].title).join(', ')}`)
+    c.select(-1)
+    if (cards.length) frame(cards)
+    if (!c.showFeature(name) && !cards.length) toast.show(`No card carries ${name}`)
   }
   const goView = (v: View) => {
     cam.flyTo(v.x - cam.w / v.z / 2, v.y - cam.h / v.z / 2, cam.w / v.z, cam.h / v.z, c.now(), 1)
@@ -176,6 +184,7 @@ export function installControls(c: Ctx) {
 
   // --- Search.
   const commands = (): Command[] => [
+    ...(c.api() ? [{ name: `Endpoints · ${c.api()!.endpoints.length}`, hint: 'every endpoint, by resource', run: () => { c.list({}); requestAnimationFrame(() => c.focusPanel()) } }] : []),
     ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Colour by ${name === 'structure' ? 'structure' : name}`, run: () => c.setLens(name as LensName) })),
     { name: 'Whole map', run: () => enterPlace(0) },
     { name: 'Back', hint: 'Backspace', run: back },
@@ -187,13 +196,18 @@ export function installControls(c: Ctx) {
   // leaf is selected, to read about.
   const palette = new Palette(tree, commands, {
     go: i => {
-      if (tree.children[i].length && !tree.els[i].metadata?.method) return enterPlace(i)
+      if (tree.children[i].length && !endpointOf(tree.els[i])) return enterPlace(i)
       goSelect(i)
       // What was found is in the panel: keyboard focus starts there, on its heading.
       requestAnimationFrame(() => c.focusPanel())
     },
-    feature,
+    feature: name => { feature(name); requestAnimationFrame(() => c.focusPanel()) },
     recent: () => recent.map(id => tree.byId.get(id) ?? -1),
+    // Endpoints of the Requests model, searched from any other view: picking one crosses to it.
+    endpoints: () => (c.requests ? null : c.api()?.endpoints ?? null),
+    endpoint: c.endpoint,
+    list: f => { c.list(f ?? {}); requestAnimationFrame(() => c.focusPanel()) },
+    listSize: () => c.api()?.endpoints.length ?? 0,
   })
   document.getElementById('travel')?.addEventListener('click', () => palette.open())
   document.getElementById('help')?.addEventListener('click', () => help.toggle(true))

@@ -1,0 +1,64 @@
+/* The surface in the details panel: the endpoint list, an endpoint's effects, a file's Serves, a part's surface, a feature. */
+
+/* A method as a tag, one colour per kind of verb. */
+.d-m { font: 700 10px/1.6 ui-monospace, Consolas, monospace; letter-spacing: 0.04em; border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; align-self: baseline; justify-self: start; }
+.m-get { color: #7dd3fc; }
+.m-post { color: #86efac; }
+.m-put, .m-patch { color: #c4b5fd; }
+.m-delete { color: #fca5a5; }
+
+/* Filters: method chips, Unseen, and words. */
+.d-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
+.d-filters button { background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 3px 10px; min-height: 28px; border-radius: 999px; cursor: pointer; }
+.d-filters button:hover { border-color: rgba(251, 191, 36, 0.5); }
+.d-filters button[aria-pressed="true"] { background: #fbbf24; border-color: #fbbf24; color: #0b0f17; font-weight: 600; }
+.d-filters button.unseen:not([aria-pressed="true"]) { color: #fde68a; border-color: rgba(253, 230, 138, 0.5); }
+#details input[type="search"] { width: 100%; box-sizing: border-box; background: #0b1220; border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 8px; border-radius: 6px; }
+#details p.d-count { margin: 8px 0 0; font-size: 11px; color: var(--dim); }
+
+/* The list: resource groups, one row per endpoint. */
+.d-api .d-group h3 { margin: 12px 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.d-api ul, .d-serves ul { list-style: none; margin: 0; padding: 0; }
+.d-ep { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 1px 8px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid transparent; color: var(--text); font: inherit; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
+.d-ep:hover, .d-ep:focus-visible { background: rgba(251, 191, 36, 0.12); }
+.d-ep:focus-visible { outline-offset: -2px; }
+.d-ep b { grid-column: 2; font: 600 12px ui-monospace, Consolas, monospace; color: #e2e8f0; overflow-wrap: anywhere; }
+.d-ep > span:not(.d-m) { grid-column: 2 / 4; color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-ep > em { grid-column: 3; grid-row: 1; }
+.d-ep.unseen { border-left-color: rgba(253, 230, 138, 0.6); }
+.d-rels .d-ep { padding: 4px 6px; color: var(--text); }
+
+/* A part's surface: its endpoints, calls and jobs, as buttons. */
+.d-surface { margin-top: 12px; }
+.d-surface h3 { margin: 0 0 2px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #c4b5fd; }
+.d-surface .d-actions { flex-wrap: wrap; }
+.d-surface .d-actions button.unseen { color: #fde68a; border-color: rgba(253, 230, 138, 0.5); }
+#details .d-surface p.d-facts { margin: 6px 0 0; font-size: 11px; }
+.d-jobs { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.d-jobs[hidden] { display: none; }
+.d-jobs .cite, .d-handler .cite { background: none; border: 0; padding: 0; font: 12px ui-monospace, Consolas, monospace; color: #fde68a; cursor: pointer; text-decoration: underline dotted; overflow-wrap: anywhere; text-align: left; }
+.d-jobs .cite:hover, .d-handler .cite:hover { color: #fff; }
+
+/* An endpoint by its effect. */
+#details p.d-handler { margin: 8px 0 0; font-size: 12px; color: var(--dim); }
+.d-effect.takes h3 { color: #7dd3fc; }
+.d-effect.data h3 { color: #86efac; }
+.d-effect.returns h3 { color: #c4b5fd; }
+.d-effect.callers h3, .d-effect.callers i { color: #22d3ee; }
+.d-effect.data i { color: #c4b5fd; }
+.d-effect.returns b { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+div.d-rel { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 1px 8px; padding: 4px 6px 1px; }
+.d-sub { margin: 6px 6px 2px; font-size: 11px; color: var(--dim); }
+.d-table-rows { list-style: none; margin: 2px 0 0; padding: 0 6px; display: grid; gap: 3px; }
+.d-table-rows li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 12px; }
+.d-table-rows code { font: 11px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
+.d-table-rows li.writes span { color: #fde68a; white-space: nowrap; }
+.d-table-rows li.reads span { color: #86efac; white-space: nowrap; }
+#details p.d-note { margin: 6px 0 0; font-size: 11px; color: #fde68a; border-left: 2px solid rgba(251, 191, 36, 0.5); padding-left: 8px; line-height: 1.45; }
+.d-impl { margin-top: 14px; }
+.d-impl > div[hidden] { display: none; }
+.d-impl .d-more::after { content: ' ▸'; color: var(--dim); }
+.d-impl .d-more[aria-expanded="true"]::after { content: ' ▾'; }
+
+/* The welcome's way to the API. */
+#welcome .chips button.api { background: #fbbf24; border-color: #fbbf24; color: #0b0f17; font-weight: 600; }

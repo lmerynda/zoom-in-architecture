@@ -1,5 +1,6 @@
+import type { Endpoint } from '../endpoints'
 import type { Tree } from '../model'
-import { fuzzy, searchMap } from './logic'
+import { fuzzy, match, searchMap } from './logic'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') => {
   const e = document.createElement(tag)
@@ -42,9 +43,21 @@ export interface SearchActions {
   feature: (name: string) => void
   /** Recently visited cards, most recent first. */
   recent: () => number[]
+  /** Endpoints that are not cards of this view (Architecture's, from the Requests model), to search; null when none. */
+  endpoints: () => Endpoint[] | null
+  /** Opens an endpoint by its Requests id. */
+  endpoint: (id: string) => void
+  /** Lists the endpoints in the panel, filtered by words if given. */
+  list: (f?: { query?: string }) => void
+  /** How many endpoints the map has: 0 when it has no Requests model. */
+  listSize: () => number
 }
 
-type Item = { label: string; sub: string; kind: string; run: () => void }
+/** `keep`: running it changes what the search shows, and the box stays open. */
+type Item = { label: string; sub: string; kind: string; run: () => void; keep?: boolean }
+
+/** Words that ask for the API as a whole. */
+const LIST_WORDS = ['endpoints', 'api', 'routes', 'surface']
 
 /**
  * Search: features and parts first, then files, keyboard first. An empty box lists the map's
@@ -78,11 +91,11 @@ export class Palette {
     this.status.setAttribute('role', 'status')
     this.root.append(this.input, this.status, this.list)
     document.body.append(this.root)
-    this.input.addEventListener('input', () => this.search())
+    this.input.addEventListener('input', () => { this.expanded = null; this.search() })
     this.input.addEventListener('keydown', e => {
       if (e.key === 'ArrowDown') { this.move(1); e.preventDefault() }
       if (e.key === 'ArrowUp') { this.move(-1); e.preventDefault() }
-      if (e.key === 'Enter') { const it = this.items[this.active]; this.close(true); it?.run() }
+      if (e.key === 'Enter') this.runItem(this.items[this.active])
       if (e.key === 'Escape') this.close(true)
       e.stopPropagation()
     })
@@ -90,10 +103,21 @@ export class Palette {
     this.input.addEventListener('blur', () => { if (this.isOpen) this.close() })
   }
 
+  /** A file shown by many cards, opened out: its cards, one row each. */
+  private expanded: { title: string; cards: number[] } | null = null
+
+  private runItem(it: Item | undefined) {
+    if (!it) return
+    if (it.keep) return it.run()
+    this.close(true)
+    it.run()
+  }
+
   open(prefix = '') {
     // The opener gets focus back when the search is put away (not when it was left by a click elsewhere).
     if (!this.isOpen) this.opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
     this.isOpen = true
+    this.expanded = null
     this.input.setAttribute('aria-expanded', 'true')
     this.root.hidden = false
     this.input.value = prefix
@@ -128,6 +152,26 @@ export class Palette {
     return { label: e.title, sub, kind: e.metadata?.method ? 'endpoint' : step ? 'step' : e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
   }
   private featureItem = (name: string, n: number): Item => ({ label: name, sub: `carried by ${n} card${n === 1 ? '' : 's'}`, kind: 'feature', run: () => this.act.feature(name) })
+  private listItem = (): Item => ({ label: `Endpoints · ${this.act.listSize()}`, sub: 'every endpoint, by resource, with method filters', kind: 'list', run: () => this.act.list() })
+  /** A file found once for every card that shows it: a step of many requests opens out into them. */
+  private fileItem = (f: { i: number; same: number[] }): Item => {
+    if (f.same.length < 2) return this.element(f.i)
+    const e = this.tree.els[f.i], name = e.metadata!.path.split('/').pop()!.replace(/\.\w+$/, '')
+    return { label: name, sub: `in ${f.same.length} places · ${e.metadata!.path}`, kind: `file ×${f.same.length}`, keep: true, run: () => { this.expanded = { title: name, cards: f.same }; this.search(); this.input.focus() } }
+  }
+  /**
+   * Endpoints that are not cards here, by method and path, handler or the type they return: up to
+   * a dozen, then one row for the rest, which lists them all in the panel.
+   */
+  private endpointItems(q: string): { title: string; best: number; items: Item[] } {
+    const eps = this.act.endpoints()
+    if (!eps) return { title: '', best: -1, items: [] }
+    const scored = eps.map(ep => ({ ep, s: Math.max(match(q, ep.title), match(q, ep.route), (ep.handler ? match(q, ep.handler.name) : -1) - 5, (ep.returns ? match(q, ep.returns) : -1) - 10) }))
+      .filter(x => x.s >= 40).sort((a, b) => b.s - a.s)
+    const items: Item[] = scored.slice(0, 12).map(({ ep }) => ({ label: ep.title, sub: [ep.handler?.name, ep.returns && `→ ${ep.returns}`, 'opens in Requests'].filter(Boolean).join(' · '), kind: 'endpoint', run: () => this.act.endpoint(ep.id) }))
+    if (scored.length > 12) items.push({ label: `All ${scored.length} matching endpoints`, sub: 'in the panel', kind: 'list', run: () => this.act.list({ query: q }) })
+    return { title: 'Endpoints · in Requests', best: scored[0]?.s ?? -1, items }
+  }
 
   private allFeatures() {
     const m = new Map<string, number>()
@@ -140,24 +184,38 @@ export class Palette {
     const q = raw.replace(/^>\s*/, '').trim()
     const groups: [string, Item[]][] = []
     let note: HTMLElement | null = null
-    if (raw.startsWith('>')) {
+    if (this.expanded) {
+      // A shared file opened out: every card that shows it, by the request it is a step of.
+      const { title, cards } = this.expanded
+      const rows = [...cards].sort((a, b) => this.tree.els[this.tree.parent[a]].title.localeCompare(this.tree.els[this.tree.parent[b]].title)).map(this.element)
+      groups.push(['', [{ label: '← All results', sub: raw, kind: 'back', keep: true, run: () => { this.expanded = null; this.search(); this.input.focus() } }]])
+      groups.push([`${title} · in ${cards.length} places`, rows])
+    } else if (raw.startsWith('>')) {
       const cmds = this.commands().map(c => ({ c, s: q ? fuzzy(q, c.name) : 0 })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s)
       groups.push(['Commands', cmds.map(({ c }) => ({ label: c.name, sub: c.hint ?? '', kind: 'command', run: () => c.run() }))])
     } else if (!q) {
       const recent = this.act.recent().filter(i => i > 0 && i < this.tree.size).slice(0, 6)
       if (recent.length) groups.push(['Recent places', recent.map(this.element)])
+      if (this.act.listSize()) groups.push(['The API', [this.listItem()]])
       groups.push(['Features of this map', this.allFeatures().map(([f, n]) => this.featureItem(f, n))])
     } else {
       const found = searchMap(this.tree.els, q)
       // A part and a feature of one name: the part, a place to go, comes first.
       const parts = [...found.features.map(f => ({ score: f.score - 0.5, item: this.featureItem(f.name, f.cards.length) })), ...found.parts.map(p => ({ score: p.score, item: this.element(p.i) }))]
         .sort((a, b) => b.score - a.score).map(x => x.item)
+      const best = Math.max(-1, ...found.parts.map(p => p.score), ...found.features.map(f => f.score))
+      // "endpoints", "api", "routes": the whole list, first.
+      if (this.act.listSize() && LIST_WORDS.some(w => match(q, w) >= 80)) groups.push(['The API', [this.listItem()]])
       // An exact file path outranks the parts: it is what was asked for.
       const exact = found.files.filter(f => f.score >= 110)
-      if (exact.length) groups.push(['Files', exact.map(f => this.element(f.i))])
+      if (exact.length) groups.push(['Files', exact.map(this.fileItem)])
+      // Endpoints of the other view: before the parts when they match better.
+      const eps = this.endpointItems(q)
+      if (eps.items.length && eps.best > best) groups.push([eps.title, eps.items])
       if (parts.length) groups.push(['Features and parts', parts])
+      if (eps.items.length && eps.best <= best) groups.push([eps.title, eps.items])
       const files = found.files.filter(f => f.score < 110)
-      if (files.length) groups.push([exact.length ? 'More files' : 'Files', files.map(f => this.element(f.i))])
+      if (files.length) groups.push([exact.length ? 'More files' : 'Files', files.map(this.fileItem)])
       if (!groups.length) {
         // Nothing found: say so, and offer the map's own words, its features, instead. Picking one
         // searches for it in place: the box stays open on its results.
@@ -179,7 +237,7 @@ export class Palette {
         row.append(el('span', 'kind', it.kind), el('b', '', it.label), el('span', 'sub', it.sub))
         // Mousedown keeps focus in the box; the click runs it, as assistive technology sends one.
         row.onmousedown = e => e.preventDefault()
-        row.onclick = () => { this.close(true); it.run() }
+        row.onclick = () => this.runItem(it)
         return row
       }),
     ]))

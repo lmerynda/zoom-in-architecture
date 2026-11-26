@@ -2,7 +2,8 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
-import { relationsAcross, renderDetails, renderEdge, renderLines, renderOutline, type PanelActions, type PanelRows } from './details'
+import { endpointsUnder, relationsAcross, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
+import { buildApi, clientParts, endpointOf, featureFacts, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -11,10 +12,11 @@ import { Minimap } from './minimap'
 import { renderModelTabs } from './models'
 import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
-import { placeUrl, Places } from './places'
+import { placeUrl, Places, type PlaceWords } from './places'
 import { Reader } from './reader'
-import { OPEN_A, OPEN_B, Renderer, safeTop, setSafeTop } from './render'
+import { count, OPEN_A, OPEN_B, Renderer, safeTop, setSafeTop } from './render'
 import { synthetic } from './synthetic'
+import './endpoints.css'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
@@ -68,32 +70,43 @@ const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [..
 
 const INTRO_SEEN = 'zoom.introSeen'
 /**
- * On a first visit, a short welcome: what the map shows, its counts (parts, files, features), how
- * to go in, and its features as places to start. It stays until Got it, at any width.
+ * On a first visit, a short welcome: what the map holds, counted as a reader names it (apps,
+ * databases, people, endpoints, features), the API in one press, and the features as places to
+ * start. The controls are in Help. It stays until Got it, at any width; it is drawn again when the
+ * endpoints arrive, if it is still up.
  */
-function showIntro(tree: Tree, feature: (name: string) => void) {
+function showIntro(tree: Tree, surface: Surface, feature: (name: string) => void, seeApi: () => void, again = false) {
   let seen = false
   try { seen = localStorage.getItem(INTRO_SEEN) === '1' } catch { /* storage blocked: show it this time */ }
-  if (seen) return
   const box = $('welcome')
-  const files = tree.els.filter(e => e.metadata?.path).length, parts = tree.children[0].length
+  if (seen || (again && box.hidden)) return
   const features = [...new Set(tree.els.flatMap(e => e.features ?? []))]
+  const endpoints = surface.api?.endpoints.length ?? 0
   const p = document.createElement('p'), b = document.createElement('b')
-  b.textContent = tree.els[0].title
-  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
-  p.append(b, ` is mapped here: ${[n(parts, 'part'), ...(files ? [n(files, 'file')] : []), ...(features.length ? [n(features.length, 'feature')] : [])].join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). ${matchMedia('(pointer: coarse)').matches ? 'Tap a card to see what it uses, double-tap to go in, pinch to zoom; Help lists every gesture.' : 'Scroll into a card to open it, double-click a file to read it, ? for every control.'}`)
+  b.textContent = tree.els[0].title.replace(/ · requests$/, '')
+  const n = (k: number, w: string) => `${count(k)} ${w}${k === 1 ? '' : 's'}`
+  const counts = [...topCounts(tree.children[0].map(i => tree.els[i].kind)), ...(endpoints ? [n(endpoints, 'endpoint')] : []), ...(features.length ? [n(features.length, 'feature')] : [])]
+  p.append(b, ` is mapped here: ${counts.join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). ${matchMedia('(pointer: coarse)').matches ? 'Help lists every gesture.' : 'Help (?) lists every control.'}`)
   const chips = document.createElement('div')
   chips.className = 'chips'
+  if (endpoints) {
+    const api = document.createElement('button')
+    api.className = 'api'
+    api.textContent = `See the API · ${endpoints}`
+    api.onclick = seeApi
+    chips.append(api)
+  }
   if (features.length) {
     const h = document.createElement('span')
     h.textContent = 'Start with a feature:'
     chips.append(h, ...features.slice(0, 10).map(f => { const c = document.createElement('button'); c.textContent = f; c.onclick = () => feature(f); return c }))
+    if (features.length > 10) chips.append(Object.assign(document.createElement('span'), { textContent: `${features.length - 10} more in Search` }))
   }
   const ok = document.createElement('button')
   ok.className = 'ok'
   ok.textContent = 'Got it'
   ok.onclick = () => { try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ } box.hidden = true }
-  box.replaceChildren(p, ...(features.length ? [chips] : []), ok)
+  box.replaceChildren(p, ...(chips.childElementCount ? [chips] : []), ok)
   box.hidden = false
 }
 
@@ -376,12 +389,27 @@ async function main() {
     }
     reader.open(path, tree.els[i].title, tree.els[tree.parent[i]].title, line, src, () => void openCode(i, line))
   }
+  /** Opens the page at another view of this map, at a place: Requests for an endpoint, Architecture for a part. */
+  const cross = (to: string | null, w: PlaceWords) => location.assign(placeUrl(`?model=${encodeURIComponent(modelName)}${to ? `&view=${to}` : ''}`, w))
+  /**
+   * An endpoint by its Requests id: selected here in the Requests view, where it is a card; across
+   * to Requests from the other views. Opened from the endpoint list, its panel leads back to it.
+   */
+  const openEndpoint = (id: string, from?: ApiFilter) => {
+    if (view !== 'requests') return cross('requests', { at: id })
+    const j = tree.byId.get(id) ?? -1
+    if (j <= 0) return
+    backToList = from ? { id, filter: from } : null
+    controls.goSelect(j)
+  }
   const actions: PanelActions = {
     go: j => controls.goSelect(j),
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
     read: j => void openCode(j, startOf(j)),
     inspect: (a, b) => { pickEdge({ s: a, t: b }, { rels: relationsAcross(tree, a, b) }); focusHeading() },
     enter: j => controls.enterPlace(j),
+    endpoint: id => openEndpoint(id),
+    list: f => showApi(f),
   }
   /** In the Connections view, why a card ranks where it does among its siblings. */
   const rankText = (i: number) => {
@@ -390,13 +418,73 @@ async function main() {
     const peers = tree.children[tree.parent[i]].length
     return `#${rk.rank[i]} of ${peers} · reaches ${rk.partners[i]} of ${peers - 1} peer${peers === 2 ? '' : 's'} · ${rk.weight[i]} relation${rk.weight[i] === 1 ? '' : 's'}`
   }
+  /**
+   * The map's surface, for both views: its endpoints, read from the Requests model (this one in
+   * Requests, the one beside it otherwise), and the routes and jobs its code marks (from the
+   * Architecture model once loaded). `other` is the model of the other view.
+   */
+  let other: ModelJson | null = null
+  const surface: Surface = { api: null, requests: view === 'requests', marks: { route: [], schedule: [] } }
+  /** Per card, its surface in words: drawn on the card under its kind. */
+  let surfaceText = new Map<number, string>()
+  const cardSurface = () => {
+    const out = new Map<number, string>(), api = surface.api, clients = api ? clientParts(api) : new Set<string>()
+    const n = (k: number, w: string) => `${count(k)} ${w}${k === 1 ? '' : 's'}`
+    for (const i of tree.children[0]) {
+      const id = tree.els[i].id
+      const served = api ? api.endpoints.filter(ep => ep.app === id).length : 0
+      const calls = api ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => c.top === id)).length : 0
+      const jobs = clients.has(id) ? 0 : surface.marks.schedule.filter(m => m.top === id).length
+      const words = [served ? n(served, 'endpoint') : '', calls ? `calls ${n(calls, 'endpoint')}` : '', jobs ? n(jobs, 'scheduled job') : ''].filter(Boolean)
+      if (words.length) out.set(i, words.join(' · '))
+    }
+    // Inside a part (not in Requests, whose cards are the endpoints): a component's endpoints, by the handlers in it; a file's, served.
+    if (api && view !== 'requests') {
+      const byPath = new Map<string, number>()
+      for (const ep of api.endpoints) if (ep.handler) byPath.set(ep.handler.path, (byPath.get(ep.handler.path) ?? 0) + 1)
+      const acc = new Int32Array(tree.size)
+      for (const i of tree.dfs().reverse()) {
+        const p = tree.els[i].metadata?.path
+        if (p) acc[i] += byPath.get(p) ?? 0
+        if (tree.parent[i] > 0) acc[tree.parent[i]] += acc[i]
+      }
+      for (let i = 1; i < tree.size; i++) if (acc[i] && tree.parent[i] > 0) out.set(i, tree.els[i].metadata?.path ? `serves ${n(acc[i], 'endpoint')}` : n(acc[i], 'endpoint'))
+    }
+    return out
+  }
+  /** Reads the surface again (a model arrived or changed) and redraws what shows it. */
+  const refreshSurface = () => {
+    const req = view === 'requests' ? raw : other
+    const api = req ? buildApi(req) : null
+    surface.api = api?.endpoints.length ? api : null
+    surface.marks = markedEntries(view === 'requests' && other ? other.elements : raw.elements)
+    surfaceText = cardSurface()
+    renderer.surface = i => surfaceText.get(i) ?? ''
+    if (held?.kind === 'api') showApi(held.filter)
+    else if (held?.kind === 'feature') showFeature(held.name)
+    else if (!edgeOpen() && !details.contains(document.activeElement)) showDetails()
+    else outlined = -1
+  }
   let rows: PanelRows = { uses: [], usedBy: [], mark: () => {} }
   /** The place the outline shows, while nothing is selected. */
   let outlined = -1
   const showDetails = () => {
-    rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected))
+    rows = renderDetails(details, tree, j => renderer.relationsOf(j), renderer.selected, actions, rankText(renderer.selected), surface)
     outlined = -1
-    if (renderer.selected <= 0) showOutline()
+    if (renderer.selected <= 0) return showOutline()
+    // An endpoint opened from the list leads back to it.
+    if (backToList && tree.els[renderer.selected].id === backToList.id) {
+      const f = backToList.filter
+      backButton('Endpoints', () => showApi(f))
+    }
+  }
+  /** A "← Back to …" at the head of the panel. */
+  const backButton = (to: string, run: () => void) => {
+    const b = document.createElement('button')
+    b.className = 'd-back'
+    b.textContent = `← Back to ${to}`
+    b.onclick = () => { details.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true }); run() }
+    details.querySelector('.d-head')?.prepend(b)
   }
   /** With nothing selected, the panel outlines the place you are in (renderOutline). */
   const showOutline = () => {
@@ -407,7 +495,7 @@ async function main() {
     const focused = details.contains(document.activeElement) ? (document.activeElement as HTMLElement).textContent : null
     const was = outlinedBefore
     outlinedBefore = here
-    renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j))
+    renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j), surfaceLead(tree, here, surface, actions))
     // Or, when that card is not listed here, the outline's heading: focus stays in the panel.
     if (focused != null) {
       const row = [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)
@@ -422,6 +510,8 @@ async function main() {
   let outlinedBefore = -1
   const select = (i: number) => {
     edgeReturn = { selected: -1, list: null }
+    held = null
+    if (backToList && tree.els[i]?.id !== backToList.id) backToList = null
     // Focus in the panel is lost when it redraws: it moves to the new heading instead of the page,
     // and back to the card's row in the outline when the selection is put down.
     const inPanel = details.contains(document.activeElement)
@@ -462,8 +552,63 @@ async function main() {
    */
   type Picked = { s: number; t: number; rels: number[] }
   let edgeReturn: { selected: number; list: Picked[] | null } = { selected: -1, list: null }
-  /** An arrow, or the list of arrows on a trunk, is in the panel: the outline waits. */
-  const edgeOpen = () => renderer.edge != null || details.querySelector('.d-lines') != null
+  /**
+   * What the panel holds in place of a card: the endpoint list (with its filter) or a feature. Like
+   * an arrow, it keeps the outline from taking the panel back, and Esc puts it down.
+   */
+  let held: { kind: 'api'; filter: ApiFilter } | { kind: 'feature'; name: string } | null = null
+  /** The endpoint opened from the list, and the list's filter, so its panel leads back to the list. */
+  let backToList: { id: string; filter: ApiFilter } | null = null
+  /** An arrow, the list of arrows on a trunk, the endpoint list or a feature is in the panel: the outline waits. */
+  const edgeOpen = () => renderer.edge != null || details.querySelector('.d-lines') != null || held != null
+  /** The panel is about to hold something other than a card: where Esc returns, and nothing selected meanwhile. */
+  const hold = (h: NonNullable<typeof held>) => {
+    if (!edgeOpen()) edgeReturn = { selected: renderer.selected, list: null }
+    held = h
+    renderer.selected = -1
+    renderer.edge = null
+    rows = { uses: [], usedBy: [], mark: () => {} }
+    outlined = -1
+  }
+  /**
+   * The endpoint list in the panel. Focus that was on a filter stays on it across the redraw;
+   * focus elsewhere in the panel goes to the heading.
+   */
+  const showApi = (f: ApiFilter) => {
+    if (!surface.api) return controls.toast.show('This map has no Requests view, so its endpoints are not known')
+    const active = document.activeElement as HTMLElement | null
+    const inPanel = !!active && details.contains(active)
+    const chip = inPanel && active!.closest('.d-filters') ? active!.textContent?.split(' · ')[0] : null
+    hold({ kind: 'api', filter: f })
+    renderApi(details, surface, f, { endpoint: id => openEndpoint(id, f), list: showApi, filter: showApi, close: () => { pickEdge(null); focusHeading() } })
+    if (edgeReturn.selected > 0) { const back = edgeReturn.selected; backButton(tree.els[back].title, () => pickEdge(null)) }
+    $('announce').textContent = details.querySelector('h2')?.textContent ?? ''
+    const again = chip && [...details.querySelectorAll<HTMLElement>('.d-filters button')].find(b => b.textContent?.split(' · ')[0] === chip)
+    if (again) again.focus({ preventScroll: true })
+    else if (inPanel) focusHeading()
+  }
+  /** The elements features are read from: the Architecture model's, which carries them. */
+  const archEls = () => (view === 'requests' ? other?.elements ?? [] : raw.elements)
+  /**
+   * A feature in the panel: its pages, its endpoints with their effects, the tables they touch and
+   * the parts that carry it. False when the map has nothing for it.
+   */
+  const showFeature = (name: string): boolean => {
+    const els = archEls()
+    const facts = featureFacts(els, surface.api, name)
+    if (!facts.parts.length && !facts.pages.length && !facts.endpoints.length) return false
+    const inPanel = details.contains(document.activeElement)
+    hold({ kind: 'feature', name })
+    const titles = new Map(els.map(e => [e.id, e.title]))
+    renderFeature(details, name, facts, id => titles.get(id) ?? id, {
+      part: id => { if (view === 'requests') return cross(null, { at: id }); const j = tree.byId.get(id) ?? -1; if (j > 0) controls.goSelect(j) },
+      endpoint: id => openEndpoint(id),
+      list: showApi,
+    })
+    $('announce').textContent = `Feature ${name}: ${facts.pages.length} page${facts.pages.length === 1 ? '' : 's'}, ${facts.endpoints.length} endpoint${facts.endpoints.length === 1 ? '' : 's'}`
+    if (inPanel) focusHeading()
+    return true
+  }
   const focusHeading = () => { const h = details.querySelector<HTMLElement>('h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); h.scrollIntoView({ block: 'nearest' }) } }
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   /**
@@ -476,6 +621,7 @@ async function main() {
     const inPanel = details.contains(document.activeElement)
     const inEdge = edgeOpen()
     if (!inEdge) edgeReturn = { selected: renderer.selected, list: null }
+    held = null
     if (Array.isArray(l) && l.length === 1) l = l[0]
     if (!l) {
       const back = edgeReturn
@@ -535,11 +681,27 @@ async function main() {
   const places = new Places(v => {
     const r = reading && (v.selected === reading.id || v.here === reading.id) ? reading : null
     const path = r ? tree.els[tree.byId.get(r.id) ?? 0]?.metadata?.path : null
-    return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null }
+    // The request carried from the Requests view stays in the other views' address; Requests names its own.
+    return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null, req: view === 'requests' ? null : undefined }
   }, () => cam.w)
-  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
+  controls = installControls({
+    app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true },
+    api: () => surface.api, requests: view === 'requests', endpoint: id => openEndpoint(id), list: f => showApi(f), showFeature,
+  })
   resize()
-  showIntro(tree, name => controls.feature(name))
+  const intro = (again = false) => showIntro(tree, surface, name => controls.feature(name), () => { showApi({}); focusHeading() }, again)
+  refreshSurface()
+  intro()
+  // The other view's model: the Requests model gives Architecture its endpoints, Architecture gives Requests its features and marks.
+  if (modelName !== 'synthetic') void (async () => {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}models/${view === 'requests' ? modelName : `${modelName}.requests`}.json`)
+      if (res.ok && res.headers.get('content-type')?.includes('json')) other = await res.json()
+    } catch { /* no other view: the surface is what this model has */ }
+    if (!other) return
+    refreshSurface()
+    intro(true)
+  })()
   $('title').textContent = `${tree.els[0].title.replace(/ · requests$/, '')}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
   // The welcome is up now: the first frame keeps clear of it.
   if (!$('welcome').hidden) { const f = frameFor(0); cam.set(f.x, f.y, f.z); renderer.wholeZ = f.z }
@@ -581,37 +743,66 @@ async function main() {
   }
   arrowLegend()
 
-  // A link names a place: open there. The selection (`at`) is framed among its neighbours, a place
-  // (`in`) fills the view; `file` finds a file's card (the Requests view has its own ids), and
-  // `line` opens it there.
+  // A link names a place: open there. The place (`in`) fills the view and the selection (`at`) is
+  // selected in it; with only a selection, it is framed among its neighbours. `file` finds a file's
+  // card (the Requests view has its own ids), and `line` opens it there.
   {
     const q = new URLSearchParams(location.search)
     const lens = q.get('lens')
     if (lens && lenses.some(l => l.name === lens)) setLens(lens as LensName)
     const at = tree.byId.get(q.get('at') ?? '') ?? -1, inside = tree.byId.get(q.get('in') ?? '') ?? -1
     const file = q.get('file'), line = Number(q.get('line')) || 0
-    const target = at > 0 ? at : file ? cardOf(file, inside) : inside
-    if (target > 0) {
-      // Selected first, so the frame leaves room for the panel it opens.
-      if (at > 0 || file) select(target)
-      const f = frameFor(at > 0 || file ? target : inside)
-      cam.set(f.x, f.y, f.z)
-      if (file && line) void openCode(target, line)
-    }
+    const target = at > 0 ? at : file ? cardOf(file, inside) : -1
+    // Selected first, so the frame leaves room for the panel it opens.
+    if (target > 0) select(target)
+    const framed = inside > 0 ? inside : target
+    if (framed > 0) { const f = frameFor(framed); cam.set(f.x, f.y, f.z) }
+    if (target > 0 && file && line) void openCode(target, line)
     places.update(controls.view())
   }
+  /** In the Requests view, the endpoint card i is or is in; -1 outside any. */
+  const requestOf = (i: number) => { for (let a = i; a > 0; a = tree.parent[a]) if (endpointOf(tree.els[a])) return a; return -1 }
   /**
-   * The view switch keeps your subject: Architecture and Connections share ids; the Requests view
-   * has its own, so the subject crosses to or from it by its file.
+   * The view switch keeps your subject: Architecture and Connections share ids. The Requests view
+   * has its own, so the subject crosses by its file, and the request you were in rides along in the
+   * address (`req`): coming back, the file opens in that request, not the first that holds it. A
+   * part crosses to the endpoints whose handlers it holds: one is selected, several framed by their
+   * resource.
    */
   const viewLinks = () => {
     const v = controls.view()
     const subject = tree.byId.get(v.selected ?? v.here ?? '') ?? -1
     const file = subject > 0 ? tree.els[subject].metadata?.path ?? null : null
+    const lens = renderer.lens?.name ?? null
+    const req = view === 'requests' ? (subject > 0 && requestOf(subject) > 0 ? tree.els[requestOf(subject)].id : null) : new URLSearchParams(location.search).get('req')
+    // Into Requests, from a part or file of this view.
+    const intoRequests = (): PlaceWords => {
+      const api = surface.api
+      if (!api || subject <= 0) return { at: null, file }
+      if (file) {
+        const card = api.endpoints.find(ep => ep.id === req)?.cards.find(c => c.path === file)
+        return card ? { at: card.id } : { at: null, file }
+      }
+      const ids = endpointsUnder(tree, subject, api)
+      if (req && ids.includes(req)) return { at: req }
+      if (ids.length === 1) return { at: ids[0] }
+      if (!ids.length) return { at: null }
+      // Several: the resource they share.
+      const up = (id: string) => { const out: string[] = []; for (let a: string | null | undefined = id; a; a = api.parent.get(a)) out.push(a); return out }
+      const common = ids.map(up).reduce((acc, chain) => acc.filter(a => chain.includes(a)))
+      return { at: null, in: common[0] ?? null }
+    }
+    // Out of Requests: a file as itself; an endpoint as its handler's file.
+    const fromRequests = (): PlaceWords => {
+      const ep = subject > 0 && endpointOf(tree.els[subject]) ? surface.api?.endpoints.find(x => x.id === tree.els[subject].id) : null
+      return { at: null, file: file ?? ep?.handler?.path ?? null, req }
+    }
     for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a')) {
       const base = (a.dataset.base ??= a.getAttribute('href') ?? '')
-      const crossing = (new URLSearchParams(base).get('view') === 'requests') !== (view === 'requests')
-      a.href = crossing ? placeUrl(base, { at: null, file }) : placeUrl(base, { at: v.selected, in: v.here, lens: renderer.lens?.name ?? null })
+      const toRequests = new URLSearchParams(base).get('view') === 'requests'
+      a.href = toRequests === (view === 'requests')
+        ? placeUrl(base, { at: v.selected, in: v.here, lens, req: view === 'requests' ? null : req })
+        : placeUrl(base, toRequests ? intoRequests() : fromRequests())
     }
   }
 
@@ -670,6 +861,7 @@ async function main() {
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
     showDetails()
+    refreshSurface()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.

@@ -377,7 +377,8 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
-  // The Requests view: a switch beside the lenses opens the edge, and an endpoint holds its request's path.
+  // The Requests view: a switch beside the lenses opens the edge, and an endpoint holds its request's path;
+  // an endpoint's tables are under its Reads and writes.
   check('the view switch sits with the lenses, not among the models', await page.evaluate(() => {
     const views = document.querySelector('#views'), lenses = document.querySelector('.lensbar')
     return !views.hidden && views.nextElementSibling === lenses && !document.querySelector('#models').textContent.includes('Requests')
@@ -389,7 +390,7 @@ try {
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
   const traced = await page.evaluate(async () => {
-    const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li')].map(p => p.textContent).join(' | ')
+    const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li, #details .d-table-rows li')].map(p => p.textContent).join(' | ')
     s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()
     const other = t.els.findIndex(e => e.metadata?.method && e.id !== 'server.api-orders.e1'); s.select(other); await new Promise(r => setTimeout(r, 100)); const unseen = text()
     s.select(t.byId.get('server')); await new Promise(r => setTimeout(r, 100)); const coverage = text()

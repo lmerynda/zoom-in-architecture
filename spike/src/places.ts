@@ -1,20 +1,26 @@
 import { same, type View } from './controls/logic'
 
 /**
- * What a place is in words, for its address: the selected card (`at`), else the card you are in
- * (`in`); a file and line when reading code; the lens.
+ * What a place is in words, for its address: the card you are in (`in`) and the selected card
+ * (`at`), both when both are set, so a link reopens the view and not only the selection; a file and
+ * line when reading code; the lens. `req` is the request last looked at in the Requests view: it
+ * rides along in the other views so that switching back returns to it (undefined: keep the
+ * address's own, null: drop it).
  */
-export interface PlaceWords { at: string | null; in?: string | null; file?: string | null; line?: number | null; lens?: string | null }
+export interface PlaceWords { at: string | null; in?: string | null; file?: string | null; line?: number | null; lens?: string | null; req?: string | null }
 
 /** The address of a place: the page's model and view, then the place's own words. */
 export function placeUrl(search: string, w: PlaceWords): string {
   const q = new URLSearchParams(search)
   for (const k of ['at', 'in', 'file', 'line', 'lens']) q.delete(k)
+  if (w.req !== undefined) q.delete('req')
+  // The place first, then the selection in it; a selection that is the place itself is said once.
+  if (w.in && w.in !== w.at) q.set('in', w.in)
   if (w.at) q.set('at', w.at)
-  else if (w.in) q.set('in', w.in)
   if (w.file) q.set('file', w.file)
   if (w.line && w.line > 1) q.set('line', String(w.line))
   if (w.lens && w.lens !== 'structure') q.set('lens', w.lens)
+  if (w.req) q.set('req', w.req)
   return `?${q.toString().replace(/%2F/g, '/')}`
 }
 
