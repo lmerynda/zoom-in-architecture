@@ -867,7 +867,11 @@ async function main() {
         if (z <= fit.z) continue
         // Over the screen's centre, where render.ts reads the place from, even if that sets it lower in its frame.
         const half = (v: number) => (v * z) / 2, along = (lo: number, hi: number, size: number, mid: number) => Math.max(mid - half(size) + 8, Math.min(mid + half(size) - 8, (lo + hi) / 2))
-        const sx = along(l, rr, r[at * 4 + 2], cam.w / 2), sy = along(t, b, r[at * 4 + 3], cam.h / 2)
+        const sx = along(l, rr, r[at * 4 + 2], cam.w / 2)
+        // Its title below the bar, where that still leaves it over the screen's centre.
+        let sy = along(t, b, r[at * 4 + 3], cam.h / 2)
+        const hh = half(r[at * 4 + 3])
+        if (sy - hh < t + 4 && t + 4 <= cam.h / 2 - 8 && t + 4 + 2 * hh >= cam.h / 2 + 8) sy = t + 4 + hh
         fit = { z, x: r[at * 4] + r[at * 4 + 2] / 2 - (sx - cam.w / 2) / z, y: r[at * 4 + 1] + r[at * 4 + 3] / 2 - (sy - cam.h / 2) / z }
       }
     }

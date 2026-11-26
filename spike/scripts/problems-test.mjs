@@ -512,6 +512,8 @@ try {
   await sleep(700)
   const side = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].id, list: document.querySelector('.d-problems > summary')?.textContent } })
   check('a phone on its side, a pixel taller in between: Back to the list returns to Kingdom’s list', sideHome === 'backend.kingdom' && side.here === 'backend.kingdom', JSON.stringify({ sideHome, ...side }))
+  const sideTitle = await page.evaluate(() => ({ top: window.__spike.renderer.screenRectOf(window.__spike.id('backend.kingdom'))[1], bar: document.getElementById('top').getBoundingClientRect().bottom }))
+  check('and its title shows below the bar', sideTitle.top >= sideTitle.bar, JSON.stringify(sideTitle))
   await page.setViewport({ width: 320, height: 568, hasTouch: true, isMobile: true })
   await open('model=excalidraw')
   const exTotal = await page.evaluate(() => window.__spike.problems.list.length)
