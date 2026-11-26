@@ -1,4 +1,4 @@
-import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
+import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Mark, type Marks } from './endpoints'
 import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
 
@@ -638,7 +638,7 @@ export interface Surface {
   api: Api | null
   /** The open view is Requests: an endpoint is a card here. */
   requests: boolean
-  /** Routes and scheduled jobs marked in the map's code (the Architecture model's, when it is loaded). */
+  /** The ways into the map's code: routes its files mark, and its entry points (the Architecture model's, when it is loaded). */
   marks: Marks
 }
 
@@ -747,12 +747,15 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
   const api = s.api
   const eps = api ? filterApi(api, { app: scope.app, ids: scope.ids }) : []
   const calls = api && scope.calls ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => scope.calls!.includes(c.top))) : []
-  const marks = { route: s.marks.route.filter(m => !scope.app || m.top === scope.app), schedule: s.marks.schedule.filter(m => !scope.app || m.top === scope.app) }
+  const mine = (k: keyof Marks) => s.marks[k].filter(m => !scope.app || m.top === scope.app)
+  const marks = { route: mine('route') }
   const clients = api ? clientParts(api) : new Set<string>()
-  const jobs = scope.ids ? [] : marks.schedule.filter(m => !clients.has(m.top))
+  // The other ways in (the map's entry points), a client's own timers and handlers left out; a program's start is not a way in, but says where it begins.
+  const ways = (k: 'schedule' | 'message' | 'socket' | 'main') => (scope.ids ? [] : mine(k).filter(m => !clients.has(m.top)))
+  const jobs = ways('schedule'), handlers = ways('message'), sockets = ways('socket'), mains = ways('main')
   const routesOnly = !eps.length && !scope.ids && marks.route.length > 0
   const pages = scope.pages ?? []
-  if (!eps.length && !calls.length && !jobs.length && !routesOnly && !pages.length) return []
+  if (!eps.length && !calls.length && !jobs.length && !handlers.length && !sockets.length && !mains.length && !routesOnly && !pages.length) return []
   const box = el('section', 'd-surface')
   box.append(el('h3', '', 'Surface'))
   const row = el('div', 'd-actions')
@@ -787,7 +790,12 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
     box.append(toggle, ul)
   }
   if (pages.length) fold('Pages', pages.map(p => ({ text: p.title, title: `${p.title}: select it`, run: () => act.go(p.i) })))
-  if (jobs.length) fold('Scheduled jobs', jobs.map(j => ({ text: `${j.path.split('/').pop()}:${j.line}`, title: `${j.path}:${j.line}: open the code here`, run: () => act.openPath(j.path, j.line, -1) })))
+  // Each row: the file, what it starts when the code says (BotClock · runBots), and its line.
+  const rowOf = (j: Mark) => ({ text: `${j.path.split('/').pop()!.replace(/\.\w+$/, '')}${j.name ? ` · ${j.name}` : ''}:${j.line}`, title: `${j.path}:${j.line}: open the code here`, run: () => act.openPath(j.path, j.line, -1) })
+  if (jobs.length) fold('Scheduled jobs', jobs.map(rowOf))
+  if (handlers.length) fold('Message and event handlers', handlers.map(rowOf))
+  if (sockets.length) fold('Socket servers', sockets.map(rowOf))
+  if (mains.length) fold('Starts at', mains.map(rowOf))
   return [box]
 }
 

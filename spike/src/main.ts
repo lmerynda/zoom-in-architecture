@@ -440,7 +440,7 @@ async function main() {
    * Architecture model once loaded). `other` is the model of the other view.
    */
   let other: ModelJson | null = null
-  const surface: Surface = { api: null, requests: view === 'requests', marks: { route: [], schedule: [] } }
+  const surface: Surface = { api: null, requests: view === 'requests', marks: { route: [], schedule: [], message: [], socket: [], main: [] } }
   /** Per card, its surface in words: drawn on the card under its kind. */
   let surfaceText = new Map<number, string>()
   const cardSurface = () => {
@@ -450,8 +450,10 @@ async function main() {
       const id = tree.els[i].id
       const served = api ? api.endpoints.filter(ep => ep.app === id).length : 0
       const calls = api ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => c.top === id)).length : 0
-      const jobs = clients.has(id) ? 0 : surface.marks.schedule.filter(m => m.top === id).length
-      const words = [served ? n(served, 'endpoint') : '', calls ? `calls ${n(calls, 'endpoint')}` : '', jobs ? n(jobs, 'scheduled job') : ''].filter(Boolean)
+      // A client's own timers, handlers and sockets (a poll, a live view) are no way into the system.
+      const ways = (k: 'schedule' | 'message' | 'socket') => (clients.has(id) ? 0 : surface.marks[k].filter(m => m.top === id).length)
+      const jobs = ways('schedule'), handlers = ways('message'), sockets = ways('socket')
+      const words = [served ? n(served, 'endpoint') : '', calls ? `calls ${n(calls, 'endpoint')}` : '', jobs ? n(jobs, 'scheduled job') : '', handlers ? n(handlers, 'event handler') : '', sockets ? n(sockets, 'socket server') : ''].filter(Boolean)
       if (words.length) out.set(i, words.join(' · '))
     }
     // Inside a part (not in Requests, whose cards are the endpoints): a component's endpoints, by the handlers in it; a file's, served.
@@ -473,7 +475,9 @@ async function main() {
     const req = view === 'requests' ? raw : other
     const api = req ? buildApi(req) : null
     surface.api = api?.endpoints.length ? api : null
-    surface.marks = markedEntries(view === 'requests' && other ? other.elements : raw.elements)
+    const arch = view === 'requests' && other ? other : raw
+    // Sample and synthetic models list no entry points; a published map always does.
+    surface.marks = markedEntries(arch.elements, arch.entryPoints ?? [])
     surfaceText = cardSurface()
     callsRead = null
     renderer.surface = i => surfaceText.get(i) ?? ''

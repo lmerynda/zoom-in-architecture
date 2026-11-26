@@ -93,7 +93,7 @@ try {
 
   // 4. The default view states the surface: the apps' cards and panels, a controller's Serves.
   const cards = await page.evaluate(() => { const s = window.__spike; return ['backend', 'browser', 'devtools', 'backend.market', 'backend.market.offers.marketController'].map(id => s.renderer.surface(s.id(id))) })
-  check('cards state their surface: endpoints served, endpoints called, scheduled jobs, a controller\'s routes', cards[0] === '67 endpoints · 1 scheduled job' && /^calls \d+ endpoints$/.test(cards[1]) && /^calls \d+ endpoints$/.test(cards[2]) && /^\d+ endpoints$/.test(cards[3]) && cards[4] === 'serves 5 endpoints', JSON.stringify(cards))
+  check('cards state their surface: endpoints served, endpoints called, scheduled jobs and event handlers, a controller\'s routes', cards[0] === '67 endpoints · 1 scheduled job · 1 event handler' && /^calls \d+ endpoints$/.test(cards[1]) && /^calls \d+ endpoints$/.test(cards[2]) && /^\d+ endpoints$/.test(cards[3]) && cards[4] === 'serves 5 endpoints', JSON.stringify(cards))
   await page.evaluate(() => { const s = window.__spike; s.controls.goSelect(s.id('browser')) })
   await landed()
   const client = await page.evaluate(() => [...document.querySelectorAll('#details .d-surface button')].map(b => b.textContent))
@@ -317,6 +317,9 @@ try {
 
   // A scheduled job shown from Requests opens its file in Architecture.
   await open(`${map}&view=requests`)
+  // The other ways in come from the map's entry points, each naming what it starts; the browser's own timers are not among them.
+  const ways = await page.evaluate(() => [...document.querySelectorAll('#details .d-surface .d-more')].map(b => `${b.textContent} = ${[...b.nextElementSibling.querySelectorAll('.cite')].map(c => c.textContent).join(', ')}`))
+  check('the surface lists the entry points beyond HTTP by kind, each naming what it starts', JSON.stringify(ways) === JSON.stringify(['Scheduled jobs · 1 = BotClock · runBots:21', 'Message and event handlers · 1 = MaintenanceController · markReady:18', 'Starts at · 1 = GameApplication · main:20']), JSON.stringify(ways))
   await page.evaluate(() => { document.querySelector('#details .d-surface .d-more')?.click() })
   await clickText('#details .d-jobs .cite', 'BotClock')
   await crossed('')
