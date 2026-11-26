@@ -326,6 +326,8 @@ async function main() {
       renderer.router.reset()
       // At the whole map before and still now (the reader may have moved while it was laid out).
       if (was && atWhole()) setWhole()
+      // A flight under way (a card picked meanwhile) flies on to where its card now is.
+      else if (cam.flying) { if (renderer.selected > 0) fit(renderer.selected) }
       else if (anchor > 0) {
         const z = cam.z * (w0 / r[a + 2])
         cam.set(r[a] - (sx - cam.w / 2) / z, r[a + 1] - (sy - cam.h / 2) / z, z)
