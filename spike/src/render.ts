@@ -836,7 +836,7 @@ export class Renderer {
     }
     this.lines = []
     // Problem halos by mark (listed, open) and by the width of the arrow they lie under.
-    const halos = new Map<number, { level: number; width: number; pts: number[][] }>()
+    const halos = new Map<string, { level: number; width: number; pts: number[][] }>()
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -862,9 +862,10 @@ export class Renderer {
       if (w) {
         // Wider than the arrow by a clear margin, however heavy the arrow is.
         const width = TIER_W[tier] + (hot ? 0.5 : 1) + (w === 2 ? 10 : 6)
-        const h = halos.get(w * 100 + tier) ?? { level: w, width, pts: [] }
+        const key = `${w}|${width}`
+        const h = halos.get(key) ?? { level: w, width, pts: [] }
         h.pts.push(clipped)
-        halos.set(w * 100 + tier, h)
+        halos.set(key, h)
       }
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
       // project's own tests, a runtime call the trace could have seen and no test made. A call from

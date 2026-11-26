@@ -51,7 +51,12 @@ const state = () => page.evaluate(() => {
     warnedLines: [...r.warnedLines().values()],
     // Drawn lines carrying the open problem's mark, and whether one runs above a phone's sheet.
     strongDrawn: (() => { const w = r.warnedLines(), n = s.tree.size; return r.lines.filter(l => w.get(Math.min(l.s, l.t) * n + Math.max(l.s, l.t)) === 2).length })(),
-    strongAboveSheet: (() => { const w = r.warnedLines(), n = s.tree.size, top = d.getBoundingClientRect().top > innerHeight / 2 ? d.getBoundingClientRect().top : innerHeight; return r.lines.some(l => w.get(Math.min(l.s, l.t) * n + Math.max(l.s, l.t)) === 2 && l.pts.some((v, j) => j % 2 === 1 && v > 0 && v < top)) })(),
+    strongAboveSheet: (() => {
+      const w = r.warnedLines(), n = s.tree.size, sheet = d.getBoundingClientRect(), bottom = sheet.top > innerHeight / 2 ? sheet.top : innerHeight
+      const right = sheet.top > innerHeight / 2 ? innerWidth : Math.min(innerWidth, sheet.left), top = document.getElementById('top').getBoundingClientRect().bottom
+      const inside = (x, y) => x >= 0 && x <= right && y >= top && y <= bottom
+      return r.lines.some(l => w.get(Math.min(l.s, l.t) * n + Math.max(l.s, l.t)) === 2 && l.pts.some((_, j) => j % 2 === 0 && j + 3 < l.pts.length && Array.from({ length: 21 }, (_, q) => q / 20).some(u => inside(l.pts[j] + (l.pts[j + 2] - l.pts[j]) * u, l.pts[j + 1] + (l.pts[j + 3] - l.pts[j + 1]) * u))))
+    })(),
     drawnWarned: (() => { const w = r.warnedLines(), n = s.tree.size; return r.lines.filter(l => w.has(Math.min(l.s, l.t) * n + Math.max(l.s, l.t))).length })(),
     legend: !!document.querySelector('#arrows .a-problem'),
     at: s.problemAt,
@@ -139,6 +144,33 @@ try {
   })
   check('a live update that keeps the problem keeps it open', kept.after === kept.before && kept.note?.startsWith(`Problem ${kept.before + 1} of`), JSON.stringify(kept))
   await key('Escape')
+  await page.evaluate(() => window.__spike.select(window.__spike.id('backend')))
+  await sleep(200)
+  await page.evaluate(() => window.__spike.openProblem(0))
+  await landed()
+  await page.focus('.d-problem-nav button:nth-child(2)')
+  const swapKeeps = await page.evaluate(async () => {
+    await window.__spike.swapModel(await (await fetch('/models/knights-of-darkness.json')).json())
+    return { focus: document.activeElement?.textContent, back: document.querySelector('.d-back')?.textContent ?? null }
+  })
+  check('a live update keeps focus on the note’s button and the way back to the selection', swapKeeps.focus === 'Next →' && swapKeeps.back === '← Back to Game server', JSON.stringify(swapKeeps))
+  await key('Escape')
+  const tangle = await page.evaluate(async () => {
+    const s = window.__spike, k = s.problems.list.findIndex(p => p.title.includes('↔') && /Buildings and land/.test(p.title))
+    if (k < 0) return { k }
+    s.openProblem(k)
+    const json = await (await fetch('/models/knights-of-darkness.json')).json()
+    const p = s.problems.list[k], ids = [s.tree.els[p.a].id, s.tree.els[p.b].id]
+    const one = json.relations.find(r => r.source.startsWith(ids[0] + '.') && r.target.startsWith(ids[1] + '.') && r.kind === 'code')
+    json.relations.push({ ...one })
+    await s.swapModel(json)
+    return { k, after: s.problemAt, title: s.problems.list[s.problemAt]?.title, note: !!document.querySelector('.d-problem') }
+  })
+  check('a tangle whose counts change in a live update stays open', tangle.k >= 0 && tangle.after >= 0 && /Buildings and land/.test(tangle.title ?? '') && tangle.note, JSON.stringify(tangle))
+  await key('Escape')
+  await open('model=knights-of-darkness')
+  await page.click('.d-problems > summary')
+  await sleep(200)
 
   // With a card selected, ] and [ still step through what it uses.
   await page.evaluate(() => window.__spike.select(window.__spike.id('backend.kingdom')))
@@ -157,6 +189,50 @@ try {
   const inside = await page.evaluate(() => { const s = window.__spike, k = s.id('backend.kingdom'), ks = s.problems.list.filter(p => p.level === k || s.tree.isAncestor(k, p.level)); return { n: ks.length, rels: new Set(ks.flatMap(p => p.rels)).size } })
   check('inside Kingdom the list counts only Kingdom’s problems, and the map marks only theirs', st.summary === `Problems · ${inside.n}` && inside.n < st.total && st.warn?.all === inside.rels, JSON.stringify({ ...st, inside }))
   await shot('kod-kingdom')
+  // Zoomed until the file fills the screen: the place is the file, which lists nothing.
+  await page.evaluate(() => { const s = window.__spike, i = s.id('backend.kingdom.state.kingdomEntity'), r = s.world.rect; s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2, (s.cam.w / r[i * 4 + 2]) * 1.1) })
+  await landed()
+  await sleep(400)
+  const inFile = await page.evaluate(() => ({ list: !!document.querySelector('.d-problems'), warn: window.__spike.renderer.warn, legend: !!document.querySelector('#arrows .a-problem') }))
+  check('into a file, where no list shows, the map marks nothing', !inFile.list && inFile.warn === null && !inFile.legend, JSON.stringify(inFile))
+
+  // 11: a run started from Kingdom's list comes back there, focus on the row it started from.
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
+  await landed()
+  await sleep(400)
+  const startRow = await page.evaluate(() => Number(document.querySelector('.d-problems li button')?.dataset.problem))
+  await page.click('.d-problems li button')
+  await landed()
+  await press(']')
+  await press(']')
+  await press(']')
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const local = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].id, focus: document.activeElement?.dataset?.problem, at: s.problemAt } })
+  check('Back to the list from a run started in Kingdom returns there, focus on the row it started from when the open one is not listed', local.here === 'backend.kingdom' && Number(local.focus) === (await page.evaluate(k => document.querySelector(`.d-problems [data-problem="${k}"]`) ? k : -1, local.at) >= 0 ? local.at : startRow), JSON.stringify({ ...local, startRow }))
+
+  // N2: search opened during the flight back keeps focus.
+  await page.click('.d-problems li button')
+  await landed()
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await sleep(50)
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await landed()
+  await sleep(500)
+  const searching = await page.evaluate(() => ({ open: !document.querySelector('.palette')?.hidden && document.activeElement?.tagName === 'INPUT', tag: document.activeElement?.tagName }))
+  check('search opened during the flight back keeps focus when it lands', searching.open, JSON.stringify(searching))
+  await page.keyboard.press('Escape')
+
+  // N3: with a card selected and its heading focused, ] does not start a step Enter cannot finish.
+  await page.evaluate(() => window.__spike.fit(0))
+  await landed()
+  await page.evaluate(() => [...document.querySelectorAll('.d-outline button')].find(b => b.querySelector('b')?.textContent === 'Game server')?.click())
+  await sleep(300)
+  await press(']')
+  st = await state()
+  check('from a selected card’s heading ] neither steps problems nor sets a target', st.target === -1 && st.note === null && st.selected > 0, JSON.stringify(st))
+  await key('Escape')
   // A part with none listed says so, and marks nothing.
   await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.market')))
   await landed()
@@ -200,6 +276,18 @@ try {
   }
   check('on a phone every problem opens with its own line marked on screen, above the sheet', offscreen.length === 0, JSON.stringify(offscreen))
   await shot('kod-phone-problem')
+  await open('model=galaxy-wars')
+  const gwTotal = await page.evaluate(() => window.__spike.problems.list.length)
+  const gwOff = []
+  for (let k = 0; k < gwTotal; k++) {
+    await page.evaluate(k => window.__spike.openProblem(k), k)
+    await landed()
+    await sleep(150)
+    const s = await state()
+    if (!s.strongDrawn || !s.strongAboveSheet) gwOff.push(k)
+  }
+  check('on a phone every Galaxy Wars problem opens with its own line marked on screen, above the sheet', gwOff.length === 0, JSON.stringify(gwOff))
+  await shot('gw-phone-problem')
   const navs = await page.evaluate(() => [...document.querySelectorAll('.d-problem-nav button')].map(b => b.getBoundingClientRect().height))
   check('on a phone the note offers Previous, Next and Back to the list, each a touch target', navs.length === 3 && navs.every(h => h >= 44), JSON.stringify(navs))
   await page.setViewport({ width: 1600, height: 1000 })

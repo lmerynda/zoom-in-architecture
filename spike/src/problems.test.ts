@@ -131,7 +131,8 @@ describe('findProblems: against the grain', () => {
 
   it('counts the parts whose names say a layer and those that do not', () => {
     const r = findProblems(build(layered, []))
-    expect([r.layered, r.unlayered]).toEqual([2, 1])
+    // app and War name none; the store and the API do.
+    expect([r.layered, r.unlayered]).toEqual([2, 2])
   })
 })
 
@@ -280,5 +281,26 @@ describe('findProblems: what the flags leave', () => {
   it('leaves an entry file’s wiring out of couplings too', () => {
     const els = [part('app'), part('app.shell', 'Shell'), file('app.shell.main', 'main'), part('app.cmd', 'Commands'), file('app.cmd.run', 'Run')]
     expect(findProblems(build(els, uses('app.shell.main', 'app.cmd.run', 30))).list).toEqual([])
+  })
+
+  it('takes errors for shared words: a model throwing the shell’s exceptions is not against the grain', () => {
+    const els = [part('app'), part('app.shell', 'Command shell'), file('app.shell.x', 'ToolExceptions'), part('app.s', 'Sessions'), file('app.s.m', 'SessionModel')]
+    expect(findProblems(build(els, uses('app.s.m', 'app.shell.x'))).list).toEqual([])
+  })
+
+  it('cuts a 10,000-part ring and a dense level of 51 parts quickly', () => {
+    const n = 10_000
+    const ring = Array.from({ length: n }, (_, j) => new Map([[(j + 1) % n, j === 7 ? 1 : 2]]))
+    let t0 = performance.now()
+    expect(ringCuts(Array.from({ length: n }, (_, j) => j), ring)).toEqual([[7, 8]])
+    expect(performance.now() - t0).toBeLessThan(2000)
+    // Every pair of 51 parts used one way or the other: 1,275 uses, many rings.
+    const ks = Array.from({ length: 51 }, (_, j) => `p${j}`)
+    const rels = ks.flatMap((x, i) => ks.slice(i + 1).map((y, j) => ((i + j) % 3 ? uses(`app.${x}.f`, `app.${y}.f`) : uses(`app.${y}.f`, `app.${x}.f`))[0]))
+    t0 = performance.now()
+    const t = build(parts(ks), rels)
+    const r = findProblems(t)
+    expect(performance.now() - t0).toBeLessThan(2000)
+    expect(ringsLeft(t, r)).toEqual([])
   })
 })

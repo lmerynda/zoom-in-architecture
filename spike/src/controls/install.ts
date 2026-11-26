@@ -357,10 +357,12 @@ export function installControls(c: Ctx) {
     if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') {
       // A heading or text with focus (the panel's, after a pick) passes on the keys that open things.
       const control = t.closest('input, textarea, select, button, a, [contenteditable], [role="dialog"], [role="listbox"]')
-      const opener = k === '/' || k === '?' || k === 'backspace' || k === ']' || k === '[' || (e.altKey && k.startsWith('arrow'))
-      // The Problems list and a problem's note pass ] and [ from their buttons too: they step problems.
-      const problems = (k === ']' || k === '[') && !!t.closest('.d-problems, .d-problem')
-      if ((control && !problems) || !opener) return
+      // ] and [ pass from the panel only to step problems (nothing selected): stepping a selection's
+      // rows there would leave Enter, which the heading keeps, without its target. The Problems list's
+      // and a note's buttons pass them too.
+      const problems = (k === ']' || k === '[') && renderer.selected <= 0 && (!control || !!t.closest('.d-problems, .d-problem'))
+      const opener = k === '/' || k === '?' || k === 'backspace' || (e.altKey && k.startsWith('arrow'))
+      if (!problems && (control || !opener)) return
     }
     held.add(k)
     if (k === '/') { e.preventDefault(); return palette.open() }

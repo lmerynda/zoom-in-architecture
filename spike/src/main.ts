@@ -269,16 +269,25 @@ async function main() {
    */
   const frameCards = (nodes: number[]) => {
     const r = world.rect
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    for (const n of nodes) { x0 = Math.min(x0, r[n * 4]); y0 = Math.min(y0, r[n * 4 + 1]); x1 = Math.max(x1, r[n * 4] + r[n * 4 + 2]); y1 = Math.max(y1, r[n * 4 + 1] + r[n * 4 + 3]) }
+    const box = (ns: number[]) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+      for (const n of ns) { x0 = Math.min(x0, r[n * 4]); y0 = Math.min(y0, r[n * 4 + 1]); x1 = Math.max(x1, r[n * 4] + r[n * 4 + 2]); y1 = Math.max(y1, r[n * 4 + 1] + r[n * 4 + 3]) }
+      return { x0, y0, x1, y1 }
+    }
     const most = Math.min(...nodes.map(n => frameFor(n).z))
+    // A card is drawn as itself, its arrows ending at it, once its parent is half open (render.ts rep()).
     let opens = 0
-    for (const n of nodes) for (let c = tree.parent[n]; c > 0; c = tree.parent[c]) opens = Math.max(opens, (OPEN_A + 12) / (CARD_W * world.content[c * 3 + 2]))
+    for (const n of nodes) for (let c = tree.parent[n]; c > 0; c = tree.parent[c]) opens = Math.max(opens, ((OPEN_A + OPEN_B) / 2 + 6) / (CARD_W * world.content[c * 3 + 2]))
     let best = { z: 0, x: 0, y: 0 }
     for (const [l, t, rr, b] of freeFrames()) {
-      const z = Math.max(opens, Math.min(most, (Math.max(40, rr - l) - 32) / Math.max(1e-9, x1 - x0), (Math.max(40, b - t) - 32) / Math.max(1e-9, y1 - y0)))
+      const all = box(nodes), fw = Math.max(40, rr - l) - 32, fh = Math.max(40, b - t) - 32
+      const fits = Math.min(most, fw / Math.max(1e-9, all.x1 - all.x0), fh / Math.max(1e-9, all.y1 - all.y0))
+      // Too far apart to show both open: the first (a problem's flagged side) is framed, and its
+      // arrow leaves the screen toward the other.
+      const on = fits >= opens ? all : box(nodes.slice(0, 1))
+      const z = Math.max(opens, Math.min(most, fw / Math.max(1e-9, on.x1 - on.x0), fh / Math.max(1e-9, on.y1 - on.y0)))
       if (z <= best.z) continue
-      best = { z, x: (x0 + x1) / 2 - ((l + rr) / 2 - cam.w / 2) / z, y: (y0 + y1) / 2 - ((t + b) / 2 - cam.h / 2) / z }
+      best = { z, x: (on.x0 + on.x1) / 2 - ((l + rr) / 2 - cam.w / 2) / z, y: (on.y0 + on.y1) / 2 - ((t + b) / 2 - cam.h / 2) / z }
     }
     return best
   }
@@ -355,6 +364,8 @@ async function main() {
     if (wasFocused && details.classList.contains('collapsed')) g.focus({ preventScroll: true })
   }
   new MutationObserver(addGrip).observe(details, { childList: true })
+  // Focus taken elsewhere (search, the map) cancels a problem row's pending return of focus.
+  addEventListener('focusin', e => { if (!details.contains(e.target as Node)) problemFocus = -1 })
   let controls: ReturnType<typeof installControls>
   /**
    * How far the wheel may zoom in at a screen point: a file until its code reads comfortably (or,
@@ -554,6 +565,7 @@ async function main() {
     const wantProblem = problemFocus >= 0 ? problemFocus : focusedProblem
     const listed = problems && problemsSection(tree, problems, here, problemsOpen, { open: k => openProblem(k), toggle: o => { problemsOpen = o; markProblems() } }, wantProblem)
     if (listed) { details.append(listed); problemsPlace = here }
+    else problemsPlace = -1
     const problemRow = wantProblem >= 0 ? listed?.querySelector<HTMLElement>(`[data-problem="${wantProblem}"]`) : null
     if (problemRow) { problemRow.focus(); if (!cam.flying) problemFocus = -1 }
     // Or, when that card is not listed here, the outline's heading: focus stays in the panel.
@@ -743,11 +755,14 @@ async function main() {
     $('announce').textContent = `${picked.length} arrows share this line`
   }
 
-  /** Where Back to the list returns: the view the first problem of a run was opened from. */
-  let listHome: ReturnType<typeof controls.view> | null = null
+  /**
+   * Where Back to the list returns: the place the first problem of a run was opened from, with no
+   * selection so its outline and list show, and that problem's row, for focus when the one open now has none there.
+   */
+  let listHome: ReturnType<typeof controls.view> | null = null, originRow = -1
   /** A problem whose row takes keyboard focus once the outline lists it again (after Esc or Back to the list), the flight there done. */
   let problemFocus = -1
-  /** The place whose problems the outline's list shows: the map marks those. */
+  /** The place whose problems the outline's list shows (-1: none shown): the map marks those. */
   let problemsPlace = 0
   /** Problem k in the panel: its arrow (every relation between its two cards, with their lines), why it is listed above, its flagged uses first. */
   const showProblem = (k: number) => {
@@ -771,7 +786,7 @@ async function main() {
   const openProblem = (k: number) => {
     const p = problems?.list[k]
     if (!p || !problems) return
-    if (!problemShown()) listHome = controls.view()
+    if (!problemShown()) { listHome = { ...controls.view(), selected: null }; originRow = k }
     controls.leave()
     problemAt = k
     problemsOpen = true
@@ -809,7 +824,7 @@ async function main() {
     const key = `${problemsOpen}|${problemsPlace}|${shown ? problemAt : -1}|${liveVersion}`
     if (key === marked) return
     marked = key
-    const all = problems && problemsOpen ? problemsAt(tree, problems, problemsPlace).flatMap(k => problems!.list[k].rels) : []
+    const all = problems && problemsOpen && problemsPlace >= 0 ? problemsAt(tree, problems, problemsPlace).flatMap(k => problems!.list[k].rels) : []
     const open = problems && shown ? problems.list[problemAt].rels : []
     renderer.warn = all.length || open.length ? { all: new Set(all), open: new Set(open) } : null
     arrowLegend()
@@ -1020,10 +1035,13 @@ async function main() {
     prev.destroy()
 
     // The problem being read survives an update that keeps it: found again by its kind and its two cards.
-    const keep = problems && problemAt >= 0 ? { shown: problemShown(), kind: problems.list[problemAt].kind, a: tree.els[problems.list[problemAt].a].id, b: tree.els[problems.list[problemAt].b].id } : null
+    // A cycle is a pair either way round (a tangle's order follows its counts); the others keep their direction.
+    // The selection it was opened over and the control with focus come back with it.
+    const keep = problems && problemAt >= 0 ? { shown: problemShown(), kind: problems.list[problemAt].kind, a: tree.els[problems.list[problemAt].a].id, b: tree.els[problems.list[problemAt].b].id, over: edgeReturn.selected > 0 ? tree.els[edgeReturn.selected].id : null, focus: details.contains(document.activeElement) ? document.activeElement?.textContent ?? null : null } : null
     tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
     problems = problemsOf(next)
-    problemAt = keep && problems ? problems.list.findIndex(p => p.kind === keep.kind && next.els[p.a].id === keep.a && next.els[p.b].id === keep.b) : -1
+    const same = (p: NonNullable<typeof problems>['list'][number]) => p.kind === keep!.kind && ((next.els[p.a].id === keep!.a && next.els[p.b].id === keep!.b) || (p.kind === 'cycle' && next.els[p.a].id === keep!.b && next.els[p.b].id === keep!.a))
+    problemAt = keep && problems ? problems.list.findIndex(same) : -1
     edgeReturn = { selected: -1, list: null }
     lenses.splice(0, lenses.length, ...buildLenses(next))
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
@@ -1031,7 +1049,13 @@ async function main() {
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
     showDetails()
-    if (keep?.shown && problemAt >= 0) showProblem(problemAt)
+    if (keep?.shown && problemAt >= 0) {
+      // Opened over a selection: the arrow panel takes it as where Esc returns, as when first opened.
+      renderer.selected = next.byId.get(keep.over ?? '') ?? -1
+      showProblem(problemAt)
+      const control = keep.focus == null ? null : [...details.querySelectorAll<HTMLElement>('button, h2')].find(e => e.textContent === keep.focus)
+      control?.focus({ preventScroll: true })
+    }
     refreshSurface()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
@@ -1115,7 +1139,8 @@ async function main() {
     markProblems()
     // Back from a problem: once landed, its row in the outline takes focus (a redraw on the way may have moved it).
     if (problemFocus >= 0 && !cam.flying && !edgeOpen()) {
-      details.querySelector<HTMLElement>(`.d-problems [data-problem="${problemFocus}"]`)?.focus()
+      const row = (k: number) => details.querySelector<HTMLElement>(`.d-problems [data-problem="${k}"]`)
+      ;(row(problemFocus) ?? row(originRow) ?? details.querySelector<HTMLElement>('.d-problems > summary'))?.focus()
       problemFocus = -1
     }
     push(cpu, performance.now() - start)

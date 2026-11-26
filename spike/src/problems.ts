@@ -48,7 +48,8 @@ const PART_WORDS: [Layer, RegExp][] = [
 const FILE_WORDS: [Layer, RegExp][] = [
   // A view's model is the view's: ChatPresentationModel, HangarViewModel.
   ['edge', /(ViewModel|PresentationModel)$/],
-  ['shared', /(Utils?|Helpers?|Extensions|Constants)$/],
+  // Errors are vocabulary every layer shares: ToolExceptions, ValidationError.
+  ['shared', /(Utils?|Helpers?|Extensions|Constants|Exceptions?|Errors?)$/],
   ['data', /(Repository|Repo|Store|Dao|Entity|Model|Dto|Record|Schema)$/],
   ['feature', /(Service|Manager|Coordinator|UseCase|Interactor)$/],
   ['edge', /(Controller|Endpoint|Page|Screen)$/],
@@ -127,32 +128,24 @@ export function sccs(n: number, adj: Map<number, number>[]): number[][] {
 }
 
 /**
- * The uses to cut so a ring of parts uses each other no more, close to the fewest by weight: while a
- * ring is left, its shortest one loses its lightest use; then each cut use, heaviest first, is put
- * back where it closes no ring again. A simple ring loses only its lightest use. `adj` is left as it was.
+ * The uses to cut so a ring of parts uses each other no more, a small set by weight (a heuristic,
+ * not the least possible): while a ring is left, the first one a walk finds loses its lightest use;
+ * then each cut use, heaviest first, is put back where it closes no ring again. A simple ring loses
+ * only its lightest use. Each step is one walk of the graph, so a large ring costs little. `adj` is left as it was.
  */
 export function ringCuts(members: number[], adj: Map<number, number>[]): [number, number][] {
   const within = new Set(members)
   const g = new Map(members.map(u => [u, new Map([...adj[u]].filter(([v]) => within.has(v) && v !== u))]))
   const graph = members.reduce<Map<number, number>[]>((out, u) => { out[u] = g.get(u)!; return out }, [])
   const cut: [number, number, number][] = []
-  for (;;) {
-    let ring: number[] | null = null
-    for (const u of members) {
-      for (const v of g.get(u)!.keys()) {
-        const back = path(v, u, graph, within)
-        if (back && (!ring || back.length + 1 < ring.length)) ring = [u, ...back]
-      }
-    }
-    if (!ring) break
+  for (let ring = findRing(members, g); ring; ring = findRing(members, g)) {
     let at = 0, least = Infinity
     for (let j = 0; j + 1 < ring.length; j++) {
       const w = g.get(ring[j])!.get(ring[j + 1])!
       if (w < least) { least = w; at = j }
     }
-    const [u, v] = [ring[at], ring[at + 1]]
-    cut.push([u, v, least])
-    g.get(u)!.delete(v)
+    cut.push([ring[at], ring[at + 1], least])
+    g.get(ring[at])!.delete(ring[at + 1])
   }
   cut.sort((x, y) => y[2] - x[2])
   const kept: [number, number][] = []
@@ -161,6 +154,25 @@ export function ringCuts(members: number[], adj: Map<number, number>[]): [number
     else g.get(u)!.set(v, w)
   }
   return kept
+}
+
+/** A ring in `g` (its members, the first repeated at the end), found by one depth-first walk without recursion; null when there is none. */
+function findRing(members: number[], g: Map<number, Map<number, number>>): number[] | null {
+  const state = new Map<number, 1 | 2>()
+  for (const r of members) {
+    if (state.has(r)) continue
+    const stack: [number, Iterator<number>][] = [[r, g.get(r)!.keys()]], onPath = [r]
+    state.set(r, 1)
+    while (stack.length) {
+      const [v, it] = stack[stack.length - 1]
+      const next = it.next()
+      if (next.done) { stack.pop(); onPath.pop(); state.set(v, 2); continue }
+      const w = next.value, seen = state.get(w)
+      if (seen === 1) return [...onPath.slice(onPath.indexOf(w)), w]
+      if (!seen) { state.set(w, 1); stack.push([w, g.get(w)!.keys()]); onPath.push(w) }
+    }
+  }
+  return null
 }
 
 /** The shortest way from a to b along `adj` inside `within`; null when none. */
@@ -361,9 +373,10 @@ export function findProblems(tree: Tree): ProblemReport {
     })
   }
 
+  // Every part the text speaks of: each element that is not a file, nor a person using the system.
   let layered = 0, unlayered = 0
   for (let i = 1; i < tree.size; i++) {
-    if (!part(i) || tree.depth[i] === 1 || !tree.children[i].length) continue
+    if (!part(i) || /^(actor|person)$/.test(tree.els[i].kind)) continue
     if (namedLayer(tree, i)) layered++
     else unlayered++
   }
