@@ -435,9 +435,9 @@ describe('titlePx', () => {
   it('shrinks a long name a little before cutting it, so siblings read near one size', () => {
     // Fits at the level's size: the level's size.
     expect(titlePx(20, 200, 8)).toBe(20)
-    // Too wide: shrinks to fit, down to three quarters of the level's size, then is cut.
+    // Too wide: shrinks to fit, down to 0.85 of the level's size, then is cut.
     expect(titlePx(20, 300, 16)).toBe(18.75)
-    expect(titlePx(20, 200, 16)).toBe(15)
+    expect(titlePx(20, 200, 16)).toBe(17)
     // Never below 9 px when the level allows it.
     expect(titlePx(10, 50, 16)).toBe(9)
     // A small level never grows to the 9 px floor.
