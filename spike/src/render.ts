@@ -4,7 +4,7 @@ import { EdgeRouter } from './edges'
 import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
-import { CARD_W, HEADER, PAD, type World } from './layout'
+import { CARD_W, HEADER, openScale, PAD, type World } from './layout'
 import { aggregateEdges, kindName, type EvidenceJson, type ShownEdge, type Tree } from './model'
 
 const FONT = 'ui'
@@ -254,7 +254,7 @@ export class Renderer {
   open(i: number): number {
     if (i === 0) return 1
     if (this.openStamp[i] === this.frameNo) return this.openMemo[i]
-    const v = this.tree.children[i].length ? smooth(OPEN_A, OPEN_B, CARD_W * this.world.content[i * 3 + 2] * this.cam.z) : 0
+    const v = this.tree.children[i].length ? smooth(OPEN_A, OPEN_B, CARD_W * openScale(this.world, i) * this.cam.z) : 0
     this.openMemo[i] = v
     this.openStamp[i] = this.frameNo
     return v
@@ -408,7 +408,7 @@ export class Renderer {
     // labels as it opens, so detail grows in place instead of popping. Before that the container
     // is a closed card with a readable name, not a box of unlabelled tiles. The reveal runs as a
     // wave outward from the zoom focus.
-    const childW = CARD_W * this.world.content[i * 3 + 2] * this.cam.z
+    const childW = CARD_W * openScale(this.world, i) * this.cam.z
     if (childW < 1.5 || (i > 0 && t <= 0)) return
     const diag = Math.hypot(this.cam.w, this.cam.h)
     for (const c of kids) {
@@ -636,15 +636,17 @@ export class Renderer {
     const wrapSrc = humps(full)
     if (/ /.test(wrapSrc) && (v.titleEm + lead) * px > tInner + 1 && h > level * 5) {
       const previewTop = el.metadata?.path && w >= CODE_W && el.metadata?.role !== 'type' ? codeBox(x, y, w, h).y : Infinity
-      const want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55)
-      if (want > px * 1.12) {
+      // The largest size that breaks it onto two lines: where the words do not split well at one
+      // size (three lines), a smaller one: whole on two lines beats cut on one, down to a little under
+      // the one-line size (never below TITLE_MIN).
+      for (let want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55); want >= Math.max(TITLE_MIN, px * 0.9); want *= 0.92) {
         const wrap = Math.round(((tInner - lead * want) * FONT_PX) / want / 8) * 8
         two = v.title2 ??= this.text(wrapSrc, texts, wrap)
         if (two.text !== wrapSrc) two.text = wrapSrc
         if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
         // Two lines or it is no help, and no word wider than the card: past that, the one-line title, cut.
-        if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1 && two.width / (two.scale.x || 1) <= wrap + 1) tpx = want
-        else two = null
+        if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1 && two.width / (two.scale.x || 1) <= wrap + 1) { tpx = want; break }
+        two = null
       }
     }
     // Sticky: when the card is bigger than the screen, its text block stays in view.

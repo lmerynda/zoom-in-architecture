@@ -246,9 +246,38 @@ export interface LocalLayout {
 export interface World {
   /** World rect per node: x, y, w, h. */
   rect: Float64Array
-  /** Child-content transform per container: world = o + s * local. */
+  /** How each container's local layout sits in its card, PLACE numbers per node (see toWorldX). */
   content: Float64Array
   local: Map<number, LocalLayout>
+}
+
+/**
+ * Numbers per node in World.content: the world point of the children's top-left corner, the
+ * opening scale, the children's local bounding box (x0, y0, x1, y1), their scale on each axis, and
+ * the scale of the margin outside them (where routes leave a container).
+ */
+export const PLACE = 10
+const WX = 0, WY = 1, OPEN = 2, LX0 = 3, LY0 = 4, LX1 = 5, LY1 = 6, SX = 7, SY = 8, PAD_S = 9
+
+/**
+ * The scale a container's children open at: a base card's, on its shorter-stretched axis. A level
+ * of few cards, grown to fill its container, opens as soon as they can carry their names.
+ */
+export const openScale = (w: World, i: number) => w.content[i * PLACE + OPEN]
+
+/** A local x or y of container i's layout in world units: inside the cards' box by its scale, outside it by the margin's. */
+function axis(c: Float64Array, i: number, v: number, x: boolean) {
+  const o = i * PLACE, w0 = c[o + (x ? WX : WY)], l0 = c[o + (x ? LX0 : LY0)], l1 = c[o + (x ? LX1 : LY1)], s = c[o + (x ? SX : SY)], p = c[o + PAD_S]
+  return v < l0 ? w0 + (v - l0) * p : v > l1 ? w0 + (l1 - l0) * s + (v - l1) * p : w0 + (v - l0) * s
+}
+export const toWorldX = (w: World, i: number, lx: number) => axis(w.content, i, lx, true)
+export const toWorldY = (w: World, i: number, ly: number) => axis(w.content, i, ly, false)
+
+/** The inverse of toWorldX (x) or toWorldY: a world coordinate on container i's local axis. */
+export function toLocal(w: World, i: number, v: number, x: boolean) {
+  const c = w.content, o = i * PLACE, w0 = c[o + (x ? WX : WY)], l0 = c[o + (x ? LX0 : LY0)], l1 = c[o + (x ? LX1 : LY1)], s = c[o + (x ? SX : SY)], p = c[o + PAD_S]
+  const w1 = w0 + (l1 - l0) * s
+  return v < w0 ? l0 + (v - w0) / p : v > w1 ? l1 + (v - w1) / p : l0 + (v - w0) / s
 }
 
 export function layoutJobs(tree: Tree, coupling = false, rootAspect?: number): LayoutJob[] {
@@ -299,35 +328,56 @@ export function contentBox(x: number, y: number, w: number, h: number) {
 /** Width over height of a card's content area: local layouts aim for it so they fill the card. */
 export const CONTENT_ASPECT = (() => { const b = contentBox(0, 0, CARD_W, CARD_H); return b.w / b.h })()
 
+/** The margin between a container's body and its cards, in gutters at the opening scale: half of one. */
+export const FILL_MARGIN = 0.5
+/** How much more a level's cards may stretch on one axis than on the other to fill their container. */
+export const STRETCH = 1.4
+
 /**
- * Places every node in one world, top-down: the root's layout sits at scale 1 and each
- * container's local layout is scaled to fit its card's content area. Positions depend only on
+ * Places every node in one world, top-down: the root's layout sits at scale 1, and each
+ * container's cards fill its card's content area to a margin of half a gutter. A level of few
+ * parts is not left a small cluster in a large box: its cards grow to fill it, stretching on one
+ * axis up to STRETCH times the other. A file, or a part alone in its container, is never drawn
+ * larger than a 2 × 2 grid's card, so a one-file or one-part app opens with its siblings rather than
+ * as one blown-up card. Positions depend only on
  * the model, never on the camera, so nothing moves while zooming.
  */
 export function placeWorld(tree: Tree, local: Map<number, LocalLayout>): World {
   const n = tree.size
   const rect = new Float64Array(n * 4)
-  const content = new Float64Array(n * 3)
+  const content = new Float64Array(n * PLACE)
+  const world = { rect, content, local }
   const root = local.get(0)
   rect.set([0, 0, root?.w ?? CARD_W, root?.h ?? CARD_H], 0)
   for (const i of tree.dfs()) {
     const L = local.get(i)
     if (!L) continue
-    let ox: number, oy: number, s: number
-    if (i === 0) {
-      ox = 0; oy = 0; s = 1
-    } else {
+    // The cards' own box, in local units: a layout leaves at least a gutter around it.
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    L.children.forEach((_, k) => {
+      x0 = Math.min(x0, L.pos[k * 2]); y0 = Math.min(y0, L.pos[k * 2 + 1])
+      x1 = Math.max(x1, L.pos[k * 2] + cardW(L.spans[k])); y1 = Math.max(y1, L.pos[k * 2 + 1] + cardH(L.spans[k]))
+    })
+    if (i === 0) content.set([x0, y0, 1, x0, y0, x1, y1, 1, 1, 1], 0)
+    else {
       const b = contentBox(rect[i * 4], rect[i * 4 + 1], rect[i * 4 + 2], rect[i * 4 + 3])
-      // No larger than a 2 × 2 grid's cards: a lone file would otherwise fill its app's card and
-      // open with it, long before the files of its siblings.
-      s = Math.min(b.w / L.w, b.h / L.h, b.w / (cardW(2) + 2 * GUTTER), b.h / (cardH(2) + 2 * GUTTER))
-      ox = b.x + (b.w - L.w * s) / 2
-      oy = b.y + (b.h - L.h * s) / 2
+      // The margin is half a gutter of the layout as it fits, or of a 2 × 2 grid's when it is
+      // smaller: a lone card is not held off its container's edge by a gutter its own size.
+      const grid = Math.min(b.w / (cardW(2) + 2 * GUTTER), b.h / (cardH(2) + 2 * GUTTER))
+      const s = Math.min(b.w / L.w, b.h / L.h, grid)
+      const m = FILL_MARGIN * GUTTER * s, cw = x1 - x0, ch = y1 - y0
+      const aw = b.w - 2 * m, ah = b.h - 2 * m, u = Math.min(aw / cw, ah / ch)
+      // Files, and a lone child, keep to a 2 × 2 grid's card: a one-part app opens with its siblings.
+      const keep = L.children.length === 1 || L.children.some(c => !tree.children[c].length)
+      const top = keep ? grid : Infinity
+      const sx = Math.min(aw / cw, u * STRETCH, top), sy = Math.min(ah / ch, u * STRETCH, top)
+      // Outside the cards a gutter takes the margin, so the ring a route leaves a container by stays inside it.
+      content.set([b.x + (b.w - cw * sx) / 2, b.y + (b.h - ch * sy) / 2, Math.min(sx, sy), x0, y0, x1, y1, sx, sy, m / GUTTER], i * PLACE)
     }
-    content.set([ox, oy, s], i * 3)
+    const sx = content[i * PLACE + SX], sy = content[i * PLACE + SY]
     L.children.forEach((c, k) => {
-      rect.set([ox + L.pos[k * 2] * s, oy + L.pos[k * 2 + 1] * s, cardW(L.spans[k]) * s, cardH(L.spans[k]) * s], c * 4)
+      rect.set([toWorldX(world, i, L.pos[k * 2]), toWorldY(world, i, L.pos[k * 2 + 1]), cardW(L.spans[k]) * sx, cardH(L.spans[k]) * sy], c * 4)
     })
   }
-  return { rect, content, local }
+  return world
 }

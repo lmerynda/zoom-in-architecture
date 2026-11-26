@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, spans, STRETCH, toLocal, toWorldX, toWorldY, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -291,7 +291,9 @@ describe('placeWorld', () => {
     for (let i = 1; i < tree.size; i++) {
       const p = tree.parent[i]
       const [x, y, cw, ch] = w.rect.slice(i * 4, i * 4 + 4)
-      expect(cw / ch).toBeCloseTo(CARD_W / CARD_H)
+      // A card may stretch to fill its container, by at most STRETCH on one axis.
+      expect(cw / ch).toBeGreaterThanOrEqual(CARD_W / CARD_H / STRETCH - 1e-9)
+      expect(cw / ch).toBeLessThanOrEqual((CARD_W / CARD_H) * STRETCH + 1e-9)
       if (p === 0) continue
       const b = contentBox(w.rect[p * 4], w.rect[p * 4 + 1], w.rect[p * 4 + 2], w.rect[p * 4 + 3])
       expect(x).toBeGreaterThanOrEqual(b.x - 1e-9)
@@ -299,6 +301,69 @@ describe('placeWorld', () => {
       expect(x + cw).toBeLessThanOrEqual(b.x + b.w + 1e-9)
       expect(y + ch).toBeLessThanOrEqual(b.y + b.h + 1e-9)
     }
+  })
+})
+
+describe('filling a container', () => {
+  // An app holding n parts side by side, as a packer lays out a few; each part holds a file, or is one.
+  const few = (n: number, files = false): ModelJson => ({
+    name: 'few',
+    elements: [el('app', null), ...Array.from({ length: n }, (_, k) => el(`app.c${k}`, 'app')), ...(files ? [] : Array.from({ length: n }, (_, k) => el(`app.c${k}.f`, `app.c${k}`)))],
+    relations: [],
+  })
+  const placed = (n: number, files = false) => {
+    const tree = new Tree(few(n, files))
+    const local = new Map<number, LocalLayout>()
+    const app = tree.byId.get('app')!
+    local.set(0, { id: 0, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: [app], pos: [GUTTER, GUTTER], spans: [1], routes: [] })
+    const c = tree.children[app]
+    local.set(app, { id: app, w: c.length * (CARD_W + GUTTER) + GUTTER, h: CARD_H + 2 * GUTTER, children: c, pos: c.flatMap((_, k) => [GUTTER + k * (CARD_W + GUTTER), GUTTER]), spans: c.map(() => 1), routes: [] })
+    for (const k of c) if (tree.children[k].length) local.set(k, { id: k, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: tree.children[k], pos: [GUTTER, GUTTER], spans: [1], routes: [] })
+    return { tree, w: placeWorld(tree, local), app, c }
+  }
+  const cover = (n: number) => {
+    const { w, app, c } = placed(n)
+    const b = contentBox(w.rect[app * 4], w.rect[app * 4 + 1], w.rect[app * 4 + 2], w.rect[app * 4 + 3])
+    const x0 = Math.min(...c.map(k => w.rect[k * 4])), x1 = Math.max(...c.map(k => w.rect[k * 4] + w.rect[k * 4 + 2]))
+    const y0 = Math.min(...c.map(k => w.rect[k * 4 + 1])), y1 = Math.max(...c.map(k => w.rect[k * 4 + 1] + w.rect[k * 4 + 3]))
+    return ((x1 - x0) * (y1 - y0)) / (b.w * b.h)
+  }
+
+  it('keeps a lone part to a 2 × 2 grid card, as a lone file', () => {
+    const { w, app, c } = placed(1)
+    const b = contentBox(w.rect[app * 4], w.rect[app * 4 + 1], w.rect[app * 4 + 2], w.rect[app * 4 + 3])
+    expect(w.rect[c[0] * 4 + 2]).toBeCloseTo(CARD_W * Math.min(b.w / (cardW(2) + 2 * GUTTER), b.h / (cardH(2) + 2 * GUTTER)))
+  })
+
+  it('grows two cards side by side past 60% (they covered under a fifth), and stretches a row that fills its width taller', () => {
+    expect(cover(2)).toBeGreaterThan(0.6)
+    // Three in one row covered 27%: as wide as the container, a third of its height.
+    expect(cover(3)).toBeGreaterThan(0.4)
+  })
+
+  it('draws a file no larger than a 2 × 2 grid card, so a one-file app opens with its siblings', () => {
+    const { w, app, c } = placed(1, true)
+    const b = contentBox(w.rect[app * 4], w.rect[app * 4 + 1], w.rect[app * 4 + 2], w.rect[app * 4 + 3])
+    const grid = Math.min(b.w / (cardW(2) + 2 * GUTTER), b.h / (cardH(2) + 2 * GUTTER))
+    expect(w.rect[c[0] * 4 + 2]).toBeCloseTo(CARD_W * grid)
+    expect(w.rect[c[0] * 4 + 3]).toBeCloseTo(CARD_H * grid)
+  })
+
+  it('opens a filled level when its grown cards can carry their names, by their shorter side', () => {
+    const { w, app, c } = placed(2)
+    expect(openScale(w, app)).toBeCloseTo(Math.min(w.rect[c[0] * 4 + 2] / CARD_W, w.rect[c[0] * 4 + 3] / CARD_H))
+  })
+
+  it('maps local route points to the world and back, inside the cards and in the margin around them', () => {
+    const { w, app } = placed(2)
+    for (const v of [0, GUTTER / 2, GUTTER, 300, 2 * CARD_W + 2 * GUTTER, 2 * CARD_W + 3 * GUTTER]) {
+      expect(toLocal(w, app, toWorldX(w, app, v), true)).toBeCloseTo(v)
+      expect(toLocal(w, app, toWorldY(w, app, v), false)).toBeCloseTo(v)
+    }
+    // The ring a route leaves by, half a gutter outside the cards, stays inside the container's body.
+    const b = contentBox(w.rect[app * 4], w.rect[app * 4 + 1], w.rect[app * 4 + 2], w.rect[app * 4 + 3])
+    expect(toWorldX(w, app, GUTTER / 2)).toBeGreaterThan(b.x)
+    expect(toWorldY(w, app, GUTTER / 2)).toBeGreaterThan(b.y)
   })
 })
 

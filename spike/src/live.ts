@@ -1,4 +1,4 @@
-import type { LayoutJob, LocalLayout, World } from './layout'
+import { PLACE, type LayoutJob, type LocalLayout, type World } from './layout'
 import type { Tree } from './model'
 
 export interface ModelDiff {
@@ -124,7 +124,7 @@ export function startRects(prevWorld: World, next: Tree, nextWorld: World, oldIn
     const j = oldIndex[i]
     if (j >= 0) {
       rect.set(prevWorld.rect.subarray(j * 4, j * 4 + 4), i * 4)
-      content.set(prevWorld.content.subarray(j * 3, j * 3 + 3), i * 3)
+      content.set(prevWorld.content.subarray(j * PLACE, j * PLACE + PLACE), i * PLACE)
       continue
     }
     let a = next.parent[i]
@@ -132,7 +132,8 @@ export function startRects(prevWorld: World, next: Tree, nextWorld: World, oldIn
     const r = a >= 0 && oldIndex[a] >= 0 ? prevWorld.rect.subarray(oldIndex[a] * 4, oldIndex[a] * 4 + 4) : nextWorld.rect.subarray(i * 4, i * 4 + 4)
     const cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2
     rect.set([cx, cy, 0, 0], i * 4)
-    content.set([cx, cy, 0], i * 3)
+    // Its cards start as a point at the centre too (a tiny scale, not 0, so mapping back stays finite).
+    content.set([cx, cy, 0, 0, 0, 1, 1, 1e-9, 1e-9, 1e-9], i * PLACE)
   }
   return { rect, content }
 }

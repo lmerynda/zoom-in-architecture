@@ -5,7 +5,7 @@ import { installControls } from './controls/install'
 import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
 import { buildApi, callsIn, clientParts, endpointOf, featureFacts, isPage, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
-import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
+import { CARD_W, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
@@ -208,8 +208,9 @@ async function main() {
     const top = box('top'), panel = box('details'), mini = box('minimap'), hello = box('welcome')
     const t = (top?.bottom ?? 0) + 8
     // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
-    // A folded sheet frames as the bar it is.
-    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('collapsed') ? { top: H - 46 } : panel) : null
+    // A folded sheet frames as the bar it is, and so does the outline (nothing selected), which
+    // rests folded: a search that puts the selection down frames its find for the sheet it leaves.
+    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('collapsed') || $('details').classList.contains('outline') ? { top: H - 46 } : panel) : null
     const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = Math.min(sheet ? sheet.top - 12 : H - 28, hello && hello.top > H / 2 ? hello.top - 12 : Infinity)
     const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]
@@ -219,12 +220,12 @@ async function main() {
     const w = r[i * 4 + 2], h = r[i * 4 + 3]
     // A crowded level framed with a margin can come out too small to open: it uses the margin, up
     // to filling its frame, so its children are drawn with their names.
-    const opens = i > 0 && tree.children[i].length ? (OPEN_A + 12) / (CARD_W * world.content[i * 3 + 2]) : 0
+    const opens = i > 0 && tree.children[i].length ? (OPEN_A + 12) / (CARD_W * openScale(world, i)) : 0
     let best = { z: 0, x: 0, y: 0 }
     // A container too crowded to open even filling the screen (a phone, a level of many cards) is
     // framed at the zoom where its cards are open and named, from its top-left corner: a pan away
     // from the rest, rather than a closed card that no tap opens.
-    const full = opens ? (OPEN_B + 6) / (CARD_W * world.content[i * 3 + 2]) : 0
+    const full = opens ? (OPEN_B + 6) / (CARD_W * openScale(world, i)) : 0
     {
       const [l, tt, rr, bb] = frames[0], fw = Math.max(40, rr - l), fh = Math.max(40, bb - tt)
       if (full && opens > Math.min(fw / w, fh / h)) {

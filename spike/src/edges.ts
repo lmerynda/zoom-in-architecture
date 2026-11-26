@@ -1,4 +1,4 @@
-import { cardH, cardW, GUTTER, type SiblingRoute, type World } from './layout'
+import { cardH, cardW, GUTTER, toLocal, toWorldX, toWorldY, type SiblingRoute, type World } from './layout'
 import type { Tree } from './model'
 import { ChannelGrid, simplify, type Side } from './route'
 
@@ -42,9 +42,8 @@ export class EdgeRouter {
   }
 
   private toWorld(container: number, pts: number[]) {
-    const o = this.world.content, ox = o[container * 3], oy = o[container * 3 + 1], s = o[container * 3 + 2]
     const out = new Array<number>(pts.length)
-    for (let k = 0; k < pts.length; k += 2) { out[k] = ox + pts[k] * s; out[k + 1] = oy + pts[k + 1] * s }
+    for (let k = 0; k < pts.length; k += 2) { out[k] = toWorldX(this.world, container, pts[k]); out[k + 1] = toWorldY(this.world, container, pts[k + 1]) }
     return out
   }
 
@@ -79,10 +78,9 @@ export class EdgeRouter {
     const key = `${child}:${side}`
     if (this.exits.has(key)) return this.exits.get(key)!
     const p = this.tree.parent[child]
-    const o = this.world.content, s = o[p * 3 + 2]
     const port = this.port(p, side)
     // The port projected onto the container's local axes, to meet the ring line square on.
-    const along = side === 0 || side === 2 ? (port[0] - o[p * 3]) / s : (port[1] - o[p * 3 + 1]) / s
+    const along = side === 0 || side === 2 ? toLocal(this.world, p, port[0], true) : toLocal(this.world, p, port[1], false)
     const r = this.grid(p).exit(this.localRect(child), side, along)
     const out = r ? { pts: [...this.toWorld(p, r.pts), port[0], port[1]], from: r.from } : null
     this.exits.set(key, out)

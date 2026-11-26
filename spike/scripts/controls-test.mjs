@@ -371,6 +371,26 @@ try {
     await page.click('#welcome .ok')
   }
   await page.setViewport({ width: 1600, height: 1000 })
+
+  // Layout: a container of parts fills its body with them, however few they are. Files keep to a
+  // 2 × 2 grid's card size, so a one-file app opens with its siblings (publish-test checks that).
+  await open('model=knights-of-darkness')
+  const fill = await page.evaluate(() => {
+    const { tree: t, world } = window.__spike, r = world.rect, out = []
+    for (let i = 1; i < t.size; i++) {
+      const c = t.children[i]
+      if (!c.length) continue
+      const w = r[i * 4 + 2], h = r[i * 4 + 3], bw = w - 2 * 0.045 * w, bh = h - 0.14 * h - 1.5 * 0.045 * w
+      const x0 = Math.min(...c.map(k => r[k * 4])), x1 = Math.max(...c.map(k => r[k * 4] + r[k * 4 + 2]))
+      const y0 = Math.min(...c.map(k => r[k * 4 + 1])), y1 = Math.max(...c.map(k => r[k * 4 + 1] + r[k * 4 + 3]))
+      out.push({ title: t.els[i].title, n: c.length, parts: c.every(k => t.children[k].length), cover: Math.round((100 * (x1 - x0) * (y1 - y0)) / (bw * bh)) })
+    }
+    const parts = out.filter(o => o.parts).sort((a, b) => a.cover - b.cover)
+    return { least: parts[0], many: parts.filter(o => o.n >= 3), few: parts.filter(o => o.n <= 2) }
+  })
+  // On main they covered 19-74%.
+  check('a container of parts is filled by them: none under 55%, those of three or more over 80%', fill.least.cover >= 55 && fill.many.length > 0 && fill.many.every(f => f.cover >= 80), JSON.stringify(fill))
+  check('a container of two parts is filled, not a small cluster', fill.few.length > 0 && fill.few.every(f => f.cover >= 55), JSON.stringify(fill.few))
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)
