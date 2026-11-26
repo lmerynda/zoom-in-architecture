@@ -515,7 +515,7 @@ export class Renderer {
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
-    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.5)
+    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : mix(heat >= 0 ? heat : color, 0xffffff, 0.5)
     // A card's edge reads at 3:1 against the container it sits in: closed parts inside an open one
     // are cards, not faint boxes. An external system stays the quietest, an outline over the map.
     // The edge comes in faster than the card it bounds as a level opens (it is what tells a card from
