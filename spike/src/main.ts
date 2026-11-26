@@ -327,7 +327,7 @@ async function main() {
     // A live update or another relayout in flight: try again once it is done.
     if (morph || relaying || swapping) return reshape()
     relaying = true
-    const was = atWhole(), before = tree
+    const before = tree
     rootAspect = next
     try {
       const nextJobs = layoutJobs(tree, coupling, rootAspect)
@@ -357,11 +357,13 @@ async function main() {
       // At the whole map before and still now (the reader may have moved while it was laid out).
       // On the way to the whole map (Fit, the map's crumb, a live update's refit): it flies on to the new frame.
       const goingWhole = !!framedAt && framedAt.id === '' && !!dest && Math.hypot(dest[0] - framedAt.x, dest[1] - framedAt.y) * framedAt.z < 1
-      if (was && atWhole()) setWhole()
+      // At the whole map now the layout has landed (whether the reader was there, or a flight landed
+      // meanwhile): framed whole again.
+      if (atWhole()) setWhole()
       else if (goingWhole) fit(0)
       // Otherwise the camera moves with that card, a flight or a wheel zoom under way included.
       else if (anchor > 0) cam.remap(ax, ay, r[a], r[a + 1], r[a + 2] / aw)
-      if (!(was && atWhole())) renderer.wholeZ = frameFor(0).z
+      renderer.wholeZ = frameFor(0).z
     } finally { relaying = false }
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
@@ -969,7 +971,7 @@ async function main() {
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number] } | null = null
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean } | null = null
   let liveVersion = 0
   /** A live update arrived while the reader was at the whole map: frame it whole again after its morph. */
   let refitAfterMorph = false
@@ -978,8 +980,6 @@ async function main() {
     const swapStart = performance.now()
     const next = new Tree(json, { types: showTypes })
     const aspect = rootAspect
-    // At the whole map, a new version is framed whole again once it has moved into place.
-    refitAfterMorph = atWhole()
     const nextJobs = layoutJobs(next, coupling, aspect)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
@@ -1028,7 +1028,10 @@ async function main() {
     controls.swap({ tree: next, world: live, renderer })
     showDetails()
     refreshSurface()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
+    // At the whole map when it is installed (not when it was asked for: the reader may have moved
+    // while it was laid out), a new version is framed whole again once it has moved into place.
+    refitAfterMorph = atWhole()
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
@@ -1047,14 +1050,17 @@ async function main() {
     for (let k = 0; k < r.length; k++) r[k] = fr[k] + (tr[k] - fr[k]) * e
     for (let k = 0; k < c.length; k++) c[k] = fc[k] + (tc[k] - fc[k]) * e
     const [x0, y0, z0] = morph.cam0, [x1, y1, z1] = morph.cam1
-    if (!cam.flying && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
+    // The morph moves the camera with what it shows until the reader takes over (a wheel, a pan, a
+    // flight): from then on the camera is theirs, and no refit follows.
+    if (!cam.settled) morph.handsOff = true
+    if (!morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
       const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
     }
     renderer.router.invalidate()
     // The refit waits for the morph, and is dropped if the reader moved meanwhile (a wheel, a pan).
     if (u >= 1) {
-      const stayed = cam.settled && Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1
+      const stayed = !morph.handsOff && cam.settled && Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1
       morph = null
       if (refitAfterMorph && stayed && renderer.selected <= 0) fit(0)
       refitAfterMorph = false
