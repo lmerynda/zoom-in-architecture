@@ -112,9 +112,12 @@ export function buildApi(model: ModelJson): Api {
   const callers = new Map<string, { from: string; top: string; title: string }[]>()
   for (const r of model.relations) {
     const ep = owner.get(r.target), src = byId.get(r.source)
-    // A call at runtime; or, in maps built before callers carried a kind, any link from another part.
+    // A call at runtime; or, in maps built before callers carried a kind, a link from another app
+    // (not from a person: "builds, tests and runs it" is no call).
     const runtime = (r.kind ?? (r.evidence ? 'runtime' : 'code')) === 'runtime'
-    if (!ep || !src || within(r.source, ep) || !(runtime || (!r.kind && top(src).id !== top(byId.get(ep)!).id))) continue
+    if (!ep || !src || within(r.source, ep)) continue
+    const fromApp = !r.kind && top(src).id !== top(byId.get(ep)!).id && !/^(actor|person|user)$/.test(top(src).kind)
+    if (!runtime && !fromApp) continue
     const list = callers.get(ep) ?? []
     if (!list.some(c => c.from === r.source)) list.push({ from: r.source, top: top(src).id, title: r.title })
     callers.set(ep, list)
@@ -245,7 +248,7 @@ export function mergeTables(texts: string[]): string {
 export const wordRe = (name: string, after = '') => new RegExp(`(?<![\\p{L}\\p{N}_$])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_$])${after}`, 'u')
 
 /** A file in a folder of pages: what a person looks at, by the project's own split. */
-const PAGE_DIR = /(^|\/)(pages|screens|views|templates)\//i
+const PAGE_DIR = /(^|\/)(pages|screens|views|templates)\/|(^|\/)routes\/.*\.(tsx|jsx|vue|svelte|astro)$/i
 /** A server-side template: a page as the server renders it. */
 const TEMPLATE = /\.(html?|cshtml|razor|erb|jinja2?|hbs)$/i
 /** A piece of a page by its name (MonumentPanel, OfferCard), though it sits in the pages folder. */
@@ -255,7 +258,9 @@ const PIECE = /(Panel|Modal|Dialog|Card|Button|Item|Row|Widget|Section|Tab|Heade
  * A file a person looks at: a server-side template, or a file in a folder of pages whose name is not
  * a piece of one. (A component elsewhere is not a page.)
  */
-export const isPage = (path: string) => TEMPLATE.test(path) || (PAGE_DIR.test(path) && !PIECE.test(path))
+export const isPage = (path: string) => TEMPLATE.test(path) || (PAGE_DIR.test(path) && !PIECE.test(path) && !LAYOUT.test(path))
+/** A route file that frames pages rather than being one: __root, _layout. */
+const LAYOUT = /\/_[^/]*$/
 
 /** Words of a name, lower case, plurals folded, small words dropped: "Find owners" → find, owner. */
 const nameWords = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
@@ -275,10 +280,21 @@ export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 
   const pages = carriers.filter(e => isPage(e.metadata?.path ?? '')).map(e => e.id)
   const files = new Map(els.filter(e => e.metadata?.path).map(e => [e.metadata!.path, e.id]))
   const carried = (api?.endpoints ?? []).filter(ep => { const f = ep.handler && files.get(ep.handler.path); return !!f && featuresOf(f).has(name) })
-  const words = nameWords(name)
-  const named = (ep: Endpoint) => { const have = new Set(nameWords(`${ep.route} ${ep.handler?.name ?? ''}`)); return words.every(w => have.has(w)) }
+  const words = nameWords(name), half = Math.ceil(words.length / 2)
+  // By its route and its method's name (not its file's, which every route of the handler shares).
+  const hits = (ep: Endpoint) => { const have = new Set(nameWords(`${ep.route} ${ep.handler?.name.split('.').pop() ?? ''}`)); return words.filter(w => have.has(w)).length }
   const alone = (ep: Endpoint) => featuresOf(files.get(ep.handler!.path)!).size < 2
-  const endpoints = carried.filter(ep => alone(ep) || named(ep))
+  // Among the routes of one shared handler, the ones its words name best, when that tells them
+  // from the rest; a handler's only route, when it names at least half of them.
+  const named = (ep: Endpoint) => {
+    const peers = carried.filter(x => x.handler!.path === ep.handler!.path).map(hits), mine = hits(ep)
+    const best = Math.max(...peers), least = Math.min(...peers)
+    return mine === best && (peers.length === 1 ? best >= half : best > least)
+  }
+  // A route whose path renders a page that carries the feature serves it, whoever else its handler serves.
+  const pagePaths = new Set(carriers.flatMap(e => (e.metadata?.path && isPage(e.metadata.path) ? [e.metadata.path] : [])))
+  const renders = (ep: Endpoint) => ep.cards.some(c => pagePaths.has(c.path))
+  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || named(ep))) || renders(ep))
   const shared = carried.filter(ep => !endpoints.includes(ep))
   return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, shared, tables: mergeTables(endpoints.map(ep => ep.tables)) }
 }

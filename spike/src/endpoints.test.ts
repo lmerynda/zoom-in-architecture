@@ -79,6 +79,11 @@ describe('isPage and declLine', () => {
     expect(isPage('browser/src/game/plans.ts')).toBe(false)
     expect(isPage('src/main/resources/templates/owners/createOrUpdateOwnerForm.html')).toBe(true)
     expect(isPage('')).toBe(false)
+    // A routes folder holds pages in a web client, handlers in a server; a layout frames pages.
+    expect(isPage('frontend/src/routes/login.tsx')).toBe(true)
+    expect(isPage('backend/app/api/routes/login.py')).toBe(false)
+    expect(isPage('frontend/src/routes/__root.tsx')).toBe(false)
+    expect(isPage('frontend/src/routes/_layout.tsx')).toBe(false)
   })
   it('finds where a method is declared, not where it is called', () => {
     const src = ['class C {', '  void a() { this.initFindForm(); }', '  @GetMapping("/owners/find")', '  public String initFindForm(Model m) {', '  }'].join('\n')
@@ -86,8 +91,8 @@ describe('isPage and declLine', () => {
     expect(declLine(src, 'nope')).toBe(0)
     expect(declLine('', 'x')).toBe(0)
   })
-  it('takes a caller from another part in an older map, whose links carry no kind', () => {
-    const api = buildApi({ name: 'o', elements: [el('web', null), el('api', null), el('api.e', 'api', { title: 'GET /users' }), el('api.e.s1', 'api.e', { title: '1 · list()', metadata: { path: 'u.py' } }), el('api.x', 'api')], relations: [{ source: 'web', target: 'api.e.s1', title: 'users' }, { source: 'api.x', target: 'api.e.s1', title: 'same part' }] })
+  it('takes a caller from another part in an older map, whose links carry no kind, but not a person', () => {
+    const api = buildApi({ name: 'o', elements: [el('dev', null, { kind: 'actor' }), el('web', null), el('api', null), el('api.e', 'api', { title: 'GET /users' }), el('api.e.s1', 'api.e', { title: '1 · list()', metadata: { path: 'u.py' } }), el('api.x', 'api')], relations: [{ source: 'web', target: 'api.e.s1', title: 'users' }, { source: 'api.x', target: 'api.e.s1', title: 'same part' }, { source: 'dev', target: 'api.e.s1', title: 'builds and runs it' }] })
     expect(api.callers.get('api.e')?.map(c => c.from)).toEqual(['web'])
   })
 })
@@ -194,6 +199,10 @@ describe('featureFacts', () => {
     const add = featureFacts(shared, api, 'Add owner')
     expect(add.endpoints).toEqual([])
     expect(add.shared.length).toBe(3)
+    // A route whose path renders a page carrying the feature serves it.
+    const shown = [...shared, el('app.owner.d', 'app.owner', { features: ['Owner information'], metadata: { path: 'templates/owners/ownerDetails.html' } })]
+    const api2 = buildApi({ name: 'p', elements: [el('app', null), ...ep('app.e1', 'GET /owners/{ownerId}', 'showOwner'), el('app.e1.v', 'app.e1', { title: '2 · ownerDetails', metadata: { path: 'templates/owners/ownerDetails.html' } }), ...ep('app.e2', 'POST /owners/new', 'processCreationForm')], relations: [] })
+    expect(featureFacts(shown, api2, 'Owner information').endpoints.map(e => e.title)).toEqual(['GET /owners/{ownerId}'])
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
     expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], shared: [], tables: '' })

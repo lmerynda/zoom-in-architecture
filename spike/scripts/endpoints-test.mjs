@@ -339,7 +339,18 @@ try {
   await sleep(400)
   check('a helper module is no page', await page.evaluate(() => ![...document.querySelectorAll('#details .d-pages li')].some(l => l.textContent === 'plans')))
   await open('model=fastapi-template&at=web')
-  check('an older map\'s client says what it calls', await page.evaluate(() => [...document.querySelectorAll('#details .d-surface button')].some(b => /^Calls \d+ endpoints?$/.test(b.textContent))))
+  const dash = await page.evaluate(() => [...document.querySelectorAll('#details .d-surface button')].map(b => b.textContent))
+  check('an older map\'s client says what it calls and lists its route pages, not their layouts', dash.some(b => /^Calls \d+ endpoints?$/.test(b)) && dash.includes('login') && dash.includes('items') && !dash.includes('__root') && !dash.includes('_layout'), JSON.stringify(dash))
+  await open('model=galaxy-wars')
+  check('a person who builds and runs the system calls no endpoint', await page.evaluate(() => { const s = window.__spike; return s.renderer.surface(s.id('developer')) === '' }))
+  // Words that tell a shared handler's routes apart give each feature its own.
+  for (const [f, want, not] of [['Login with JWT authentication', 'POST /api/v1/login/access-token', 'POST /api/v1/password-recovery/{email}'], ['Email-based password recovery', 'POST /api/v1/password-recovery/{email}', 'POST /api/v1/login/access-token']]) {
+    await open('model=fastapi-cold')
+    await page.evaluate(f => window.__spike.controls.feature(f), f)
+    await sleep(400)
+    const got = await page.evaluate(() => [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]))
+    check(`${f} gets ${want}, not ${not}`, got.includes(want) && !got.includes(not), JSON.stringify(got))
+  }
   // A switch back before the Requests model arrives still returns to the card left.
   await open(`${map}&view=requests&at=backend.market.e1.response`)
   await sleep(500)
