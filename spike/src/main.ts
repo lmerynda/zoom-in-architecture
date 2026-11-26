@@ -327,7 +327,8 @@ async function main() {
       // Only if nothing has been framed since and the reader has not taken over (a wheel stops the
       // flight short of its framing).
       const target = framedAt
-      reaiming = setTimeout(() => { if (framedAt === target && (headedFramed() || atFramed())) fit(flyingTo) }, 150)
+      // By id when it fires: a live update meanwhile may number the cards anew.
+      reaiming = setTimeout(() => { const i = framedAt === target ? framedCard() : -1; if (i >= 0 && (headedFramed() || atFramed())) fit(i) }, 150)
     }
     reshape()
   }
