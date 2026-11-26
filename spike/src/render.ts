@@ -120,7 +120,7 @@ export interface FrameStats {
 
 /** Edge colour classes, drawn as separate strokes. */
 /** Edge stroke classes, drawn as separate strokes: code uses by weight, the focus's out and in, runtime calls. */
-const enum Kind { Thin, Mid, Thick, Out, In, Runtime, Step }
+const enum Kind { Thin, Mid, Thick, Out, In, Runtime, Step, Aside }
 /** A selected request's step-to-step line: the colour of the panel's "The request, in order". */
 const STEP = 0x6ee7b7
 
@@ -334,6 +334,7 @@ export class Renderer {
    * are in, so the chain stops above it.
    */
   breadcrumb(): number[] {
+    if (this.wholeZ > 0 && this.cam.z <= this.wholeZ * 1.12) return []
     const chain: number[] = []
     for (let cur = this.pick(this.cam.w / 2, this.cam.h / 2); cur > 0; cur = this.tree.parent[cur]) chain.unshift(cur)
     const k = chain.findIndex(i => { const [, , w, h] = this.screenRect(i); return w < this.cam.w * 0.55 && h < this.cam.h * 0.55 })
@@ -566,7 +567,8 @@ export class Renderer {
       const px = titlePx(level, room, v.titleEm + lead)
       const roomy = (v.titleEm + lead) * px <= w * 0.62
       let titleRight = 0
-      if (px >= 6) {
+      const underBar = y + (hh - px * 1.25) / 2 < SAFE.top - 6
+      if (px >= 6 && !underBar) {
         const shown = fitText(full, v.titleEm, room - lead * px, px)
         if (title.text !== shown) title.text = shown
         title.visible = true
@@ -585,7 +587,7 @@ export class Renderer {
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
       meta.scale.set(mpx / FONT_PX)
-      if (mpx >= MIN_TEXT && w > 160 && roomy && titleRight + 16 < x + w - pad - meta.width) {
+      if (mpx >= MIN_TEXT && w > 160 && roomy && !underBar && titleRight + 16 < x + w - pad - meta.width) {
         meta.visible = true
         meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
         meta.alpha = la * 0.78
@@ -629,11 +631,14 @@ export class Renderer {
     // A name of several words that would be cut takes two lines, larger, when the card has room.
     const level = Math.min(h * 0.15, 24)
     let tpx = px, two: BitmapText | null = null
-    if (/ /.test(full) && (v.titleEm + lead) * px > tInner + 1 && h > level * 5) {
-      const want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm)
+    const wrapSrc = humps(full)
+    if (/ /.test(wrapSrc) && (v.titleEm + lead) * px > tInner + 1 && h > level * 5) {
+      const previewTop = el.metadata?.path && w >= CODE_W && el.metadata?.role !== 'type' ? codeBox(x, y, w, h).y : Infinity
+      const want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55)
       if (want > px * 1.12) {
         const wrap = Math.round(((tInner - lead * want) * FONT_PX) / want / 8) * 8
-        two = v.title2 ??= this.text(full, texts, wrap)
+        two = v.title2 ??= this.text(wrapSrc, texts, wrap)
+        if (two.text !== wrapSrc) two.text = wrapSrc
         if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
         // Two lines or it is no help, and no word wider than the card: past that, the one-line title, cut.
         if (two.height / (two.scale.y || 1) <= FONT_PX * 1.25 * 2 + 1 && two.width / (two.scale.x || 1) <= wrap + 1) tpx = want
@@ -666,7 +671,8 @@ export class Renderer {
     // A file says how big it is and in what, not just that it is code.
     const lines = Number(el.metadata?.lines), ext = el.metadata?.path?.match(/\.(\w+)$/)?.[1]
     const inside = this.tree.children[i].length
-    const kind = el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside ? `${kindName(el)} · ${inside} inside` : kindName(el)
+    const role = el.metadata?.role
+    const kind = role === 'type' ? `Type${lines > 0 ? ` · ${lines} line${lines === 1 ? '' : 's'}` : ''}` : el.metadata?.path && lines > 0 ? `${lines} line${lines === 1 ? '' : 's'}${ext ? ` · ${ext}` : ''}` : inside && !(el.metadata?.method && w < 240) ? `${kindName(el)} · ${inside} inside` : kindName(el)
     // Rank, how much crosses its boundary, and how many of its siblings it reaches: a hub many use
     // and a part that talks to everything both rank high, and the last number tells them apart.
     const rk = this.ranking, sibs = this.tree.children[this.tree.parent[i]]?.length - 1
@@ -694,7 +700,7 @@ export class Renderer {
     }
 
     // Past its last level a file shows its own source, anchored to the card so zooming reads it.
-    const code = el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) ? codeBox(x, y, w, h) : null
+    const code = el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) && !(el.metadata?.role === 'type' && w < this.cam.w * 0.5) ? codeBox(x, y, w, h) : null
     if (code) this.codeSlots.push({ i, ...code, alpha: la })
     const bottom = code ? code.y - pad * 0.4 : y + h - pad * 0.6
 
@@ -786,7 +792,7 @@ export class Renderer {
     const W = this.cam.w, H = this.cam.h
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
     const labelSpots: LabelSpot[] = []
-    const paths: number[][][] = [[], [], [], [], [], [], []]
+    const paths: number[][][] = [[], [], [], [], [], [], [], []]
     // Strokes by kind and weight tier: [kind][tier] (see TIER_W).
     const strokes: number[][][][] = paths.map(() => TIER_W.map(() => []))
     const heads: number[][][] = paths.map(() => TIER_W.map(() => []))
@@ -802,7 +808,8 @@ export class Renderer {
       const els = this.tree.els, par = this.tree.parent
       const onPath = (k: number) => els[k].metadata?.role === 'step' || (els[k].metadata?.role === 'response' && /^\d+ · /.test(els[k].title))
       const step = sel && par[e.s] === this.selected && par[e.t] === this.selected && onPath(e.s) && onPath(e.t)
-      const kind = e.out ? Kind.Out : e.in ? Kind.In : step ? Kind.Step : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
+      const aside = !step && sel && par[e.s] === this.selected && par[e.t] === this.selected && !!els[this.selected].metadata?.method
+      const kind = e.out ? Kind.Out : e.in ? Kind.In : step ? Kind.Step : aside ? Kind.Aside : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
       const world = this.router.route(e.s, e.t)
       const pts = world ? this.toScreen(world) : straight(sr, tr)
       drawn.push({ e, kind, pts, sOn, tOn })
@@ -877,7 +884,7 @@ export class Renderer {
     const base = sel ? 0.1 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
     // Thin lines draw first, so a heavy one sharing their gutter stays on top and reads as heavy.
     const style: [Graphics, number, number, number][] = [
-      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)], [hg, 1, STEP, 0.95],
+      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)], [hg, 1, STEP, 0.95], [hg, 0.5, EDGE, 0.75],
     ]
     TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
       const ps = strokes[kind][tier]
@@ -893,7 +900,7 @@ export class Renderer {
     // the card beside it. Quiet lines are dotted together, highlighted ones in their own colour.
     const dots: [Graphics, number[][], number, number, number][] = [
       [g, [...paths[Kind.Thin], ...paths[Kind.Mid], ...paths[Kind.Thick]], EDGE, Math.min(1, base * 1.6), 3], [g, paths[Kind.Runtime], RUNTIME, Math.min(1, base + 0.4), 3],
-      [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6], [hg, paths[Kind.Step], STEP, 1, 3.6],
+      [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6], [hg, paths[Kind.Step], STEP, 1, 3.6], [hg, paths[Kind.Aside], EDGE, 0.8, 3],
     ]
     for (const [gg, ps, color, alpha, r] of dots) {
       const j = junctions(ps)
@@ -998,6 +1005,8 @@ export class Renderer {
     return out
   }
 
+  /** The zoom that frames the whole map; at or below it the place is the whole map (set by the page). */
+  wholeZ = 0
   /** Where this frame's edge chips stand, so count labels keep off them. */
   private chipRects: number[][] = []
 
@@ -1046,7 +1055,7 @@ export class Renderer {
       placed.push([x, y, cw, ch])
       chip.bg.position.set(x, y)
       chip.bg.width = cw; chip.bg.height = ch
-      chip.bg.tint = c.kind === Kind.Out ? mix(OUT, BG, 0.35) : c.kind === Kind.In ? mix(IN, BG, 0.45) : mix(this.colors[node], BG, 0.45)
+      chip.bg.tint = c.kind === Kind.Out ? mix(OUT, BG, 0.35) : c.kind === Kind.In ? 0x1893a7 : mix(this.colors[node], BG, 0.45)
       chip.bg.alpha = 1
       chip.text.tint = c.kind === Kind.Out || c.kind === Kind.In ? 0x0b0f17 : 0xffffff
       chip.text.position.set(x + 8, y + (ch - px * 1.25) / 2)
@@ -1059,7 +1068,7 @@ export class Renderer {
 
   private drawLabels(spots: LabelSpot[]) {
     let k = 0
-    const placed: number[][] = (this.chipRects = [])
+    const placed: number[][] = []
     const said: [string, number, number][] = []
     // Highlighted edges claim label space first, then the busiest.
     spots.sort((a, b) => b.kind - a.kind || b.weight - a.weight)
@@ -1125,6 +1134,19 @@ export function seenText(el: { metadata?: Record<string, string> }, traced: bool
   if (el.metadata?.method) return s === '0' ? 'untested' : `${count(+s)} request${s === '1' ? '' : 's'}`
   if (el.metadata?.role === 'step') return s === '0' ? '' : 'ran in tests'
   return s === '0' ? '' : `${count(+s)} call${s === '1' ? '' : 's'} in tests`
+}
+
+/**
+ * A name made breakable for a two-line title: a word too long for a line ("KingdomJpaRepository")
+ * gets a space at the CamelCase hump nearest its middle, which a line break then swallows.
+ */
+export function humps(s: string): string {
+  return s.replace(/\S{14,}/g, w => {
+    const at = [...w.matchAll(/[a-z0-9](?=[A-Z])/g)].map(m => m.index! + 1)
+    if (!at.length) return w
+    const k = at.reduce((a, b) => (Math.abs(b - w.length / 2) < Math.abs(a - w.length / 2) ? b : a))
+    return `${w.slice(0, k)} ${w.slice(k)}`
+  })
 }
 
 /** A trace count as people read it: 48872 → 48,872. */

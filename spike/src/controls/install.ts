@@ -294,6 +294,7 @@ export function installControls(c: Ctx) {
   /** Go into a card; a file opens its code. Double-click, Enter and the panel's buttons do the same. */
   const enter = (n: number) => {
     if (n > 0 && !tree.children[n].length && tree.els[n].metadata?.path) c.read(n)
+    else if (n > 0 && tree.children[n].length) enterPlace(n)
     else go(n)
   }
   canvas.addEventListener('dblclick', e => enter(renderer.pick(e.offsetX, e.offsetY)))
@@ -307,7 +308,7 @@ export function installControls(c: Ctx) {
       e = new PointerEvent('contextmenu', { clientX: cr.left + Math.max(8, Math.min(cr.width - 8, r[0] + r[2] / 2)), clientY: cr.top + Math.max(8, Math.min(cr.height - 8, r[1] + Math.min(r[3] / 2, 40))) })
     }
     const n = kbd ? renderer.selected : renderer.pick(e.offsetX, e.offsetY)
-    if (n <= 0) return menu.open(e.clientX, e.clientY, tree.els[0].title, [{ label: 'Whole map', run: () => go(0) }, { label: 'Back', key: '⌫', run: back }])
+    if (n <= 0) return menu.open(e.clientX, e.clientY, tree.els[0].title, [{ label: 'Whole map', run: () => enterPlace(0) }, { label: 'Back', key: '⌫', run: back }])
     c.select(n)
     const file = tree.els[n].metadata?.path
     menu.open(e.clientX, e.clientY, tree.els[n].title, [
@@ -336,7 +337,12 @@ export function installControls(c: Ctx) {
     }
     // The rest are map keys: they act only when focus is on the map, not on a button or the panel.
     const t = e.target as HTMLElement | null
-    if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') return
+    if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') {
+      // A heading or text with focus (the panel's, after a pick) passes on the keys that open things.
+      const control = t.closest('input, textarea, select, button, a, [contenteditable], [role="dialog"], [role="listbox"]')
+      const opener = k === '/' || k === '?' || k === 'backspace' || (e.altKey && k.startsWith('arrow'))
+      if (control || !opener) return
+    }
     held.add(k)
     if (k === '/') { e.preventDefault(); return palette.open() }
     // Shift+F10, as the Menu key: the selected card's menu.

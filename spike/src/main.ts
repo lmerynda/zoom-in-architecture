@@ -237,6 +237,7 @@ async function main() {
   }
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
+    if (i === 0) renderer.wholeZ = f.z
     cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
   const resize = () => {
@@ -254,6 +255,7 @@ async function main() {
     cam.resize(app.screen.width, app.screen.height)
     const f = frameFor(0)
     cam.set(f.x, f.y, f.z)
+    renderer.wholeZ = f.z
   }
   // Pixi applies a window resize a frame later; reading the screen before that keeps the old
   // size, and everything outside it is culled as off-screen.
@@ -435,14 +437,15 @@ async function main() {
     const heading = details.querySelector<HTMLElement>('h2')
     if (heading) heading.tabIndex = -1
     if (inPanel) { heading?.focus({ preventScroll: true }); heading?.scrollIntoView({ block: 'nearest' }) }
-    {
+    requestAnimationFrame(() => {
+      if (renderer.selected !== i) return
       const sheet = details.getBoundingClientRect(), bar = $('top').getBoundingClientRect().bottom
       const r = renderer.screenRectOf(i), cy = r[1] + Math.min(r[3], sheet.top - bar) / 2
       if (!details.hidden && !details.classList.contains('collapsed') && sheet.top > cam.h / 2 && (cy > sheet.top - 16 || r[1] + r[3] < bar + 16)) {
         const vw = cam.w / cam.z, vh = cam.h / cam.z, want = (bar + sheet.top) / 2
-        cam.flyTo(cam.x - vw / 2, cam.y + (cy - want) / cam.z - vh / 2, vw, vh, now(), 1)
+        if (!cam.flying) cam.flyTo(cam.x - vw / 2, cam.y + (cy - want) / cam.z - vh / 2, vw, vh, now(), 1)
       }
-    }
+    })
     // A screen reader hears what was selected and how connected it is.
     $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }
@@ -531,9 +534,9 @@ async function main() {
   controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
   showIntro(tree, name => controls.feature(name))
-  $('title').textContent = `${tree.els[0].title}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
+  $('title').textContent = `${tree.els[0].title.replace(/ · requests$/, '')}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
   // The welcome is up now: the first frame keeps clear of it.
-  if (!$('welcome').hidden) { const f = frameFor(0); cam.set(f.x, f.y, f.z) }
+  if (!$('welcome').hidden) { const f = frameFor(0); cam.set(f.x, f.y, f.z); renderer.wholeZ = f.z }
 
   /**
    * What the arrows are: runtime calls, uses in code, and type-only imports, with the toggle that

@@ -86,6 +86,7 @@ export function searchMap(els: Searchable[], query: string, limit = 12): Found {
   })
   const by = (a: { score: number }, b: { score: number }) => b.score - a.score
   out.features.sort(by); out.parts.sort(by); out.files.sort(by)
-  out.features.splice(limit); out.parts.splice(limit * 3); out.files.splice(limit)
+  const endpoints = out.parts.filter(p => els[p.i].metadata?.method).length
+  out.features.splice(limit); out.parts.splice(Math.max(limit, endpoints + limit)); out.files.splice(limit)
   return out
 }

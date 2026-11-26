@@ -69,7 +69,8 @@
       /* At the whole map the one crumb repeats the map's name. */
       #crumbs:not(:has(button + button)) { display: none; }
       #views { order: 5; flex: 1 1 auto; padding: 0; }
-      #views a { padding: 6px 7px; }
+      #views a { padding: 6px 7px; font-size: 13px; }
+      #crumbs button { min-height: 28px !important; }
       .lensbar { order: 6; margin-left: auto; }
       /* The lens menu opens under the bar at the screen's right edge, wherever its button wrapped to. */
       .lens-menu { position: fixed; top: calc(var(--bar, 52px) + 4px); right: 8px; left: auto; max-width: calc(100vw - 16px); }
@@ -93,7 +94,9 @@
     .d-grip i { margin-left: auto; flex: none; font-style: normal; font-size: 12px; color: #fde68a; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
     .d-grip i::before { content: '▴ '; }
     .d-grip[aria-expanded="true"] i::before { content: '▾ '; }
-    .d-grip[aria-expanded="true"] b, .d-grip[aria-expanded="true"] span { visibility: hidden; }
+    .d-grip[aria-expanded="true"] { min-height: 0; height: 0; padding: 0; border: 0; background: none; margin: -14px -16px 0; overflow: visible; justify-content: flex-end; }
+    .d-grip[aria-expanded="true"] b, .d-grip[aria-expanded="true"] span { display: none; }
+    .d-grip[aria-expanded="true"] i { position: absolute; top: 8px; right: 12px; background: #0b1220; min-height: 32px; display: flex; align-items: center; }
     .d-grip:focus-visible { outline-offset: -3px; }
     #details { scroll-padding-top: 56px; }
     #details.collapsed { max-height: 46px; overflow: hidden; }
@@ -167,7 +170,8 @@
     .d-rels .d-cite[aria-expanded="true"] { color: var(--text); }
     .d-steps { margin-top: 14px; }
     .d-steps h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6ee7b7; }
-    .d-steps ol { list-style: none; margin: 0; padding: 0; }
+    .d-steps ol, .d-steps ul { list-style: none; margin: 0; padding: 0; }
+    .d-steps h3.d-beside { margin-top: 10px; color: var(--dim); }
     .d-steps li.beside { opacity: 0.8; }
     .d-steps li.beside b { font-weight: 500; }
     .d-steps .d-rel { display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 3px 6px; border-radius: 5px; cursor: pointer; }
@@ -257,7 +261,8 @@
     /* First visit: what the map is, its counts and features to start from; it stays until Got it. */
     /* On a touch screen the panel's rows and buttons are a finger wide. */
     @media (pointer: coarse) {
-      #top button, #top a, #crumbs button, #arrows button, .reader-head button, .lens-current { min-height: 36px; }
+      #top button, #top a, #arrows button, .reader-head button, .lens-current { min-height: 36px; }
+      #crumbs button { min-height: 28px; }
       #welcome .ok { position: sticky; bottom: 0; }
       .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
       .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }
@@ -428,7 +433,16 @@
     .help-col h3 { font: 600 11px ui-monospace, monospace; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
     .help-row { display: grid; grid-template-columns: minmax(0, 10rem) 1fr; gap: 12px; padding: 6px 0; border-bottom: 1px solid #1e293b; color: #b6c2d3; align-items: baseline; }
     .help-row b { color: var(--text); font-weight: 600; }
-    .help-row kbd { white-space: normal; }
+    .help-row kbd { white-space: normal; justify-self: start; width: auto; }
+    @media (max-width: 559px) {
+      .lensbar { order: 2; margin-left: 0; }
+      #travel { order: 2; font-size: 0; gap: 0; padding: 6px 10px; }
+      #travel::before { content: '⌕'; font-size: 18px; line-height: 1; color: var(--text); }
+      #help { font-size: 0; padding: 5px 8px; }
+      #help kbd { font-size: 13px; }
+      #models { min-width: 0; }
+      #models .model-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
   </style>
 </head>
 <body>

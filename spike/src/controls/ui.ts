@@ -123,8 +123,8 @@ export class Palette {
 
   private element = (i: number): Item => {
     const e = this.tree.els[i]
-    const step = e.metadata?.role === 'step' ? this.tree.els[this.tree.parent[i]] : null
-    const sub = step ? `step ${e.metadata?.step} of ${step.title}` : e.metadata?.path ?? pathOf(this.tree, i)
+    const lane = e.metadata?.role ? this.tree.els[this.tree.parent[i]] : null, step = e.metadata?.role === 'step' ? lane : null
+    const sub = step ? `step ${e.metadata?.step} of ${step.title}` : lane?.metadata?.method ? `${e.metadata?.role} in ${lane.title}` : e.metadata?.path ?? pathOf(this.tree, i)
     return { label: e.title, sub, kind: e.metadata?.method ? 'endpoint' : step ? 'step' : e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
   }
   private featureItem = (name: string, n: number): Item => ({ label: name, sub: `carried by ${n} card${n === 1 ? '' : 's'}`, kind: 'feature', run: () => this.act.feature(name) })

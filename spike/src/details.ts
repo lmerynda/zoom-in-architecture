@@ -197,8 +197,9 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     const box = el('section', 'd-steps')
     const order = (k: number) => (roleOf(k) === 'step' ? Number(tree.els[k].metadata?.step) : 1e3 + ['view', 'response', 'type'].indexOf(roleOf(k) ?? '') )
     const steps = [...kids].sort((a, b) => order(a) - order(b))
+    const onPath = (k: number) => roleOf(k) === 'step' || (roleOf(k) === 'response' && /^\d+ · /.test(tree.els[k].title))
     box.append(el('h3', '', 'The request, in order'))
-    const ol = el('ol')
+    const ol = el('ol'), aside = el('ul')
     for (const k of steps) {
       const li = el('li', roleOf(k) === 'step' ? '' : 'beside')
       const b = el('button', 'd-rel')
@@ -206,9 +207,10 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       b.append(el('b', '', tree.els[k].title), ...(note && !tree.els[k].title.includes(note) ? [el('span', '', note)] : []))
       b.onclick = () => act.go(k)
       li.append(b)
-      ol.append(li)
+      ;(onPath(k) ? ol : aside).append(li)
     }
     box.append(ol)
+    if (aside.children.length) box.append(el('h3', 'd-beside', `Beside it · ${aside.children.length}`), aside)
     path2.push(box)
   }
   panel.replaceChildren(

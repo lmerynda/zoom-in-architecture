@@ -5,7 +5,7 @@ import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './mo
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, dashes, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
+import { clipToScreen, dashes, fitText, humps, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -632,5 +632,16 @@ describe('dashes', () => {
     expect(d[0]).toEqual([0, 0, 7, 0])
     expect(d[1]).toEqual([12, 0, 19, 0])
     expect(d[2]).toEqual([20, 4, 20, 10])
+  })
+})
+
+describe('humps', () => {
+  it('breaks a long CamelCase word at the hump nearest its middle, and leaves the rest', () => {
+    expect(humps('4 · KingdomJpaRepository')).toBe('4 · KingdomJpa Repository')
+    expect(humps('MarketTransactionTimeRangeAveragesJpaRepository')).toBe('MarketTransactionTime RangeAveragesJpaRepository')
+    expect(humps('short Words only')).toBe('short Words only')
+    expect(humps('lowercaseonlyverylongword')).toBe('lowercaseonlyverylongword')
+    expect(humps('')).toBe('')
+    expect(humps('Größenänderung2Plan')).toBe('Größenänderung2 Plan')
   })
 })
