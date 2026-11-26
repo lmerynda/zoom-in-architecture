@@ -29,6 +29,12 @@ describe('plainDoc', () => {
     expect(plainDoc('Simple <code>Validator</code> for {@link Pet} names &amp; dates.')).toBe('Simple Validator for Pet names & dates.')
     expect(new Tree({ name: 'm', elements: [{ id: 'a', parent: null, title: 'A', kind: 'code', description: 'A <code>Pet</code>.', technology: '', tags: [], color: 'primary', shape: 'rectangle' }], relations: [] }).els[1].description).toBe('A Pet.')
   })
+  it('keeps the generics of a type, which are not markup', () => {
+    expect(plainDoc('Returns <code>ActionResult<MarketPurchaseDto></code> as JSON.')).toBe('Returns ActionResult<MarketPurchaseDto> as JSON.')
+    expect(plainDoc('Map<A, B> of <b>Pets</b>, List<string>')).toBe('Map<A, B> of Pets, List<string>')
+    const d = 'Returns ActionResult<MarketPurchaseDto> as JSON.'
+    expect(new Tree({ name: 'm', elements: [{ id: 'a', parent: null, title: 'A', kind: 'code', description: d, technology: '', tags: [], color: 'primary', shape: 'rectangle' }], relations: [] }).els[1].description).toBe(d)
+  })
 })
 
 describe('Tree', () => {

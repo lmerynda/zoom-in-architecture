@@ -69,9 +69,15 @@ export function kindName(e: { kind: string; metadata?: Record<string, string> })
   return e.kind
 }
 
+/**
+ * HTML a doc comment uses, by name and in lower case: a type's generics are not markup, so
+ * ActionResult<MarketPurchaseDto> and Map<A, B> keep theirs.
+ */
+const DOC_TAG = /<\/?(?:p|code|b|i|em|strong|br|ul|ol|li|pre|a|tt|blockquote|h[1-6]|table|thead|tbody|tr|td|th|span|div|sup|sub|dl|dt|dd|hr|img|kbd|var|samp|small|u|del|ins)\b[^>]*>/g
+
 /** A doc comment's text without its markup: {@link Pet} as Pet, <code>x</code> as x. */
 export function plainDoc(s: string): string {
-  return s.replace(/\{@\w+\s+([^}]*)\}/g, '$1').replace(/<\/?[a-z][^>]*>/gi, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
+  return s.replace(/\{@\w+\s+([^}]*)\}/g, '$1').replace(DOC_TAG, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()
 }
 
 /**
@@ -112,7 +118,7 @@ export class Tree {
       technology: '', tags: [], color: 'primary', shape: 'rectangle',
     }
     // Doc-comment markup reads as plain words, in maps uploaded before the scanner stripped it too.
-    this.els = [root, ...model.elements.map(e => (e.description && /<\/?[a-z][^>]*>|\{@\w+/i.test(e.description) ? { ...e, description: plainDoc(e.description) } : e))]
+    this.els = [root, ...model.elements.map(e => (e.description && (new RegExp(DOC_TAG.source).test(e.description) || /\{@\w+|&(lt|gt|amp);/.test(e.description)) ? { ...e, description: plainDoc(e.description) } : e))]
     const n = this.els.length
     this.parent = new Int32Array(n).fill(-1)
     this.depth = new Int32Array(n)
