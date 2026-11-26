@@ -605,7 +605,7 @@ export function seenLines(tree: Tree, i: number, tables = true): HTMLElement[] {
     const box = el('section', 'd-tables')
     box.append(el('h3', '', `Tables touched in tests · ${rows.length}`))
     const ul = el('ul')
-    rows.forEach((r, k) => { const li = el('li'); li.append(el('code', '', r.table), el('span', '', r.ops)); if (k >= FIRST) li.hidden = true; ul.append(li) })
+    rows.forEach((r, k) => { const li = el('li', r.ops === 'reads' ? 'reads' : 'writes'); li.append(el('code', '', r.table), el('span', '', r.ops)); if (k >= FIRST) li.hidden = true; ul.append(li) })
     box.append(ul)
     if (rows.length > FIRST) {
       const more = el('button', 'd-more', `Show all ${rows.length}`)
@@ -1068,7 +1068,7 @@ export function renderFeature(panel: HTMLElement, name: string, facts: ReturnTyp
     const s = el('section', 'd-tables')
     s.append(el('h3', '', `Data its endpoints touched in tests · ${rows.length}`))
     const ul = el('ul')
-    for (const r of rows) { const li = el('li'); li.append(el('code', '', r.table), el('span', '', r.ops)); ul.append(li) }
+    for (const r of rows) { const li = el('li', r.ops === 'reads' ? 'reads' : 'writes'); li.append(el('code', '', r.table), el('span', '', r.ops)); ul.append(li) }
     s.append(ul)
     parts.push(s)
   }

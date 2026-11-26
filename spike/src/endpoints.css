@@ -26,7 +26,7 @@
 
 /* A part's surface: its endpoints, calls and jobs, as buttons. */
 .d-surface { margin-top: 12px; }
-.d-surface h3 { margin: 0 0 2px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #c4b5fd; }
+.d-surface h3 { margin: 0 0 2px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #f1f5f9; }
 .d-surface .d-actions { flex-wrap: wrap; }
 .d-surface .d-actions button.unseen { color: var(--warn); border-color: rgba(252, 165, 165, 0.5); }
 #details .d-surface p.d-facts { margin: 6px 0 0; font-size: 11px; }
@@ -39,7 +39,7 @@
 #details p.d-handler { margin: 8px 0 0; font-size: 13px; color: var(--dim); }
 .d-effect.takes h3 { color: #7dd3fc; }
 .d-effect.data h3 { color: var(--ok); }
-.d-effect.returns h3 { color: #c4b5fd; }
+.d-effect.returns h3 { color: #f1f5f9; }
 .d-effect.callers h3, .d-effect.callers i { color: #22d3ee; }
 .d-effect.data i { color: #c4b5fd; }
 .d-effect.returns b { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }

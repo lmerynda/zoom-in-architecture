@@ -58,7 +58,21 @@ export class Reader {
     this.scroller.tabIndex = 0
     this.scroller.append(this.pre)
     const body = el('div', 'reader-body')
-    this.rail.setAttribute('aria-hidden', 'true')
+    // The rail is one stop for the keyboard: Tab reaches its first tick, the arrows (and Home, End)
+    // walk the ticks in line order, Enter goes to the line.
+    this.rail.setAttribute('role', 'toolbar')
+    this.rail.setAttribute('aria-orientation', 'vertical')
+    this.rail.setAttribute('aria-label', 'Cited and marked lines')
+    this.rail.addEventListener('keydown', e => {
+      const ticks = [...this.rail.querySelectorAll('button')], k = ticks.indexOf(document.activeElement as HTMLButtonElement)
+      const to = e.key === 'ArrowDown' ? k + 1 : e.key === 'ArrowUp' ? k - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ticks.length - 1 : -2
+      if (to === -2 || k < 0) return
+      e.preventDefault()
+      const t = ticks[Math.max(0, Math.min(ticks.length - 1, to))]
+      ticks[k].tabIndex = -1
+      t.tabIndex = 0
+      t.focus()
+    })
     body.append(this.scroller, this.rail)
     this.root.append(head, body)
     this.root.addEventListener('keydown', e => {
@@ -124,7 +138,8 @@ export class Reader {
       t.style.top = `${((n - 1) / this.total) * 100}%`
       t.title = `Line ${n}${src.marks.get(n) ? ` · ${src.marks.get(n)!.join(', ')}` : ''}${src.cited.has(n) ? ' · cited' : ''}`
       t.onclick = () => this.goto(n)
-      t.tabIndex = -1
+      t.setAttribute('aria-label', t.title)
+      t.tabIndex = this.rail.childElementCount ? -1 : 0
       this.rail.append(t)
     }
     this.goto(line)

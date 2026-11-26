@@ -271,7 +271,8 @@ export class CodeView {
         const x0 = Math.floor(k / per) * pitch(src.cols) * q, y = (k % per) * LINE_PX * q
         const n = k + 1
         if (src.cited.has(n) || src.marks.has(n)) {
-          g.fillStyle = src.cited.has(n) ? 'rgba(251,191,36,0.35)' : 'rgba(34,211,238,0.25)'
+          // Cited lines are violet, as in the reader and the panel: a citation backs a link.
+          g.fillStyle = src.cited.has(n) ? 'rgba(196,181,253,0.35)' : 'rgba(34,211,238,0.25)'
           g.fillRect(x0, y, colChars(src.cols) * cw, LINE_PX * q)
         }
         let x = x0 + (src.pad + 1) * cw

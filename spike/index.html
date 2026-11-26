@@ -100,7 +100,8 @@
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
-    #minimap.faint { opacity: 0.3; }
+    /* Faded, its viewport still reads at 3:1. */
+    #minimap.faint { opacity: 0.6; }
     #minimap.whole { visibility: hidden; }
     #minimap.faint:hover { opacity: 1; }
     /* Narrow: the details are a bottom sheet over the map, the minimap steps aside while it is up. */
@@ -215,7 +216,9 @@
     .d-tables li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13px; }
     .d-tables li[hidden] { display: none; }
     .d-tables code { font: 11px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
+    /* A table written is something that goes out (amber); one only read, green. */
     .d-tables span { color: var(--ok); white-space: nowrap; }
+    .d-tables li.writes span { color: var(--out); }
     .d-more { margin-top: 6px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
     .d-unseen ul { list-style: none; margin: 6px 0 0; padding: 0; }
     .d-unseen ul[hidden] { display: none; }
@@ -232,7 +235,7 @@
     /* Long identifiers break inside the panel rather than push it sideways at 320 px. */
     #details { overflow-x: hidden; }
     .d-why .cite, .d-why .d-names, .d-edge b, .d-filepath { max-width: 100%; min-width: 0; overflow-wrap: anywhere; text-align: left; }
-    /* What the project's own tests showed: green when seen, amber when not. */
+    /* What the project's own tests showed: green when seen, light red when not. */
     #details p.d-seen { margin: 8px 0 0; padding-left: 8px; border-left: 2px solid rgba(110, 231, 183, 0.6); color: var(--ok); font-size: 13px; line-height: 1.5; }
     #details p.d-seen.none { border-left-color: rgba(252, 165, 165, 0.6); color: var(--warn); }
     .d-seen-tag { font-style: normal; font-size: 11px; color: var(--ok); flex: none; }
@@ -257,11 +260,12 @@
     .code pre .com { color: var(--dim); font-style: italic; }
     .code pre .num { color: #fdba74; }
     .code pre .ty { color: #7dd3fc; }
-    /* Lines the graph marked: a cyan edge and their kind; lines a link cites: amber. */
+    /* Lines the graph marked: a cyan edge and their kind; lines a link cites: violet, their numbers lightened to read on it. */
     .code pre .mark { box-shadow: inset 3px 0 #22d3ee; background: rgba(34, 211, 238, 0.07); }
     .code pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.8em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
     .code pre .cited { background: rgba(196, 181, 253, 0.16); box-shadow: inset 3px 0 var(--runtime); }
     .code pre .cited b { color: var(--runtime); border-color: rgba(196, 181, 253, 0.6); }
+    .code pre .cited i, .reader pre .cited i { color: #cbd5e1; }
     .d-ev { flex-basis: 100%; margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
     .d-ev > div { border-left: 2px solid var(--line); padding: 1px 0 1px 8px; }
     .d-ev .at { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; }
@@ -393,8 +397,6 @@
     .reader pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.85em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
     .reader-rail { position: relative; width: 12px; flex: none; background: rgba(148, 163, 184, 0.06); }
     .reader-rail button { position: absolute; left: 1px; right: 1px; height: 6px; padding: 0; border: 0; border-radius: 2px; background: #22d3ee; cursor: pointer; }
-    /* A tick is pressed by a target larger than it draws. */
-    .reader-rail button::before { content: ''; position: absolute; inset: -4px -2px; }
     .reader-rail button.cited { background: var(--runtime); }
     .reader-none { padding: 24px; color: var(--text); font-family: 'Segoe UI', sans-serif; }
     /* While reading, the map's own furniture steps aside. */
@@ -413,6 +415,8 @@
     /* The legend has its own place under the bar: over the map on a narrow screen, and on a wide one at the head of the details column, which steps down for it. */
     .lens-legend { position: fixed; top: calc(var(--bar, 52px) + 8px); right: 12px; z-index: 13; display: grid; grid-template-columns: auto minmax(60px, 1fr) auto; align-items: center; gap: 4px 8px; padding: 8px 12px; color: var(--dim); font-size: 11px; line-height: 16px; background: #090c14; border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); box-sizing: border-box; }
     .lens-legend .lens-label, .lens-legend .lens-range { grid-column: 1 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* The range wraps rather than lose its numbers on a phone. */
+    .lens-legend .lens-range { white-space: normal; }
     .lens-legend .lens-hi { white-space: nowrap; }
     .lens-current { min-width: 9ch; text-align: left; }
     @media (min-width: 1100px) {
@@ -438,7 +442,7 @@
     .palette .row { display: grid; grid-template-columns: 86px auto 1fr; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
     .palette .row.on { background: var(--sel); box-shadow: inset 3px 0 var(--focus); }
     .palette input:focus-visible { box-shadow: inset 0 -2px var(--focus); }
-    /* On the amber highlight the path needs a lighter grey to keep 4.5:1. */
+    /* On the highlight the path needs a lighter grey to keep 4.5:1. */
     .palette .row.on .sub { color: #a7b4c8; }
     .palette .row .kind { font: 600 11px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .palette .row b { color: #e2e8f0; font-weight: 600; }
@@ -474,7 +478,7 @@
     @media (max-width: 599px) {
       .help-grid { padding: 0 14px; gap: 20px; grid-template-columns: 1fr; }
       .help-head { padding: 10px 14px; }
-      .help-overlay h2 { font-size: 19px; letter-spacing: 0.2em; }
+      .help-overlay .help-head h2 { font-size: 19px; letter-spacing: 0.2em; }
       .help-row b { white-space: normal; }
     }
     .help-close { min-height: 44px; background: rgba(148, 163, 184, 0.12); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 18px; border-radius: 8px; cursor: pointer; }

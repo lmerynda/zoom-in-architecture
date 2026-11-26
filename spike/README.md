@@ -88,7 +88,7 @@ Nothing is written into the mapped repository.
 With `npm run dev` running, any model rewritten under `public/models/` updates the open map in place, and a newly published map gets its tab:
 - unchanged containers keep their exact layout;
 - survivors glide to their new places, and new cards grow out of their parent;
-- changed cards glow (green added, amber changed), and a toast lists what was removed;
+- changed cards glow (green added, light blue changed), and a toast lists what was removed;
 - the camera stays on the selection, or on what is under the screen centre.
 
 Models are rewritten when:

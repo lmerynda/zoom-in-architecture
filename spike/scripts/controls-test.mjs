@@ -546,8 +546,20 @@ try {
   await page.evaluate(() => window.__spike.setLens('size'))
   await sleep(300)
   const lensKey = await page.evaluate(() => ({ lo: document.querySelector('.lens-lo')?.textContent, hi: document.querySelector('.lens-hi')?.textContent, range: document.querySelector('.lens-range')?.textContent }))
-  check('the lens legend names a level\'s least and most, the map\'s range apart', lensKey.lo === 'least' && lensKey.hi === 'most at its level' && /across the map \d/.test(lensKey.range), JSON.stringify(lensKey))
+  check('the lens legend runs from 0 to a level\'s most, the map\'s range apart', lensKey.lo === '0' && lensKey.hi === 'most at its level' && /across the map \d/.test(lensKey.range), JSON.stringify(lensKey))
   await page.evaluate(() => window.__spike.setLens('structure'))
+
+  // The reader's rail is one keyboard stop whose arrows walk the ticks in line order.
+  await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+  await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
+  const rail = await page.evaluate(() => {
+    const ticks = [...document.querySelectorAll('.reader-rail button')]
+    ticks[0]?.focus()
+    return { n: ticks.length, stops: ticks.filter(t => t.tabIndex === 0).length, lines: ticks.map(t => Number(t.title.match(/\d+/)[0])), hidden: document.querySelector('.reader-rail').getAttribute('aria-hidden') }
+  })
+  await page.keyboard.press('ArrowDown')
+  const second = await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].indexOf(document.activeElement))
+  check('the rail is one Tab stop, its ticks in line order, the arrows walking them', rail.n > 1 && rail.stops === 1 && rail.hidden === null && rail.lines.every((l, k) => k === 0 || l > rail.lines[k - 1]) && second === 1, JSON.stringify({ ...rail, second }))
 
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })
