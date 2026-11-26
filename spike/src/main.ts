@@ -282,10 +282,14 @@ async function main() {
     cam.resize(app.screen.width, app.screen.height)
     measureHud()
     if (was) setWhole()
+    // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
+    else renderer.wholeZ = frameFor(0).z
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
   let reshaping: ReturnType<typeof setTimeout> | undefined, relaying = false
+  /** Live updates being laid out: a relayout waits for them, and they for nothing. */
+  let swapping = 0
   const reshape = () => {
     clearTimeout(reshaping)
     reshaping = setTimeout(() => void relayout(), 300)
@@ -299,7 +303,7 @@ async function main() {
     const next = stageAspect()
     if (Math.abs(Math.log(next / rootAspect)) < Math.log(1.15)) return
     // A live update or another relayout in flight: try again once it is done.
-    if (morph || relaying) return reshape()
+    if (morph || relaying || swapping) return reshape()
     relaying = true
     const was = atWhole(), before = tree
     rootAspect = next
@@ -318,11 +322,13 @@ async function main() {
       world.content.set(placed.content)
       world.local = local
       renderer.router.reset()
-      if (was) setWhole()
+      // At the whole map before and still now (the reader may have moved while it was laid out).
+      if (was && atWhole()) setWhole()
       else if (anchor > 0) {
         const z = cam.z * (w0 / r[a + 2])
         cam.set(r[a] - (sx - cam.w / 2) / z, r[a + 1] - (sy - cam.h / 2) / z, z)
       }
+      if (!(was && atWhole())) renderer.wholeZ = frameFor(0).z
     } finally { relaying = false }
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
@@ -926,10 +932,12 @@ async function main() {
     raw = json
     const swapStart = performance.now()
     const next = new Tree(json, { types: showTypes })
-    const nextJobs = layoutJobs(next, coupling, rootAspect)
+    const aspect = rootAspect
+    const nextJobs = layoutJobs(next, coupling, aspect)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
-    const fresh = rerun.length ? await runLayout(rerun) : new Map()
+    swapping++
+    const fresh = await (rerun.length ? runLayout(rerun) : Promise.resolve(new Map<number, LocalLayout>())).finally(() => { swapping-- })
     const nextLocal = new Map([...reused, ...fresh])
     const target = placeWorld(next, nextLocal)
     const diff = diffModels(tree, next)
@@ -980,6 +988,8 @@ async function main() {
     if (said || changed) controls.toast.show(said ?? `Map updated · ${describeDiff(diff, next)}`)
     arrowLegend()
     console.info(`live update: ${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
+    // The stage changed shape while this version was being laid out: lay it out for the new one.
+    if (rootAspect !== aspect) { rootAspect = aspect; reshape() }
   }
   /** Advances the morph: positions and the camera move together from the old version to the new. */
   const stepMorph = (t: number) => {
