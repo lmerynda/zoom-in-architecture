@@ -96,23 +96,32 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
  */
 export function separate(routes: { s: number; t: number; pts: number[] }[]) {
   const placed: { v: boolean; at: number; a: number; b: number }[] = []
+  const stretch = (p: number[], k: number) => {
+    const x0 = p[k * 2], y0 = p[k * 2 + 1], x1 = p[k * 2 + 2], y1 = p[k * 2 + 3]
+    const v = Math.abs(x0 - x1) < 0.5
+    if (!v && Math.abs(y0 - y1) >= 0.5) return null
+    return { v, at: v ? x0 : y0, a: Math.min(v ? y0 : x0, v ? y1 : x1), b: Math.max(v ? y0 : x0, v ? y1 : x1) }
+  }
+  const on = (q: { v: boolean; at: number; a: number; b: number }) => placed.some(o => o.v === q.v && Math.abs(o.at - q.at) < 0.5 && o.a < q.b - 0.5 && q.a < o.b - 0.5)
   for (const r of routes) {
     const p = r.pts, n = p.length / 2
-    for (let k = 0; k + 1 < n; k++) {
-      const x0 = p[k * 2], y0 = p[k * 2 + 1], x1 = p[k * 2 + 2], y1 = p[k * 2 + 3]
-      const v = Math.abs(x0 - x1) < 0.5
-      if (!v && Math.abs(y0 - y1) >= 0.5) continue
-      const at = v ? x0 : y0, a = Math.min(v ? y0 : x0, v ? y1 : x1), b = Math.max(v ? y0 : x0, v ? y1 : x1)
-      const others = placed.filter(o => o.v === v && Math.abs(o.at - at) < LANE * 5 && o.a < b - 0.5 && a < o.b - 0.5)
-      let lane = 0
-      while (others.some(o => Math.abs(o.at - (at + lane * LANE)) < 0.5)) lane = lane > 0 ? -lane : 1 - lane
-      // Three lanes each side fit in half a gutter; past that the stretch stays on the line.
-      if (Math.abs(lane) > 3) lane = 0
-      if (lane) {
-        if (v) { p[k * 2] += lane * LANE; p[k * 2 + 2] += lane * LANE } else { p[k * 2 + 1] += lane * LANE; p[k * 2 + 3] += lane * LANE }
+    // Moving one stretch over lengthens the ones beside it: passes repeat until no stretch of the
+    // route lies on another arrow (or a stretch has used its three lanes).
+    for (let pass = 0; pass < 4; pass++) {
+      let moved = false
+      for (let k = 0; k + 1 < n; k++) {
+        const q = stretch(p, k)
+        if (!q || !on(q)) continue
+        let lane = 1
+        while (Math.abs(lane) <= 3 && on({ ...q, at: q.at + lane * LANE })) lane = lane > 0 ? -lane : 1 - lane
+        // Three lanes each side fit in half a gutter; past that the stretch stays on the line.
+        if (Math.abs(lane) > 3) continue
+        if (q.v) { p[k * 2] += lane * LANE; p[k * 2 + 2] += lane * LANE } else { p[k * 2 + 1] += lane * LANE; p[k * 2 + 3] += lane * LANE }
+        moved = true
       }
-      placed.push({ v, at: at + lane * LANE, a, b })
+      if (!moved) break
     }
+    for (let k = 0; k + 1 < n; k++) { const q = stretch(p, k); if (q) placed.push(q) }
   }
 }
 

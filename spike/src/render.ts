@@ -515,12 +515,12 @@ export class Renderer {
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
-    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.35)
+    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.5)
     // A card's edge reads at 3:1 against the container it sits in: closed parts inside an open one
     // are cards, not faint boxes. An external system stays the quietest, an outline over the map.
     // The edge comes in faster than the card it bounds as a level opens (it is what tells a card from
     // the box it sits in), and is lightened enough to read at 3:1 against that box.
-    border.alpha = Math.min(1, alpha * 1.6) * (sel || ends ? 1 : hot ? 0.95 : outside ? 0.45 : isContainer ? 0.9 : 0.8) * dim
+    border.alpha = Math.min(1, alpha * 1.6) * (sel || ends || isContainer ? 1 : hot ? 0.95 : outside ? 0.45 : 0.85) * dim
 
     // Only a live update glows, for a moment; selection and its ends are outlined (drawOutlines, borders).
     if (flashA > 0.02) {
@@ -927,11 +927,13 @@ export class Renderer {
       // project's own tests, a runtime call the trace could have seen and no test made. A call from
       // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
       // A type-only import is dotted, so it never reads as an unseen call (dashed).
-      const dashed = e.typesOnly || (e.runtime && e.traceable && !e.seen)
+      // A highlighted arrow is drawn for what it carries across the focus, not the whole folded arrow.
+      const typesOnly = hot ? e.focusTypesOnly : e.typesOnly
+      const dashed = typesOnly || (hot ? e.focusRuntime && e.focusTraceable && !e.focusSeen : e.runtime && e.traceable && !e.seen)
       this.lines[this.lines.length - 1].dashed = dashed
       // Round caps grow with the stroke, so the gaps grow with it too: a heavy line keeps its pattern.
       const cap = TIER_W[tier] + 1
-      const marks = e.typesOnly ? dashes(clipped, 0.5, cap + 4) : dashed ? dashes(clipped, 7, cap + 4) : [clipped]
+      const marks = typesOnly ? dashes(clipped, 0.5, cap + 4) : dashed ? dashes(clipped, 7, cap + 4) : [clipped]
       strokes[kind][tier].push(...marks)
       // In focus a line takes the colour of its direction; a call at runtime keeps its kind as a
       // violet rim under that colour, so a selection never erases what kind of arrow it is.

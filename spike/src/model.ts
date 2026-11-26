@@ -237,8 +237,14 @@ export interface ShownEdge {
   focusRel: number
   /** Some folded relation is a call at runtime; every one is a type-only import. */
   runtime: boolean
-  /** Some relation crossing the focus boundary is a call at runtime (what a highlighted arrow carries). */
+  /**
+   * The same, for only the relations crossing the focus boundary (what a highlighted arrow carries):
+   * some is a runtime call, every one is type-only, some runtime call was seen, or could have been.
+   */
   focusRuntime: boolean
+  focusTypesOnly: boolean
+  focusSeen: boolean
+  focusTraceable: boolean
   typesOnly: boolean
   /** Some folded runtime call is one the trace could have seen (see Tree.relTraceable). */
   traceable: boolean
@@ -266,7 +272,7 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, typesOnly: true, seen: false, traceable: false }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: true, seen: false, traceable: false }))
     e.count++
     const kind = tree.relKind[k >> 1]
     if (kind === 'runtime') e.runtime = true
@@ -279,7 +285,12 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
       if (fi && !ti) e.out = true
       if (ti && !fi) e.in = true
       if (fi !== ti && e.focusCount++ === 0) e.focusRel = k >> 1
-      if (fi !== ti && kind === 'runtime') e.focusRuntime = true
+      if (fi !== ti) {
+        if (kind === 'runtime') e.focusRuntime = true
+        if (kind !== 'types') e.focusTypesOnly = false
+        if (tree.relSeen[k >> 1] > 0) e.focusSeen = true
+        if (tree.relTraceable[k >> 1]) e.focusTraceable = true
+      }
     }
   }
   return [...out.values()]
