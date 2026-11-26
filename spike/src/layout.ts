@@ -70,7 +70,7 @@ export interface LayoutJob {
    * (a type it names, a branch). Placed in reading order (lanePlace).
    */
   lane?: number[]
-  /** Width over height the level aims for; the content box's by default. A phone held upright lays the whole map out tall. */
+  /** Width over height the level aims for; the content box's by default. The whole map aims for the stage's shape. */
   aspect?: number
 }
 

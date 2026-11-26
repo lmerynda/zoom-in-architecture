@@ -391,6 +391,24 @@ try {
   // On main they covered 19-74%.
   check('a container of parts is filled by them: none under 55%, those of three or more over 80%', fill.least.cover >= 55 && fill.many.length > 0 && fill.many.every(f => f.cover >= 80), JSON.stringify(fill))
   check('a container of two parts is filled, not a small cluster', fill.few.length > 0 && fill.few.every(f => f.cover >= 55), JSON.stringify(fill.few))
+
+  // The whole map is laid out for the stage's shape: it fills the stage on one side, at 1920 wide
+  // and on a phone held sideways, and the cards inside Game server carry readable titles at 1920.
+  for (const [width, height, mobile] of [[1920, 1080, false], [844, 390, true]]) {
+    await page.setViewport({ width, height, isMobile: mobile, hasTouch: mobile })
+    await open('model=knights-of-darkness')
+    await landed()
+    await sleep(600)
+    const whole = await page.evaluate(() => {
+      const s = window.__spike, r = s.world.rect, z = s.cam.z, stage = document.getElementById('stage').getBoundingClientRect()
+      const top = document.getElementById('top').getBoundingClientRect().bottom + 8, bottom = stage.bottom - (innerWidth < 1100 ? 58 : 28)
+      const k = s.tree.children[s.id('backend')][0]
+      return { across: +((r[2] * z) / stage.width).toFixed(2), down: +((r[3] * z) / (bottom - top)).toFixed(2), nested: +Math.min(r[k * 4 + 3] * z * 0.15, 24).toFixed(1) }
+    })
+    check(`at ${width}×${height} the whole map fills the stage on one side`, Math.max(whole.across, whole.down) >= 0.9, JSON.stringify(whole))
+    if (width === 1920) check('at 1920 the cards inside the server are titled at 10 px or more', whole.nested >= 10, JSON.stringify(whole))
+  }
+  await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)

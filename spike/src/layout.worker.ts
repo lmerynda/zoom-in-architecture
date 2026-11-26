@@ -4,6 +4,9 @@ import { ChannelGrid } from './route'
 
 const elk = new ELK()
 
+/** Aspect targets tried for a level that must fit a given shape, as multiples of that shape. */
+const ASPECT_TRIES = [0.5, 0.7, 0.85, 1, 1.2, 1.45, 1.75, 2.1, 2.6, 3.2]
+
 // Packs cards into a near-grid that fills the parent card; edges are routed afterwards
 // through the gutters, which rectpacking leaves GUTTER wide.
 const OPTIONS = {
@@ -22,17 +25,27 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
   // Coupling-view levels are placed centre-out by importance; the rest are packed by ELK.
   // A request's path is placed in reading order.
   const packed = jobs.filter(j => !j.weights && !j.lane)
+  // ELK takes the aspect ratio as a loose target: a level that must fit a given shape (the whole
+  // map, the stage) is packed for several targets around it, and the packing that comes out
+  // largest in that shape is kept.
+  const tries = (job: LayoutJob) => (job.aspect ? [...ASPECT_TRIES.map(t => job.aspect! * t), CONTENT_ASPECT] : [CONTENT_ASPECT])
+  const runs = packed.flatMap(job => tries(job).map(a => ({ job, a })))
   const root: ElkNode = {
     id: 'root',
     layoutOptions: { 'elk.algorithm': 'box' },
-    children: packed.map(job => ({
-      id: `c${job.id}`,
-      layoutOptions: job.aspect ? { ...OPTIONS, 'elk.aspectRatio': String(job.aspect) } : OPTIONS,
+    children: runs.map(({ job, a }, n) => ({
+      id: `c${job.id}~${n}`,
+      layoutOptions: { ...OPTIONS, 'elk.aspectRatio': String(a) },
       children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: cardH(job.spans[k]) })),
     })),
   }
-  const g = packed.length ? await elk.layout(root) : { children: [] }
-  const elkOf = new Map(packed.map((j, n) => [j.id, g.children![n]]))
+  const g = runs.length ? await elk.layout(root) : { children: [] }
+  const elkOf = new Map<number, ElkNode>()
+  runs.forEach(({ job }, n) => {
+    const c = g.children![n], best = elkOf.get(job.id), want = job.aspect ?? CONTENT_ASPECT
+    const fit = (e: ElkNode) => Math.min(want / e.width!, 1 / e.height!)
+    if (!best || fit(c) > fit(best) + 1e-12) elkOf.set(job.id, c)
+  })
   return jobs.map(job => {
     let pos: number[], w: number, h: number
     if (job.lane) ({ pos, w, h } = lanePlace({ ...job, lane: job.lane }))

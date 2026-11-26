@@ -160,8 +160,17 @@ async function main() {
   let tree = new Tree(model, { types: showTypes })
   let published = model.published
   // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
-  const portraitAspect = () => (innerWidth < 700 && innerHeight > innerWidth * 1.2 ? Math.max(0.45, innerWidth / Math.max(1, innerHeight - 220)) : undefined)
-  let rootAspect = portraitAspect()
+  /**
+   * The whole map is laid out for the room it is shown in: the stage below the top bar, left of a
+   * wide screen's details column, above the arrow legend or a narrow screen's folded sheet. A wide
+   * screen fills its stage rather than its middle, and a phone, upright or on its side, its width.
+   */
+  const stageAspect = () => {
+    const stage = $('stage').getBoundingClientRect(), top = $('top').getBoundingClientRect().bottom + 8
+    const bottom = stage.bottom - (innerWidth < 1100 ? 58 : 28)
+    return Math.min(4, Math.max(0.45, stage.width / Math.max(1, bottom - top)))
+  }
+  let rootAspect = stageAspect()
   let jobs = layoutJobs(tree, coupling, rootAspect)
   const tLayout = performance.now()
   let local = await runLayout(jobs)
@@ -259,14 +268,21 @@ async function main() {
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
     measureHud()
-    const next = portraitAspect()
-    if (!!next !== !!rootAspect) {
+    reshape()
+  }
+  /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
+  let reshaping: ReturnType<typeof setTimeout> | undefined
+  const reshape = () => {
+    clearTimeout(reshaping)
+    reshaping = setTimeout(() => {
+      const next = stageAspect()
+      if (Math.abs(Math.log(next / rootAspect)) < Math.log(1.15)) return
       rootAspect = next
       void swapModel(raw).then(() => {
         const settled = () => { if (morph) return void requestAnimationFrame(settled); if (renderer.selected <= 0) fit(0) }
         settled()
       })
-    }
+    }, 300)
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
@@ -287,6 +303,10 @@ async function main() {
     const h = $('top').getBoundingClientRect().height
     document.documentElement.style.setProperty('--bar', `${h}px`)
     setSafeTop(h)
+    // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
+    // the whole map is framed again for it while you have not moved from it.
+    if (renderer.selected <= 0 && !cam.flying && renderer.wholeZ > 0 && Math.abs(cam.z / renderer.wholeZ - 1) < 0.02) fit(0)
+    reshape()
   }).observe($('top'))
 
   // Whether the last input was a key (focus rings show) or a pointer (they need not).
