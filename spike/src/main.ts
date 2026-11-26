@@ -852,9 +852,12 @@ async function main() {
     // Going into the place puts the arrow down and shows its outline and list, its row expanded for focus.
     problemFocus = problemKey(tree, problems!.list[problemAt])
     const home = listHome, at = home ? tree.byId.get(home.id) ?? 0 : 0
-    // The view it was opened from, when the map and the window are as they were then; else into the part again.
-    if (home && home.version === liveVersion && home.size === `${cam.w}x${cam.h}` && home.view.here === (at > 0 ? home.id : null)) { controls.visit(home.view); controls.remember(at) }
-    else controls.enterPlace(at)
+    // The view it was opened from, when the map and the window are as they were then; else the whole
+    // part across the screen, which keeps it the place (going into a crowded part frames a card inside it).
+    const same = home && home.version === liveVersion && home.size === `${cam.w}x${cam.h}` && home.view.here === (at > 0 ? home.id : null)
+    const r = world.rect, whole = { x: r[at * 4] + r[at * 4 + 2] / 2, y: r[at * 4 + 1] + r[at * 4 + 3] / 2, z: Math.min(cam.w / r[at * 4 + 2], cam.h / r[at * 4 + 3]), selected: null, here: at > 0 ? tree.els[at].id : null }
+    controls.visit(same ? home!.view : whole)
+    controls.remember(at)
   }
   /** Whether the panel shows a problem's arrow now. */
   const problemShown = () => problemAt >= 0 && details.querySelector('.d-problem') != null
@@ -1109,7 +1112,8 @@ async function main() {
         ? (() => {
           const li = [...details.querySelectorAll<HTMLElement>('li[data-rel]')].find(li => relId(next, Number(li.dataset.rel)) === f.rel)
           const buttons = [...(li?.querySelectorAll<HTMLElement>('button') ?? [])]
-          return (f.cite ? buttons.find(b => b.classList.contains('cite') && b.title.split(': ')[0] === f.cite) : buttons[Number(f.at)]) ?? null
+          // A citation that is gone leaves focus on its relation's own button, in the same row.
+          return (f.cite ? buttons.find(b => b.classList.contains('cite') && b.title.split(': ')[0] === f.cite) : buttons[Number(f.at)]) ?? buttons[0] ?? null
         })()
         : f.tag === 'H2' ? details.querySelector<HTMLElement>('h2') : [...details.querySelectorAll<HTMLElement>('button')].find(e => e.textContent === f.text) ?? null
       if (control?.tagName === 'H2') control.tabIndex = -1
