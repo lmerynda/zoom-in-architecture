@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { searchMap } from './controls/logic'
-import { buildApi, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
+import { buildApi, callsIn, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
 import type { ElementJson, ModelJson } from './model'
 import { placeUrl } from './places'
 
@@ -69,6 +69,19 @@ describe('handlerParams and takenTypes', () => {
     expect([...takenTypes(params, ['AuthRequestDto', 'AuthResponseDto'])]).toEqual([['AuthRequestDto', 'the request body']])
     expect([...takenTypes('@PathVariable UUID id, UserData user, @RequestParam Página p', ['UserData', 'Página', 'UUID'])]).toEqual([['UserData', 'a parameter of the handler'], ['Página', 'a query parameter'], ['UUID', 'in the path']])
     expect(takenTypes('', ['X']).size).toBe(0)
+  })
+})
+
+describe('callsIn', () => {
+  it('finds the endpoints a page calls by its handlers\' names, in either case style', () => {
+    const api = buildApi(requests)
+    expect(callsIn('const r = await api.buyOffer(id, n)', api.endpoints)).toEqual(['server.market.e1'])
+    const snake = { ...api.endpoints[1], id: 'x', handler: { path: 'login.py', line: 1, name: 'login.reset_password' } }
+    expect(callsIn('LoginService.resetPassword({ requestBody })', [snake])).toEqual(['x'])
+    // Named, not called; too short or too common to tell an endpoint.
+    expect(callsIn('// buyOffer is elsewhere', api.endpoints)).toEqual([])
+    expect(callsIn('drop(x); list()', api.endpoints)).toEqual([])
+    expect(callsIn('', api.endpoints)).toEqual([])
   })
 })
 

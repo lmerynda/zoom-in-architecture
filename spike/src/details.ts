@@ -22,7 +22,11 @@ export interface PanelActions extends ApiActions {
   /** Goes into container i: framed open, nothing selected, the panel its outline. */
   enter: (i: number) => void
   /** A file's source as uploaded, to read a handler's parameters; null when the viewer has none. */
-  source: (path: string) => Promise<string | null>}
+  source: (path: string) => Promise<string | null>
+  /** The pages whose code calls an endpoint (by its Requests id), as Architecture cards. */
+  callingPages: (endpoint: string) => Promise<{ id: string; title: string }[]>
+  /** Goes to an Architecture card by id: selected here, or across to Architecture from Requests. */
+  part: (id: string) => void}
 
 /** Every relation between the subtrees of a and b, both directions, as relation indices. */
 export function relationsAcross(tree: Tree, a: number, b: number): number[] {
@@ -995,8 +999,18 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
       else if (tree.traced && rels.some(k => tree.relKind[k] === 'runtime')) { const t = el('em', 'd-seen-tag outside', 'outside the trace'); t.title = 'The trace watched only the apps the tests ran; this caller is outside them'; b.append(t) }
       ul.append(li)
     }
+    const none = el('div', 'd-none', 'no caller on this map')
     if (ul.childElementCount) s.append(ul)
-    else s.append(el('div', 'd-none', 'no caller on this map'))
+    else s.append(none)
+    // The pages whose code calls it, read from their source once it is here.
+    void act.callingPages(e.id).then(pages => {
+      if (!pages.length || !s.isConnected) return
+      none.remove()
+      const list = el('ul')
+      for (const p of pages) list.append(rowBtn(p.title, 'its code calls this endpoint', () => act.part(p.id), '←'))
+      s.querySelector('h3')!.textContent = `Called by · ${by.size + pages.length}`
+      s.append(el('div', 'd-sub', `Pages · ${pages.length}`), list)
+    })
   }
 
   // The steps that do it, one expand away.

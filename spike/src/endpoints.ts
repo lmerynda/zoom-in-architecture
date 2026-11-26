@@ -270,10 +270,11 @@ const nameWords = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowe
  * A feature where the product's parts meet its surface: the cards that carry it, the pages among
  * them (see isPage), the endpoints whose handler is in a card that carries it, and the tables those
  * endpoints touched in tests. A handler that carries several features (one controller for finding,
- * adding and showing owners) gives the feature the endpoints whose route and handler name every
- * word of it; the ones its words cannot tell apart are `shared`, said as such, not claimed.
+ * adding and showing owners) gives the feature the endpoints whose route and method name its words
+ * best; the ones its words cannot tell apart are `shared`, said as such, not claimed. A route
+ * that renders one of its pages, or that one of its pages calls, is its own.
  */
-export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string) {
+export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string, calls: Map<string, string[]> = new Map()) {
   const byId = new Map(els.map(e => [e.id, e]))
   const carriers = els.filter(e => e.features?.includes(name))
   const featuresOf = (id: string) => { const out = new Set<string>(); for (let a = byId.get(id); a; a = a.parent ? byId.get(a.parent) : undefined) for (const f of a.features ?? []) out.add(f); return out }
@@ -294,7 +295,9 @@ export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 
   // A route whose path renders a page that carries the feature serves it, whoever else its handler serves.
   const pagePaths = new Set(carriers.flatMap(e => (e.metadata?.path && isPage(e.metadata.path) ? [e.metadata.path] : [])))
   const renders = (ep: Endpoint) => ep.cards.some(c => pagePaths.has(c.path))
-  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || named(ep))) || renders(ep))
+  // A route one of its pages calls (`calls`: endpoint id → the page cards whose code calls it) serves it too.
+  const called = (ep: Endpoint) => (calls.get(ep.id) ?? []).some(p => pages.includes(p))
+  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || named(ep))) || renders(ep) || called(ep))
   const shared = carried.filter(ep => !endpoints.includes(ep))
   return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, shared, tables: mergeTables(endpoints.map(ep => ep.tables)) }
 }
@@ -316,6 +319,20 @@ export function handlerParams(src: string, line: number, method: string): string
     else if (text[k] === ')' && --depth === 0) return text.slice(open + 1, k)
   }
   return null
+}
+
+/** Handler names too common to say which endpoint a page calls by them alone. */
+const COMMON = new Set(['index', 'create', 'update', 'delete', 'remove', 'list', 'show', 'detail', 'details', 'handle', 'handler', 'read', 'get', 'post', 'put', 'patch', 'login', 'logout', 'main', 'root', 'health'])
+const ident = (s: string) => s.toLowerCase().replace(/_/g, '')
+
+/**
+ * The endpoints a page's source calls, by the handler's own name: a client that wraps the API in
+ * functions named after its handlers (`api.buyOffer(...)`, `LoginService.resetPassword(...)`) calls
+ * `buyOffer` and `reset_password`. Names too short or too common to tell an endpoint are skipped.
+ */
+export function callsIn(src: string, eps: Endpoint[]): string[] {
+  const called = new Set([...src.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)].map(m => ident(m[1])))
+  return eps.filter(ep => { const m = ident(ep.handler?.name.split('.').pop() ?? ''); return m.length >= 6 && !COMMON.has(m) && called.has(m) }).map(ep => ep.id)
 }
 
 /** The line (1-based) a method of that name is first declared on, called with a parameter list; 0 when none is. */

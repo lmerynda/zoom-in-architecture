@@ -258,7 +258,17 @@ try {
   await page.waitForFunction(() => /Also names/.test(document.querySelector('#details .d-effect.takes')?.textContent ?? ''), { timeout: 10000 }).catch(() => {})
   const auth = await page.evaluate(() => { const s = document.querySelector('#details .d-effect.takes'); return { taken: [...s.querySelectorAll('ul')[0].querySelectorAll('.d-rel')].map(b => b.innerText.replace(/\s+/g, ' ')), also: s.querySelectorAll('ul')[1]?.innerText ?? '' } })
   check('authenticate takes AuthRequestDto as its body and only names AuthResponseDto', auth.taken.some(t => t.startsWith('AuthRequestDto the request body')) && !auth.taken.some(t => t.startsWith('AuthResponseDto')) && auth.also.includes('AuthResponseDto'), JSON.stringify(auth))
+  // The pages whose code calls buy, read from their source; each opens in Architecture.
+  await open(`${map}&view=requests&at=backend.market.e1`)
+  await page.waitForFunction(() => /Pages · /.test(document.querySelector('#details .d-effect.callers')?.textContent ?? ''), { timeout: 15000 }).catch(() => {})
+  const callingPages = await page.evaluate(() => [...document.querySelectorAll('#details .d-effect.callers ul')].at(-1)?.innerText.split('\n').filter(t => !/calls this/.test(t) && t.trim() && t !== '←') ?? [])
+  check('buy names both pages that call it: Market and Alliance', callingPages.includes('Market') && callingPages.includes('Alliance'), JSON.stringify(callingPages))
+  await clickText('#details .d-effect.callers .d-rel', '←Market')
+  await crossed('')
+  check('a calling page opens in Architecture', (await selected()) === 'browser.pages.market', String(await selected()))
+
   // A type it returns can be what it is sent too: create takes the offer it answers with.
+  await open(`${map}&view=requests`)
   const createId = await page.evaluate(() => window.__spike.tree.els.find(e => e.title === 'POST /market/create').id)
   await open(`${map}&view=requests&at=${createId}`)
   await page.waitForFunction(() => /^Takes · /.test(document.querySelector('#details .d-effect.takes h3')?.textContent ?? ''), { timeout: 10000 }).catch(() => {})
@@ -344,7 +354,7 @@ try {
   await open('model=galaxy-wars')
   check('a person who builds and runs the system calls no endpoint', await page.evaluate(() => { const s = window.__spike; return s.renderer.surface(s.id('developer')) === '' }))
   // Words that tell a shared handler's routes apart give each feature its own.
-  for (const [f, want, not] of [['Login with JWT authentication', 'POST /api/v1/login/access-token', 'POST /api/v1/password-recovery/{email}'], ['Email-based password recovery', 'POST /api/v1/password-recovery/{email}', 'POST /api/v1/login/access-token']]) {
+  for (const [f, want, not] of [['Login with JWT authentication', 'POST /api/v1/login/access-token', 'POST /api/v1/password-recovery/{email}'], ['Email-based password recovery', 'POST /api/v1/password-recovery/{email}', 'POST /api/v1/login/access-token'], ['Email-based password recovery', 'POST /api/v1/reset-password', 'POST /api/v1/login/test-token']]) {
     await open('model=fastapi-cold')
     await page.evaluate(f => window.__spike.controls.feature(f), f)
     await sleep(400)

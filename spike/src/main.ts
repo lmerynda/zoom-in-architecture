@@ -3,7 +3,7 @@ import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
 import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
-import { buildApi, clientParts, endpointOf, featureFacts, markedEntries, topCounts, type ApiFilter } from './endpoints'
+import { buildApi, callsIn, clientParts, endpointOf, featureFacts, isPage, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -414,6 +414,8 @@ async function main() {
     go: j => controls.goSelect(j),
     // A file this view does not show (a scheduled job, from Requests) opens in Architecture.
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line); else if (view === 'requests') cross(null, { at: null, file: path, line }) },
+    part: id => { if (view === 'requests') return cross(null, { at: id }); const j = tree.byId.get(id) ?? -1; if (j > 0) controls.goSelect(j) },
+    callingPages: async id => { const ids = (await pageCalls()).get(id) ?? []; const t = new Map(archEls().map(e => [e.id, e.title])); return ids.map(p => ({ id: p, title: t.get(p) ?? p })) },
     source: path => {
       if (!sources.has(path)) sources.set(path, fetch(`${import.meta.env.BASE_URL}source/${encodeURIComponent(modelName)}?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.text() : null), () => null).then(t => { if (t == null) sources.delete(path); return t }))
       // A failed read is not kept: the next selection asks again.
@@ -473,6 +475,7 @@ async function main() {
     surface.api = api?.endpoints.length ? api : null
     surface.marks = markedEntries(view === 'requests' && other ? other.elements : raw.elements)
     surfaceText = cardSurface()
+    callsRead = null
     renderer.surface = i => surfaceText.get(i) ?? ''
     if (held?.kind === 'api') showApi(held.filter)
     else if (held?.kind === 'feature') showFeature(held.name)
@@ -607,24 +610,36 @@ async function main() {
     if (again) again.focus({ preventScroll: true })
     else if (inPanel) focusHeading()
   }
+  /**
+   * Which pages call which endpoints, read once from the pages' uploaded code (see callsIn): endpoint
+   * id → the Architecture cards of the pages that call it. Read again when the surface changes.
+   */
+  let callsRead: Promise<Map<string, string[]>> | null = null
+  const pageCalls = (): Promise<Map<string, string[]>> => {
+    const api = surface.api, pages = archEls().filter(e => e.metadata?.path && isPage(e.metadata.path))
+    if (!api || !pages.length) return Promise.resolve(new Map())
+    return (callsRead ??= Promise.all(pages.map(async p => ({ id: p.id, eps: callsIn((await actions.source(p.metadata!.path)) ?? '', api.endpoints) }))).then(list => {
+      const m = new Map<string, string[]>()
+      for (const { id, eps } of list) for (const e of eps) m.set(e, [...(m.get(e) ?? []), id])
+      return m
+    }))
+  }
   /** The elements features are read from: the Architecture model's, which carries them. */
   const archEls = () => (view === 'requests' ? other?.elements ?? [] : raw.elements)
   /**
    * A feature in the panel: its pages, its endpoints with their effects, the tables they touch and
    * the parts that carry it. False when the map has nothing for it.
    */
-  const showFeature = (name: string): boolean => {
+  const showFeature = (name: string, calls: Map<string, string[]> = new Map()): boolean => {
     const els = archEls()
-    const facts = featureFacts(els, surface.api, name)
+    const facts = featureFacts(els, surface.api, name, calls)
     if (!facts.parts.length && !facts.pages.length && !facts.endpoints.length) return false
     const inPanel = details.contains(document.activeElement)
     hold({ kind: 'feature', name })
     const titles = new Map(els.map(e => [e.id, e.title]))
-    renderFeature(details, name, facts, id => titles.get(id) ?? id, {
-      part: id => { if (view === 'requests') return cross(null, { at: id }); const j = tree.byId.get(id) ?? -1; if (j > 0) controls.goSelect(j) },
-      endpoint: id => openEndpoint(id),
-      list: showApi,
-    })
+    renderFeature(details, name, facts, id => titles.get(id) ?? id, { part: actions.part, endpoint: id => openEndpoint(id), list: showApi })
+    // Once the pages' code is read, the routes they call join the feature (drawn again, focus kept).
+    if (!calls.size) void pageCalls().then(m => { if (m.size && held?.kind === 'feature' && held.name === name) { const f = details.contains(document.activeElement); showFeature(name, m); if (f) focusHeading() } })
     $('announce').textContent = `Feature ${name}: ${facts.pages.length} page${facts.pages.length === 1 ? '' : 's'}, ${facts.endpoints.length} endpoint${facts.endpoints.length === 1 ? '' : 's'}`
     if (inPanel) focusHeading()
     return true
