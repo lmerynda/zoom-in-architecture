@@ -331,8 +331,18 @@ async function main() {
       if (tree !== before) return
       jobs = nextJobs
       local = new Map([...reused, ...fresh])
-      const anchor = renderer.selected > 0 ? renderer.selected : renderer.pick(cam.w / 2, cam.h / 2)
-      const r = world.rect, a = anchor * 4, [sx, sy] = cam.toScreen(r[a], r[a + 1]), w0 = r[a + 2]
+      // The card the camera is about: where a flight under way is going (a card picked, a crumb,
+      // Enter), else the selection, else the card at the screen's centre.
+      const r = world.rect, dest = cam.destination
+      const deepestAt = (wx: number, wy: number) => {
+        for (let cur = 0; ;) {
+          const next = tree.children[cur].find(k => wx >= r[k * 4] && wy >= r[k * 4 + 1] && wx <= r[k * 4] + r[k * 4 + 2] && wy <= r[k * 4 + 1] + r[k * 4 + 3])
+          if (next == null) return cur
+          cur = next
+        }
+      }
+      const anchor = dest ? deepestAt(dest[0], dest[1]) : renderer.selected > 0 ? renderer.selected : renderer.pick(cam.w / 2, cam.h / 2)
+      const a = anchor * 4, [ax, ay, aw] = [r[a], r[a + 1], r[a + 2]]
       const placed = placeWorld(tree, local)
       world.rect.set(placed.rect)
       world.content.set(placed.content)
@@ -340,12 +350,8 @@ async function main() {
       renderer.router.reset()
       // At the whole map before and still now (the reader may have moved while it was laid out).
       if (was && atWhole()) setWhole()
-      // A flight under way (a card picked meanwhile) flies on to where its card now is.
-      else if (cam.flying) { if (renderer.selected > 0) fit(renderer.selected) }
-      else if (anchor > 0) {
-        const z = cam.z * (w0 / r[a + 2])
-        cam.set(r[a] - (sx - cam.w / 2) / z, r[a + 1] - (sy - cam.h / 2) / z, z)
-      }
+      // Otherwise the camera moves with that card, a flight or a wheel zoom under way included.
+      else if (anchor > 0) cam.remap(ax, ay, r[a], r[a + 1], r[a + 2] / aw)
       if (!(was && atWhole())) renderer.wholeZ = frameFor(0).z
     } finally { relaying = false }
   }
@@ -955,11 +961,15 @@ async function main() {
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
   let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number] } | null = null
   let liveVersion = 0
+  /** A live update arrived while the reader was at the whole map: frame it whole again after its morph. */
+  let refitAfterMorph = false
   const swapModel = async (json: ModelJson, buildMs = 0, said?: string) => {
     raw = json
     const swapStart = performance.now()
     const next = new Tree(json, { types: showTypes })
     const aspect = rootAspect
+    // At the whole map, a new version is framed whole again once it has moved into place.
+    refitAfterMorph = atWhole()
     const nextJobs = layoutJobs(next, coupling, aspect)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
@@ -1032,7 +1042,7 @@ async function main() {
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
     }
     renderer.router.invalidate()
-    if (u >= 1) morph = null
+    if (u >= 1) { morph = null; if (refitAfterMorph && renderer.selected <= 0) fit(0); refitAfterMorph = false }
   }
   let pending: Promise<void> = Promise.resolve()
   import.meta.hot?.on('model:update', ({ name }: { name: string }) => {

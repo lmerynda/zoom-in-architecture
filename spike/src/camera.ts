@@ -73,6 +73,30 @@ export class Camera {
     this.targetLogZ = factor > 1 ? Math.min(next, Math.max(Math.log(maxZ), this.targetLogZ)) : Math.max(next, Math.min(Math.log(minZ), this.targetLogZ))
   }
 
+  /**
+   * The world was laid out again under the camera: a card that stood at (ax, ay) now stands at
+   * (bx, by), k times its old size. The view, a wheel zoom easing in and a flight under way all
+   * move with it, so nothing in motion is stopped or sent to the old place.
+   */
+  remap(ax: number, ay: number, bx: number, by: number, k: number) {
+    const mx = (x: number) => bx + (x - ax) * k, my = (y: number) => by + (y - ay) * k
+    this.x = mx(this.x); this.y = my(this.y); this.z /= k
+    this.targetLogZ -= Math.log(k)
+    if (this.anchor) { this.anchor.wx = mx(this.anchor.wx); this.anchor.wy = my(this.anchor.wy) }
+    const f = this.fly
+    if (f) {
+      const at = f.at
+      this.fly = { ...f, at: s => { const [cx, cy, vw] = at(s); return [mx(cx), my(cy), vw * k] } }
+    }
+  }
+
+  /** Where a flight under way ends: its centre in world units, or null. */
+  get destination(): [number, number] | null {
+    if (!this.fly) return null
+    const [cx, cy] = this.fly.at(this.fly.S)
+    return [cx, cy]
+  }
+
   /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */
   panBy(dx: number, dy: number) {
     this.fly = null
