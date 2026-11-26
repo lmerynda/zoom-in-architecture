@@ -118,6 +118,12 @@ function liveModels(): Plugin {
 
 export default defineConfig({
   plugins: [liveModels()],
+  // The viewer's own pages are its only entries: without this, the dependency scan crawls every
+  // uploaded project's sources under imports/ and reports their packages as missing.
+  optimizeDeps: { entries: ['index.html', 'recorder.html'] },
+  // Pre-bundled dependencies per checkout, not in node_modules: worktrees share node_modules, and
+  // one server re-optimizing there sends the others' pages 504 "Outdated Optimize Dep".
+  cacheDir: '.cache/vite',
   // Some tests build a real repository's graph: a few seconds alone, more on a busy machine, where
   // the 5 s default failed them for no fault of the code.
   test: { testTimeout: 30_000 },
