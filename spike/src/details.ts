@@ -258,7 +258,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
     ...(endpoint ? endpointEffects(tree, i, act, api, path2) : path2),
     // Which pages and tests made its requests (traces.ts).
-    ...traceSections(tree, i, act.go),
+    ...traceSections(tree, i, act),
     section('Uses', 'out', 'uses', uses),
     section('Used by', 'in', 'usedBy', usedBy),
   )

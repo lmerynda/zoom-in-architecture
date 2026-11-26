@@ -12,10 +12,11 @@
 //                                                         --watch uploads again whenever the repo's code changes
 //   node scripts/zoom.mjs pull <name> [--to <url>]       the map an import was last published with, to start a re-map from;
 //                                                         on stderr, the commit it was built from
-//   node scripts/zoom.mjs trace <repo> [--out <file>] [--no-tests] -- <command…>   run the project's own end-to-end tests with
+//   node scripts/zoom.mjs trace <repo> [--out <file>] [--no-tests] [--methods] -- <command…>   run the project's own end-to-end tests with
 //                                                         tracing attached (JVM servers, via JAVA_TOOL_OPTIONS) and write
 //                                                         what they executed, per endpoint, with the page and the test behind each request
-//                                                         (--no-tests: no Node preload, for a Node before 18.19); publish --trace <file> adds it
+//                                                         (--no-tests: no Node preload, for a Node before 18.19; --methods: the call tree
+//                                                         of the project's own Java methods per endpoint); publish --trace <file> adds it
 //   node scripts/zoom.mjs follow <repo> <map.json> [--since <rev>]   move evidence whose line moved since <rev>
 //                                                         (default HEAD) to the one line that reads as it did; rewrites the map
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
@@ -27,7 +28,7 @@ import { join, posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, toName } from './map.mjs'
-import { observe, runTraced } from './trace.mjs'
+import { runTraced } from './trace.mjs'
 import { tmpdir } from 'node:os'
 
 /** Files whose change can change the map: code, project manifests and server-side views. */
@@ -145,7 +146,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const args = dash >= 0 ? argv.slice(0, dash) : argv
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined }
   const flag = k => { const i = args.indexOf(k); return i >= 0 && !!args.splice(i, 1) }
-  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); const since = opt('--since'); const out = opt('--out'); const trace = opt('--trace'); const noTests = flag('--no-tests'); Object.assign(args, { name, under, to, json, folders, uncited, watching, since, out, trace, noTests }); return args })()
+  const [cmd, a, b] = (() => { const name = opt('--name'); const under = opt('--under'); const to = opt('--to'); const json = flag('--json'); const folders = flag('--folders'); const uncited = flag('--uncited'); const watching = flag('--watch'); const since = opt('--since'); const out = opt('--out'); const trace = opt('--trace'); const noTests = flag('--no-tests'); const methods = flag('--methods'); Object.assign(args, { name, under, to, json, folders, uncited, watching, since, out, trace, noTests, methods }); return args })()
   const service = args.to ?? process.env.ZOOM_URL ?? 'http://localhost:5180'
   const readMap = f => JSON.parse(readFileSync(f, 'utf8'))
   try {
@@ -200,8 +201,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       }
     } else if (cmd === 'trace' && a && command.length) {
       // The project's tests run as the project runs them; only the tracing is added.
-      const t = await runTraced(a, command, { log: s => process.stderr.write(s), testNames: !args.noTests })
-      const o = { at: new Date().toISOString(), command: command.join(' '), exit: t.code, ms: t.ms, ...observe(t.spans, t.tests, { root: a }) }
+      const t = await runTraced(a, command, { log: s => process.stderr.write(s), testNames: !args.noTests, methods: args.methods })
+      const o = { at: new Date().toISOString(), command: command.join(' '), exit: t.code, ms: t.ms, ...t.observed }
       const file = args.out ?? join(tmpdir(), `zoom-trace-${args.name ?? toName(a)}.json`)
       writeFileSync(file, JSON.stringify(o, null, 1))
       console.log(`traced ${o.command} (exit ${t.code}, ${Math.round(t.ms / 1000)} s): ${o.spans} spans, ${o.endpoints.length} endpoints seen, ${o.endpoints.reduce((n, e) => n + e.count, 0)} requests; wrote ${file}`)

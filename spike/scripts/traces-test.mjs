@@ -1,8 +1,9 @@
 // End-to-end check of what made each request: a copy of the fixture repo gets a small React Router
 // app (a page that calls the orders API), and is published with a trace that says which page a
-// browser made each request from and which tests made them, as `zoom trace` writes it. The requests
-// view lists an endpoint's pages and tests; the architecture lists a page's endpoints, each a jump
-// to the file that serves it. Publishes under a name of its own and removes only that import.
+// browser made each request from, which tests made them, and (trace --methods) the call tree of the
+// project's own methods, as `zoom trace` writes it. The requests view lists an endpoint's pages,
+// tests and call tree, a method a jump into its code; the architecture lists a page's endpoints,
+// each a jump to the file that serves it. Publishes under a name of its own and removes only that import.
 // usage: node scripts/traces-test.mjs [outDir]   (dev server running; SPIKE_URL names it)
 import puppeteer from 'puppeteer-core'
 import { execFileSync } from 'node:child_process'
@@ -40,7 +41,8 @@ writeFileSync(join(scratch, 'map.json'), JSON.stringify(map))
 const tests = Object.fromEntries(Array.from({ length: 10 }, (_, k) => [`web.test.ts › orders > shows order ${k + 1}`, 10 - k]))
 writeFileSync(join(scratch, 'trace.json'), JSON.stringify({
   at: '2026-11-25T12:00:00.000Z', command: 'npm run test:browser', exit: 0, ms: 1000, spans: 40, background: {},
-  endpoints: [{ method: 'GET', route: '/api/orders', count: 57, statuses: { 200: 57 }, tables: { orders: ['SELECT'] }, code: { 'com.shop.orders.OrderController.all': 57 }, calls: {}, pages: { '/orders/1': 30, '/orders/2': 20, '/reset/t0ken-123': 3 }, tests, untimed: 2 }],
+  endpoints: [{ method: 'GET', route: '/api/orders', count: 57, statuses: { 200: 57 }, tables: { orders: ['SELECT'] }, code: { 'com.shop.orders.OrderController.all': 57 }, calls: {}, pages: { '/orders/1': 30, '/orders/2': 20, '/reset/t0ken-123': 3 }, tests, untimed: 2,
+    tree: [{ at: 'com.shop.orders.OrderController.all', count: 57, kids: [{ at: 'com.shop.orders.OrderRepository.findAll', count: 57, kids: [{ at: 'SELECT orders', count: 57 }] }] }] }],
 }))
 const cli = join(import.meta.dirname, 'zoom.mjs')
 const zoom = (...args) => {
@@ -103,6 +105,24 @@ try {
   await shot('1-endpoint-pages-and-tests')
   await page.keyboard.press('Enter')
   check('and closes it again', (await sections()).find(s => s.head.startsWith('Made by tests')).rows.filter(r => r.shown).length === 8)
+
+  // trace --methods: the call tree, its first level open, a method a jump to where it is declared.
+  const ct = await page.evaluate(() => {
+    const box = document.querySelector('#details .d-calltree')
+    return box && { head: box.querySelector('h3').textContent, rows: [...box.querySelectorAll('.d-rel')].map(r => ({ text: r.textContent, button: r.tagName === 'BUTTON', shown: r.checkVisibility() })) }
+  })
+  check('an endpoint shows its call tree, methods by class and method, the second level folded', ct?.head === 'Call tree in tests' && ct.rows[0].text === 'OrderController.all×57' && ct.rows[0].button && ct.rows[1].text === 'OrderRepository.findAll×57' && ct.rows[1].shown && ct.rows[2].text === 'SELECT orders×57' && !ct.rows[2].shown && !ct.rows[2].button, JSON.stringify(ct))
+  // The fold is its own control: by keyboard it opens the calls under a method, and says so.
+  await page.evaluate(() => document.querySelectorAll('#details .d-calltree .d-fold')[1].focus())
+  await page.keyboard.press('Enter')
+  const fold = await page.evaluate(() => { const b = document.activeElement; return { label: b.getAttribute('aria-label'), expanded: b.getAttribute('aria-expanded'), shown: [...document.querySelectorAll('#details .d-calltree .d-rel')][2].checkVisibility() } })
+  check('a fold opens the calls under a method by keyboard, apart from opening its file', fold.label === 'Calls under OrderRepository.findAll' && fold.expanded === 'true' && fold.shown, JSON.stringify(fold))
+  await page.evaluate(() => document.querySelector('#details .d-calltree')?.scrollIntoView())
+  await shot('1b-call-tree')
+  await page.evaluate(() => document.querySelector('#details .d-calltree button.d-rel').click())
+  const jumped = await page.waitForFunction(() => new URLSearchParams(location.search).get("file") === "server/src/main/java/com/shop/orders/OrderController.java" && new URLSearchParams(location.search).get("line") === "12", { timeout: 8000 }).then(() => true, () => false)
+  check('a method in the tree opens its file at its declaration', jumped === true, String(await page.evaluate(() => location.search)))
+  await shot('1c-method-opened')
 
   // The architecture: the page's file lists what it called, a jump to the file that serves it.
   await open()

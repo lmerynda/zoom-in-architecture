@@ -3,7 +3,7 @@
 // endpoints (by method and route), the classes spans name (handlers, repositories), and the tables
 // SQL touched. What tests did not reach is said too: an endpoint no test called is "seen 0".
 import { posix } from 'node:path'
-import { normalRoute } from './trace.mjs'
+import { javaCode, normalRoute } from './trace.mjs'
 
 /** A class's file among the model's files: com.x.Foo (or com.x.Foo$Inner) is …/com/x/Foo.<ext>. */
 export function classFiles(paths, classes) {
@@ -231,6 +231,7 @@ export function markCallers(model, requests, observed, sources) {
   const eps = new Map(requests.elements.filter(e => e.metadata?.method && e.metadata?.route).map(e => [`${e.metadata.method} ${normalRoute(e.metadata.route)}`, e]))
   const handler = new Map(requests.elements.filter(e => e.metadata?.role === 'step' && e.metadata?.step === '1').map(e => [e.parent, e.metadata.path]))
   const fileEl = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e]))
+  const files = [...fileEl.keys()]
   const calls = new Map(), routeOf = new Map()
   for (const o of observed.endpoints) {
     const ep = eps.get(`${o.method} ${o.route}`)
@@ -260,6 +261,8 @@ export function markCallers(model, requests, observed, sources) {
       ep.metadata.testCount = String(tests.length)
     }
     if (o.untimed) ep.metadata.untimed = String(o.untimed)
+    // trace --methods: its call tree, each method with the file and line it is declared at.
+    if (o.tree?.length) ep.metadata.callTree = JSON.stringify(placeTree(o.tree, files, sources))
   }
   for (const [path, c] of calls) {
     const e = fileEl.get(path)
@@ -271,3 +274,32 @@ export function markCallers(model, requests, observed, sources) {
 }
 /** The most tests an endpoint lists by name; the count says how many there were. */
 export const TESTS_KEPT = 40
+
+/**
+ * A call tree from `trace --methods` with each method placed: { at, count, path, line, kids }, path
+ * being the file of its class among the model's files and line where the method is declared there
+ * (the first declaration of that name). Tables touched and "N more" stay as they are.
+ */
+export function placeTree(tree, files, sources) {
+  const classes = new Set()
+  const walk = ns => { for (const n of ns) { const k = n.at.lastIndexOf('.'); if (k > 0 && !/\s/.test(n.at)) classes.add(n.at.slice(0, k)); walk(n.kids ?? []) } }
+  walk(tree)
+  const fileOf = classFiles(files, [...classes])
+  // Where a method is declared: its name after a type (on this line or the one before), not after
+  // "return", "new" or a dot, outside comments and strings.
+  const lineOf = (path, name) => {
+    const text = javaCode(sources[path] ?? '')
+    for (const m of text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}_$.])${name.replace(/\$/g, '\\$')}\\s*\\(`, 'gu'))) {
+      const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(text.slice(Math.max(0, m.index - 200), m.index))
+      if (!before || !/\s$/.test(text.slice(0, m.index)) || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
+      return text.slice(0, m.index).split('\n').length
+    }
+    return null
+  }
+  const place = ns => ns.map(n => {
+    const k = n.at.lastIndexOf('.'), path = k > 0 && !/\s/.test(n.at) ? fileOf.get(n.at.slice(0, k)) ?? null : null
+    const line = path ? lineOf(path, n.at.slice(k + 1)) : null
+    return { at: n.at, count: n.count, ...(path ? { path } : {}), ...(line ? { line } : {}), ...(n.kids?.length ? { kids: place(n.kids) } : {}) }
+  })
+  return place(tree)
+}

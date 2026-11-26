@@ -87,6 +87,13 @@
     #changes:hover, #changes[aria-pressed="true"] { background: rgba(74, 222, 128, 0.16); }
     .d-outline span.d-rel { cursor: default; }
     .d-outline .d-gone b { text-decoration: line-through; color: var(--dim); }
+    /* A call tree: the marker beside its call, each level indented under a guide line. */
+    .d-calltree .d-call { display: flex; align-items: flex-start; gap: 2px; }
+    .d-calltree .d-call .d-rel { flex: 1; min-width: 0; }
+    .d-calltree .d-fold { flex: none; width: 24px; min-height: 24px; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; border-radius: 4px; padding: 0; }
+    .d-calltree .d-fold:hover, .d-calltree .d-fold:focus-visible { color: var(--text); background: rgba(251, 191, 36, 0.12); }
+    .d-calltree .d-fold-gap { flex: none; width: 24px; }
+    .d-calltree ul ul { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }

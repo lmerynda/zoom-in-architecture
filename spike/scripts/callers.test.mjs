@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markCallers, pageFor, pageRoutes, TESTS_KEPT } from './observed.mjs'
+import { markCallers, pageFor, pageRoutes, placeTree, TESTS_KEPT } from './observed.mjs'
 
 const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code', metadata: { path } })
 
@@ -151,5 +151,22 @@ describe('markCallers', () => {
     const { model } = models()
     expect(markCallers(model, null, observed, sources)).toEqual({ pages: 0 })
     expect(model.elements.every(e => !e.metadata?.pageCalls)).toBe(true)
+  })
+})
+
+describe('placeTree', () => {
+  it('places each method of a call tree at its file and the line it is declared on; tables and "more" stay as they are', () => {
+    const sources = { 'src/shop/OrderService.java': 'package shop;\nclass OrderService {\n  // list() is called below\n  public List<Order> list() {\n    return repo.findAll();\n  }\n}\n' }
+    const tree = [{ at: 'shop.OrderService.list', count: 2, kids: [{ at: 'SELECT orders', count: 2, kids: [] }, { at: 'shop.Missing.run', count: 1, kids: [] }, { at: '3 more', count: 4 }] }]
+    expect(placeTree(tree, Object.keys(sources), sources)).toEqual([{ at: 'shop.OrderService.list', count: 2, path: 'src/shop/OrderService.java', line: 4, kids: [
+      { at: 'SELECT orders', count: 2 }, { at: 'shop.Missing.run', count: 1 }, { at: '3 more', count: 4 },
+    ] }])
+    expect(placeTree([], [], {})).toEqual([])
+  })
+
+  it('folds an endpoint’s call tree into the requests view', () => {
+    const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
+    markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {})
+    expect(JSON.parse(requests.elements[0].metadata.callTree)).toEqual([{ at: 'a.B.c', count: 1 }])
   })
 })
