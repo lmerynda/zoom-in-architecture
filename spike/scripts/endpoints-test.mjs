@@ -141,7 +141,7 @@ try {
   // An endpoint no test called says so first.
   await page.evaluate(() => { const s = window.__spike; s.select(s.tree.els.findIndex(e => e.title === 'POST /config')) })
   await sleep(200)
-  check('an endpoint no test called says so, in light red', await page.evaluate(() => document.querySelector('#details p.d-seen.none')?.textContent.startsWith('Not seen in tests')))
+  check('an endpoint no test called says so, in light red', await page.evaluate(() => getComputedStyle(document.querySelector('#details p.d-seen.none')).color === 'rgb(252, 165, 165)' && document.querySelector('#details p.d-seen.none')?.textContent.startsWith('Not seen in tests')))
 
   // 1 in Requests too: the list, a row selects its endpoint, and its panel leads back to the list.
   await page.evaluate(() => { window.__spike.controls.enterPlace(0) })

@@ -503,7 +503,7 @@ export function traceTally(tree: Tree, rels: number[]): { seen: number; unseen: 
   return { seen, unseen }
 }
 
-/** A partly tested arrow's tag: "14/15 seen", amber, with the exceptions in its tooltip. */
+/** A partly tested arrow's tag: "14/15 seen", light red, with the exceptions in its tooltip. */
 function partTag(t: { seen: number; unseen: number }): HTMLElement {
   const tag = el('em', 'd-seen-tag none', `${t.seen}/${t.seen + t.unseen} seen`)
   tag.title = `The project's own tests made ${t.seen} of the ${t.seen + t.unseen} calls here the trace could see; ${t.unseen} not seen. Inspect lists them first.`
@@ -651,7 +651,7 @@ function methodTag(m: string): HTMLElement {
   return t
 }
 
-/** One endpoint as a row: method, path, handler and what it answers; amber when no test called it. */
+/** One endpoint as a row: method, path, handler and what it answers; light red when no test called it. */
 function endpointRow(ep: Endpoint, open: () => void, sub = ''): HTMLLIElement {
   const li = el('li')
   const b = el('button', 'd-ep')

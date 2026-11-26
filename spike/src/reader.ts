@@ -14,7 +14,7 @@ const LINE_PX = 20
 /**
  * Reading a file: one column of its code over the map, scrolled like any page, its text
  * selectable. The header names it with the line at the top and has Copy and the way back; a rail
- * marks the cited (amber) and marked (cyan) lines, each a click away. It opens only when asked
+ * marks the cited (violet) and marked (cyan) lines, each a click away. It opens only when asked
  * (double-click, Enter, Read code, a cited line); the wheel on the map never opens it.
  */
 export class Reader {
@@ -63,6 +63,8 @@ export class Reader {
     this.rail.setAttribute('role', 'toolbar')
     this.rail.setAttribute('aria-orientation', 'vertical')
     this.rail.setAttribute('aria-label', 'Cited and marked lines')
+    // Whichever tick has focus (by key or by pointer) is the rail's one stop.
+    this.rail.addEventListener('focusin', e => { for (const t of this.rail.querySelectorAll('button')) t.tabIndex = t === e.target ? 0 : -1 })
     this.rail.addEventListener('keydown', e => {
       const ticks = [...this.rail.querySelectorAll('button')], k = ticks.indexOf(document.activeElement as HTMLButtonElement)
       const to = e.key === 'ArrowDown' ? k + 1 : e.key === 'ArrowUp' ? k - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? ticks.length - 1 : -2
@@ -142,7 +144,14 @@ export class Reader {
       const t = el('button', src.cited.has(n) ? 'cited' : 'mark')
       t.style.top = `${((n - 1) / this.total) * 100}%`
       t.title = `Line ${n}${src.marks.get(n) ? ` · ${src.marks.get(n)!.join(', ')}` : ''}${src.cited.has(n) ? ' · cited' : ''}`
-      t.onclick = () => this.goto(n)
+      // A press goes to the tick nearest the pointer (ticks of close lines overlap); a key, to its own.
+      t.onclick = e => {
+        if (!e.detail) return this.goto(n)
+        const ticks = [...this.rail.querySelectorAll<HTMLButtonElement>('button')]
+        const near = ticks.reduce((a, b) => { const d = (x: HTMLElement) => { const r = x.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - e.clientY) }; return d(b) < d(a) ? b : a })
+        this.goto(Number(near.dataset.line))
+      }
+      t.dataset.line = String(n)
       t.setAttribute('aria-label', t.title)
       t.tabIndex = this.rail.childElementCount ? -1 : 0
       this.rail.append(t)

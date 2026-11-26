@@ -172,7 +172,7 @@ export class Renderer {
   time = 0
   /** Secondary target, like an MMO's target-of-target: a neighbour of the selection being inspected. */
   target = -1
-  /** Cards changed by a live model update glow for a while: green added, amber changed. */
+  /** Cards changed by a live model update glow for a while: green added, light blue changed. */
   flash = new Map<number, { color: number; t0: number }>()
   /** Active lens, or null for the structure view. */
   lens: Lens | null = null

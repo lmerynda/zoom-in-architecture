@@ -567,6 +567,14 @@ try {
   await page.keyboard.press('ArrowDown')
   const second = await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].indexOf(document.activeElement))
   check('the rail is one Tab stop, its ticks in line order, the arrows walking them', rail.n > 1 && rail.stops === 1 && rail.hidden === null && rail.lines.every((l, k) => k === 0 || l > rail.lines[k - 1]) && second === 1, JSON.stringify({ ...rail, second }))
+  // A press at a tick's centre goes to that tick's line, and the rail stays one stop after it.
+  const last = await page.evaluate(() => { const t = [...document.querySelectorAll('.reader-rail button')].at(-1), r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, line: Number(t.dataset.line) } })
+  await page.mouse.click(last.x, last.y)
+  await sleep(500)
+  await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].at(-1).focus())
+  await page.keyboard.press('ArrowUp')
+  const pressed = await page.evaluate(() => ({ line: Number(new URLSearchParams(location.search).get('line')), stops: [...document.querySelectorAll('.reader-rail button')].filter(t => t.tabIndex === 0).length }))
+  check('a press on a tick goes to its line, and the rail stays one Tab stop', Math.abs(pressed.line - last.line) <= 1 && pressed.stops === 1, JSON.stringify({ last, pressed }))
 
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })
