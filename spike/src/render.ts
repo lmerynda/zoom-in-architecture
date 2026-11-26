@@ -594,9 +594,11 @@ export class Renderer {
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
       meta.scale.set(mpx / FONT_PX)
-      if (mpx >= MIN_TEXT && w > 160 && roomy && !underBar && titleRight + 16 < x + w - pad - meta.width) {
+      // Its right end stays on the screen: a header wider than a phone keeps its kind in view.
+      const metaRight = Math.min(x + w - pad, this.cam.w - SAFE.right)
+      if (mpx >= MIN_TEXT && w > 160 && roomy && !underBar && titleRight + 16 < metaRight - meta.width) {
         meta.visible = true
-        meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
+        meta.position.set(metaRight - meta.width, y + (hh - mpx * 1.25) / 2)
         meta.alpha = la * 0.78
         st.texts++
       }
@@ -1070,7 +1072,8 @@ export class Renderer {
       x = Math.min(Math.max(x, SAFE.left), W - cw - SAFE.right)
       y = Math.min(Math.max(y, SAFE.top), H - ch - SAFE.bottom)
       // Never on a card's text: slide along the screen edge to the nearest clear spot, or wait.
-      const onText = (cx: number, cy: number) => this.shown.some(n => {
+      // A lens value counts as text: an open container's value sits in its corner, on no card's text.
+      const onText = (cx: number, cy: number) => this.badges.some(([bx, by, bw, bh]) => cx < bx + bw && bx < cx + cw && cy < by + bh && by < cy + ch) || this.shown.some(n => {
         if (this.tree.children[n].length && this.open(n) > 0) return false
         const [nx, ny, nw, nh] = this.screenRect(n)
         return nw > 44 && cx < nx + nw && nx < cx + cw && cy < ny + nh && ny < cy + ch

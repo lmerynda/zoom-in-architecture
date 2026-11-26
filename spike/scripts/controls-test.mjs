@@ -436,6 +436,33 @@ try {
   check('a step\'s long name is whole on two lines, its code below them', path.steps.length >= 3 && path.steps.every(p => p.two && !p.cut && p.under), JSON.stringify(path.steps))
   check('the types a request names stand on a shorter row, with their own glyph', path.typeH.length > 0 && path.typeH.every(x => x < path.stepH * 0.75) && path.glyphs.every(g => g === 'type'), JSON.stringify(path))
 
+  // A phone: every control in the bar and the crumbs is a finger tall, the reader's head is one row
+  // at 320 px, and a container held wider than the screen keeps its kind on it.
+  for (const width of [390, 320]) {
+    await page.setViewport({ width, height: width === 320 ? 568 : 844, isMobile: true, hasTouch: true })
+    await open('model=knights-of-darkness&in=backend.kingdom')
+    await landed()
+    await sleep(500)
+    const touch = await page.evaluate(() => [...document.querySelectorAll('#top button, #top a, #crumbs button')].filter(e => e.getClientRects().length && !e.closest('[hidden]') && !e.closest('.model-menu')).map(e => ({ t: e.textContent.trim().slice(0, 16), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44))
+    check(`at ${width} px every bar and crumb control is 44 px tall`, touch.length === 0, JSON.stringify(touch))
+    const kind = await page.evaluate(() => { const s = window.__spike, v = s.renderer.views[s.id('backend.kingdom')]; return v?.meta?.visible ? { right: Math.round(v.meta.x + v.meta.width), w: s.cam.w } : { hidden: true } })
+    check(`at ${width} px the held container's kind stays on the screen`, kind.hidden || kind.right <= kind.w, JSON.stringify(kind))
+    await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+    await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
+    const head = await page.evaluate(() => { const h = document.querySelector('.reader-head').getBoundingClientRect(), r = s => document.querySelector(s).getBoundingClientRect(); return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: document.querySelector('.reader-where').textContent } })
+    if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, naming file and line', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where), JSON.stringify(head))
+  }
+
+  // Under a lens, an edge chip keeps off a container's value as it does off a card's text.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness&in=backend')
+  await landed()
+  await page.evaluate(() => window.__spike.setLens('size'))
+  await sleep(800)
+  const chipOnValue = await page.evaluate(() => { const rd = window.__spike.renderer; return rd.chipRects.filter(([x, y, w, h]) => rd.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + w && y < by + bh && by < y + h)).length })
+  check('an edge chip never sits on a lens value', chipOnValue === 0, String(chipOnValue))
+  await page.evaluate(() => window.__spike.setLens('structure'))
+
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })
   await open('model=knights-of-darkness')

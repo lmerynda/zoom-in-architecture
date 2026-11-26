@@ -21,7 +21,7 @@ export class Reader {
   private root = el('section', 'reader')
   private title = el('div', 'reader-title')
   private where = el('code', 'reader-where')
-  private copy = el('button', '', 'Copy path:line')
+  private copy = el('button', 'reader-copy', 'Copy path:line')
   private backBtn = el('button', 'reader-back')
   private scroller = el('div', 'reader-scroll')
   private pre = el('pre')
@@ -77,7 +77,12 @@ export class Reader {
   private expect = 0
   private line = 1
   private lineAt() { return Math.max(1, Math.min(this.total, Math.floor((this.scroller.scrollTop + this.scroller.clientHeight / 3) / LINE_PX) + 1)) }
-  private name(n: number) { this.line = n; this.where.textContent = `${this.path}:${n}`; this.onLine(n) }
+  private name(n: number) { this.line = n; this.at(`${this.path}:${n}`); this.onLine(n) }
+  /**
+   * The file and line, isolated left to right: on a phone the row cuts the path from its start, so
+   * the file's own name and the line stay in view.
+   */
+  private at(s: string) { const b = document.createElement('bdi'); b.textContent = s; this.where.replaceChildren(b) }
 
   /** Opens `path` (shown as `title`, inside `parent`) at `line`, or says why it cannot. */
   open(path: string, title: string, parent: string, line: number, src: Source | null, retry: () => void) {
@@ -89,7 +94,7 @@ export class Reader {
     this.rail.replaceChildren()
     if (!src) {
       this.total = 0
-      this.where.textContent = path
+      this.at(path)
       const again = el('button', '', 'Try again')
       again.onclick = retry
       const box = el('div', 'reader-none')

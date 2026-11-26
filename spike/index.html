@@ -70,7 +70,6 @@
       #crumbs:not(:has(button + button)) { display: none; }
       #views { order: 5; flex: 1 1 auto; padding: 0; }
       #views a { padding: 6px 7px; font-size: 13px; }
-      #crumbs button { min-height: 28px !important; }
       #crumbs > button:not(:nth-last-of-type(-n+2)) { display: none; }
       #crumbs > button:nth-last-of-type(2) { flex: 0 1 auto; max-width: 40%; }
       #crumbs > button:nth-last-of-type(2)::before { content: '‹'; margin-right: 6px; color: var(--faint); }
@@ -267,8 +266,8 @@
     /* First visit: what the map is, its counts and features to start from; it stays until Got it. */
     /* On a touch screen the panel's rows and buttons are a finger wide. */
     @media (pointer: coarse) {
-      #top button, #top a, #arrows button, .reader-head button, .lens-current { min-height: 36px; }
-      #crumbs button { min-height: 28px; }
+      /* The bar and the crumbs too: every control a finger presses is 44 px tall. */
+      #top button, #top a, #arrows button, .reader-head button, .lens-current, #crumbs button { min-height: 44px; }
       #welcome .ok { position: sticky; bottom: 0; }
       .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
       .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }
@@ -327,6 +326,23 @@
       .reader .reader-names { flex: 1 1 100%; flex-wrap: wrap; row-gap: 2px; }
       .reader .reader-title { overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
       .reader .reader-where { white-space: normal; overflow-wrap: anywhere; }
+    }
+    /*
+     * A phone up to 599 px: the reader's head is one row of 44 px. Back and the buttons say what they
+     * do as icons (their words stay for a screen reader); the file's name sits over its path, which
+     * is cut from its start, so the file and line stay in view.
+     */
+    @media (max-width: 599px) {
+      .reader .reader-head { flex-wrap: nowrap; gap: 4px; padding: 2px 4px; }
+      .reader .reader-names { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 4px; row-gap: 0; align-items: center; }
+      .reader .reader-back { grid-row: 1 / 3; font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
+      .reader .reader-back::before { content: '←'; font-size: 20px; }
+      .reader .reader-title { grid-column: 2; font-size: 13px; }
+      .reader .reader-where { grid-column: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; font-size: 11px; }
+      .reader .reader-actions { gap: 2px; }
+      .reader .reader-actions button { font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
+      .reader .reader-copy::before { content: '⧉'; font-size: 19px; }
+      .reader .reader-close::before { content: '✕'; font-size: 16px; }
     }
     @media (max-width: 1099px) { body.reading #details { display: none; } }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
