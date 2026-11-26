@@ -31,8 +31,8 @@ const OUT = 0xfbbf24
 const IN = 0x22d3ee
 /** A call at runtime (HTTP, a store, a queue), as opposed to a use in code. */
 const RUNTIME = 0xc4b5fd
-/** A card's rank badge in the Coupling layout. */
-const RANK = 0xfde68a
+/** A card's rank badge in the Coupling layout: white, as the current choice is (amber is outgoing only). */
+const RANK = 0xf1f5f9
 const FLASH_MS = 3200
 /** Past this many files on screen, arrows wait for a card in focus. */
 const RESTING_FILES = 12
@@ -473,6 +473,16 @@ export class Renderer {
       v.fill = person ? this.nine(this.pill, cards, 28) : this.nine(this.round, cards)
       v.border = person ? this.nine(this.pillRing, cards, 28) : this.nine(this.ring, cards)
     }
+    // A person's card is rounder than the rest, but a small one stays a card: its 28 px corners
+    // would make a pill of it.
+    if (person) {
+      const big = h >= 120, tex = big ? this.pill : this.round
+      if (v.fill.texture !== tex) {
+        v.fill.texture = tex
+        v.border!.texture = big ? this.pillRing : this.ring
+        for (const s of [v.fill, v.border!]) s.leftWidth = s.rightWidth = s.topHeight = s.bottomHeight = big ? 28 : 14
+      }
+    }
     const t = isContainer ? this.open(i) : 0
     const shadow = v.shadow!, fill = v.fill, border = v.border!
     if (w > 60 && !outside) {
@@ -538,7 +548,7 @@ export class Renderer {
       // A value wider than its card would be cut ("37 relatio"); it waits until the card has room.
       if (bpx >= MIN_TEXT && badge.width <= w * 0.88) {
         badge.visible = true
-        badge.tint = 0xfde68a
+        badge.tint = 0xf1f5f9
         // Inside the card and inside the screen: a card running off the edge keeps its value in view.
         let bx = Math.max(x + w * 0.06, Math.min(x + w - w * 0.06 - badge.width, this.cam.w - SAFE.right - badge.width))
         const by = Math.max(y + h * 0.3, Math.min(y + h - h * 0.08 - bpx * 1.25, this.cam.h - SAFE.bottom - bpx * 1.4))
@@ -742,8 +752,8 @@ export class Renderer {
       sub.scale.set(s / FONT_PX)
       sub.position.set(bx, cy)
       sub.alpha = la * 0.78
-      // An endpoint no test called says so in amber, as the panel does.
-      sub.tint = this.tree.traced && el.metadata?.method && el.metadata.seen === '0' ? 0xfde68a : 0xffffff
+      // An endpoint no test called says so in light red, as the panel does.
+      sub.tint = this.tree.traced && el.metadata?.method && el.metadata.seen === '0' ? 0xfca5a5 : 0xffffff
       st.texts++
       cy += s * 1.6
     }

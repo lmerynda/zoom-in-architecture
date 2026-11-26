@@ -232,7 +232,7 @@ try {
     const lum = ([r, g, b]) => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) }
     const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
     const box = over(rgba(getComputedStyle(document.querySelector('.palette')).backgroundColor), [4, 6, 12]), row = over(rgba(getComputedStyle(on).backgroundColor), box), text = over(rgba(getComputedStyle(sub).color), row)
-    // The highlight itself is marked by an amber edge, at 3:1 against the row.
+    // The highlight itself is marked by an edge, at 3:1 against the row.
     const edge = getComputedStyle(on).boxShadow.match(/rgba?\([^)]*\)/)?.[0]
     return { role: i.getAttribute('role'), expanded: i.getAttribute('aria-expanded'), list: document.getElementById(i.getAttribute('aria-controls'))?.getAttribute('role'), active: i.getAttribute('aria-activedescendant') === on?.id && on?.getAttribute('role') === 'option' && on?.getAttribute('aria-selected') === 'true', second: [...document.querySelectorAll('.palette .row')].indexOf(on) === 1, subRatio: ratio(text, row), edgeRatio: edge ? ratio(rgba(edge), row) : 0 }
   })
@@ -256,7 +256,7 @@ try {
   await page.evaluate(() => document.querySelector('#details .d-outline button').focus())
   await page.keyboard.press('ArrowDown')
   const ring = await page.evaluate(() => { const s = getComputedStyle(document.activeElement); return { cls: document.activeElement.className, style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor } })
-  check('an outline row shows a 2 px amber focus ring', ring.style === 'solid' && ring.width === '2px' && ring.color === 'rgb(251, 191, 36)', JSON.stringify(ring))
+  check('an outline row shows a 2 px white focus ring', ring.style === 'solid' && ring.width === '2px' && ring.color === 'rgb(248, 250, 252)', JSON.stringify(ring))
   await page.keyboard.press('Enter')
   await sleep(600)
   const after = await page.evaluate(() => ({ focus: document.activeElement?.tagName, inPanel: document.getElementById('details').contains(document.activeElement), said: document.getElementById('announce').textContent }))
@@ -517,6 +517,30 @@ try {
     tabs.push(await page.evaluate(() => ({ tab: document.title, heading: document.querySelector('#details h2')?.textContent })))
   }
   check('the tab names the map by its own name and how it is shown', tabs[0].tab === 'Knights of Darkness: Architecture' && tabs[1].tab === 'Knights of Darkness: Architecture, laid out by coupling' && tabs[2].tab === 'Knights of Darkness: Requests' && tabs.every(t => t.heading === 'Knights of Darkness'), JSON.stringify(tabs))
+
+  // The visual system: one meaning per accent (amber only for what goes out), text no smaller than
+  // 11 px in the panel, the column running to the foot while the minimap is away, and a lens legend
+  // that does not put the map's numbers on a per-level scale.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness&at=backend')
+  await sleep(400)
+  const look = await page.evaluate(() => {
+    const c = s => { const e = document.querySelector(s); return e ? getComputedStyle(e).color : null }, bg = s => { const e = document.querySelector(s); return e ? getComputedStyle(e).backgroundColor : null }
+    const sizes = [...document.querySelectorAll('#details *')].filter(e => e.childNodes.length && [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && e.getClientRects().length).map(e => parseFloat(getComputedStyle(e).fontSize))
+    return { out: c('#details .d-rels.out h3'), kind: bg('#details .d-kind'), primary: bg('#details .d-actions button.primary'), smallest: Math.min(...sizes) }
+  })
+  const amber = 'rgb(251, 191, 36)'
+  check('amber marks what goes out, not the kind badge or the action to take', look.out === amber && look.kind !== amber && look.primary !== amber, JSON.stringify(look))
+  check('no text in the panel is under 11 px', look.smallest >= 11, JSON.stringify(look))
+  await open('model=knights-of-darkness')
+  await sleep(800)
+  const column = await page.evaluate(() => ({ bottom: Math.round(innerHeight - document.getElementById('details').getBoundingClientRect().bottom), whole: document.getElementById('minimap').classList.contains('whole') }))
+  check('with the minimap away, the details column runs to the foot', column.whole && column.bottom <= 14, JSON.stringify(column))
+  await page.evaluate(() => window.__spike.setLens('size'))
+  await sleep(300)
+  const lensKey = await page.evaluate(() => ({ lo: document.querySelector('.lens-lo')?.textContent, hi: document.querySelector('.lens-hi')?.textContent, range: document.querySelector('.lens-range')?.textContent }))
+  check('the lens legend names a level\'s least and most, the map\'s range apart', lensKey.lo === 'least' && lensKey.hi === 'most at its level' && /across the map \d/.test(lensKey.range), JSON.stringify(lensKey))
+  await page.evaluate(() => window.__spike.setLens('structure'))
 
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })

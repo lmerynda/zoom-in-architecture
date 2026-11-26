@@ -61,12 +61,14 @@ export class LensBar {
     for (const b of this.menu.querySelectorAll<HTMLElement>('button')) { b.classList.toggle('on', b.dataset.lens === name); b.setAttribute('aria-checked', String(b.dataset.lens === name)) }
     this.legend.hidden = !active
     if (active) {
+      // The colour compares a card with the others at its level, so the ramp's ends are the least
+      // and most of a level, not numbers: the map's range is said apart, as the range it is.
       const lo = Math.min(...[...active.raw].slice(1)), hi = Math.max(...active.raw.slice(1))
       const parts = this.legend.children as HTMLCollectionOf<HTMLElement>
       parts[0].textContent = active.label
-      parts[1].textContent = String(Math.round(lo))
-      parts[3].textContent = `${Math.round(hi).toLocaleString()} ${active.unit}`
-      parts[4].textContent = 'each card against the others at its level'
+      parts[1].textContent = 'least'
+      parts[3].textContent = 'most at its level'
+      parts[4].textContent = `each card against the others at its level; across the map ${Math.round(lo).toLocaleString()}–${Math.round(hi).toLocaleString()} ${active.unit}`
     }
   }
 }

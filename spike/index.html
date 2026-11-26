@@ -6,12 +6,20 @@
   <title>Zoom spike</title>
   <link rel="icon" href="data:," />
   <style>
-    :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #8a99b0; --faint: #7c8aa1; --accent: #fbbf24; }
+    :root { color-scheme: dark; --panel: rgba(13, 18, 28, 0.78); --line: rgba(148, 163, 184, 0.18); --text: #cbd5e1; --dim: #8a99b0; --faint: #7c8aa1;
+      /*
+       * One meaning per accent. Amber: what goes out (an outgoing arrow, a table written). Cyan: what
+       * comes in. Violet: a call at runtime and the lines cited for it. Green: seen, a step, a table
+       * read. Light red: not seen, untested, stale, missed. Pink: a feature. White: focus, the action
+       * to take, the current choice.
+       */
+      --out: #fbbf24; --in: #22d3ee; --runtime: #c4b5fd; --ok: #6ee7b7; --warn: #fca5a5; --feature: #f9a8d4;
+      --focus: #f8fafc; --act: #e2e8f0; --act-ink: #0b0f17; --sel: rgba(148, 163, 184, 0.16); }
     * { box-sizing: border-box; }
-    /* One focus ring for every control: 2 px amber, at least 3:1 on every panel; rules below only move it inside. */
-    :focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
+    /* One focus ring for every control: 2 px white, at least 3:1 on every panel; rules below only move it inside. */
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 12px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #04060c; color: var(--text); font: 13px/1.4 'Segoe UI', Inter, system-ui, sans-serif; }
     /* The map fills the window below the top bar; on wide screens the details column is beside it, not over it. */
     #stage { position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
     #stage canvas { position: absolute; inset: 0; display: block; }
@@ -25,11 +33,11 @@
     .model-current:hover { background: rgba(148, 163, 184, 0.12); }
     .model-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 240px; max-height: 70vh; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; z-index: 30; background: #0b1220; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
     .model-menu[hidden] { display: none; }
-    .model-menu .menu-head { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); padding: 8px 9px 4px; }
+    .model-menu .menu-head { font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); padding: 8px 9px 4px; }
     .model-menu a { color: var(--dim); text-decoration: none; padding: 6px 9px; border-radius: 7px; white-space: nowrap; }
     .model-menu a:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
     .model-menu a.on { color: var(--text); background: rgba(148, 163, 184, 0.16); }
-    .model-menu a.imported { color: #fde68a; }
+    .model-menu a.imported { color: #f1f5f9; }
     /* The open model's views sit with the lenses on the right: ways of looking at it, not other models. */
     /* In a narrow window the travel box gives way; the controls around it keep their size. */
     #views, .lensbar, #models, #help { flex: none; white-space: nowrap; }
@@ -39,7 +47,7 @@
     .bar-label { color: var(--dim); font-size: 11px; padding: 0 4px 0 6px; }
     #views a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
     #views a:hover { color: var(--text); }
-    #views a.on { color: #0b0f17; background: #6ee7b7; font-weight: 600; }
+    #views a.on { color: var(--act-ink); background: var(--act); font-weight: 600; }
     /* Architecture's layout, as mapped or by coupling: a menu beside the views, like Colour by. */
     .layoutbar { position: relative; display: inline-flex; }
     .layout-current { background: rgba(148, 163, 184, 0.08); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
@@ -47,8 +55,8 @@
     .layout-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 150px; padding: 4px; display: flex; flex-direction: column; z-index: 30; background: #0b1220; }
     .layout-menu[hidden] { display: none; }
     #views .layout-menu a { padding: 6px 10px; border-radius: 6px; color: var(--text); background: none; font-weight: 400; }
-    #views .layout-menu a:hover, #views .layout-menu a:focus-visible { background: rgba(251, 191, 36, 0.14); outline-offset: -2px; }
-    #views .layout-menu a.on { color: #fde68a; font-weight: 600; background: none; }
+    #views .layout-menu a:hover, #views .layout-menu a:focus-visible { background: var(--sel); outline-offset: -2px; }
+    #views .layout-menu a.on { color: #f8fafc; font-weight: 600; background: none; }
     /* The breadcrumb takes the room the bar has; long names give way, the place you are in last. */
     #crumbs { flex: 1 1 auto; min-width: 0; display: flex; gap: 2px; align-items: center; overflow: hidden; white-space: nowrap; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 6px; border-radius: 7px; cursor: pointer; min-width: 0; max-width: 18em; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
@@ -88,7 +96,7 @@
       .lens-menu { position: fixed; top: calc(var(--bar, 52px) + 4px); right: 8px; left: auto; max-width: calc(100vw - 16px); }
     }
     #crumbs .provenance { flex: none; color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
-    #crumbs .provenance.stale { color: #fbbf24; }
+    #crumbs .provenance.stale { color: var(--warn); }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
@@ -101,32 +109,34 @@
     body:has(#details:not([hidden])) #minimap { display: none; }
     /* Narrow, the sheet has a grip that folds it to a bar at the foot; folded, only the grip is there. */
     .d-grip { display: flex; align-items: center; gap: 8px; position: sticky; top: -14px; z-index: 1; width: calc(100% + 32px); min-height: 46px; margin: -14px -16px 8px; padding: 0 16px; background: #0b1220; border: 0; border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-    .d-grip b { font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-    .d-grip span { color: var(--dim); font-size: 12px; white-space: nowrap; flex: none; }
-    .d-grip i { margin-left: auto; flex: none; font-style: normal; font-size: 12px; color: #fde68a; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+    .d-grip b { font-size: 15px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .d-grip span { color: var(--dim); font-size: 13px; white-space: nowrap; flex: none; }
+    .d-grip i { margin-left: auto; flex: none; font-style: normal; font-size: 13px; color: #f1f5f9; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
     .d-grip i::before { content: '▴ '; }
     .d-grip[aria-expanded="true"] i::before { content: '▾ '; }
     .d-grip[aria-expanded="true"] { min-height: 0; height: 0; padding: 0; border: 0; background: none; margin: -14px -16px 0; overflow: visible; justify-content: flex-end; }
     .d-grip[aria-expanded="true"] b, .d-grip[aria-expanded="true"] span { display: none; }
     .d-grip[aria-expanded="true"] i { position: absolute; top: 6px; right: 12px; background: #0b1220; min-height: 40px; min-width: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
     .d-grip[aria-expanded="true"]:focus-visible { outline: none; }
-    .d-grip[aria-expanded="true"]:focus-visible i { outline: 2px solid #fbbf24; outline-offset: 2px; }
+    .d-grip[aria-expanded="true"]:focus-visible i { outline: 2px solid var(--focus); outline-offset: 2px; }
     .d-grip:focus-visible { outline-offset: -3px; }
     #details { scroll-padding-top: 56px; }
     #details.collapsed { max-height: 46px; overflow: hidden; }
     #details.collapsed > :not(.d-grip) { visibility: hidden; }
     .d-outline { margin-top: 12px; }
-    .d-outline h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+    .d-outline h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
     .d-outline ul { list-style: none; margin: 0; padding: 0; }
     .d-outline .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 4px 6px; border-radius: 5px; cursor: pointer; }
-    .d-outline .d-rel:hover, .d-outline .d-rel:focus-visible { background: rgba(251, 191, 36, 0.12); }
+    .d-outline .d-rel:hover, .d-outline .d-rel:focus-visible { background: var(--sel); }
     .d-outline .d-rel:focus-visible, .d-rels button:focus-visible, .d-path button:focus-visible, #crumbs button:focus-visible { outline-offset: -2px; }
     .d-outline .d-rel span { color: var(--dim); font-size: 11px; }
     /* Wide: a column of its own beside the map, the minimap at its foot. */
     @media (min-width: 1100px) {
-      :root { --pw: clamp(330px, 23vw, 440px); }
+      :root { --pw: clamp(360px, 25vw, 420px); }
       #stage, #code { right: calc(var(--pw) + 24px) !important; }
       #details { left: auto; top: 64px; right: 12px; bottom: 174px; width: var(--pw); box-sizing: border-box; max-height: none; border-radius: 10px; }
+      /* With the minimap away (the whole map in view, or reading), the column runs to the foot. */
+      body:has(#minimap.whole) #details, body.reading #details { bottom: 12px; }
       #details[hidden] { display: block; }
       #minimap { width: var(--pw); height: 150px; }
       body:has(#details:not([hidden])) #minimap { display: block; }
@@ -136,11 +146,11 @@
       .d-grip { display: none; }
     }
     .d-head { display: flex; flex-direction: column; gap: 6px; }
-    .d-back { align-self: flex-start; min-height: 32px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
-    .d-back:hover { border-color: rgba(251, 191, 36, 0.5); }
-    .d-kind { align-self: flex-start; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #0b0f17; background: #fbbf24; border-radius: 4px; padding: 2px 7px; font-weight: 700; }
+    .d-back { align-self: flex-start; min-height: 32px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    .d-back:hover { border-color: rgba(226, 232, 240, 0.5); }
+    .d-kind { align-self: flex-start; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text); background: rgba(148, 163, 184, 0.2); border-radius: 4px; padding: 2px 7px; font-weight: 700; }
     #details h2:focus { outline: none; }
-    body.kbd #details h2:focus-visible { outline: 2px solid #fbbf24; outline-offset: 2px; }
+    body.kbd #details h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     #details h2 { margin: 0; font-size: 19px; color: #f1f5f9; font-weight: 650; }
     .d-path { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 6px; }
     .d-path button, .d-rels button { background: none; border: 0; color: var(--dim); font: inherit; padding: 2px 4px; cursor: pointer; border-radius: 5px; }
@@ -148,21 +158,21 @@
     .d-path button:hover, .d-rels button:hover { color: var(--text); background: rgba(148, 163, 184, 0.1); }
     .d-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 4px; }
     .d-tags span { font-size: 11px; color: #cbd5e1; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
-    .d-tags span.feat { color: #fde68a; border-color: rgba(251, 191, 36, .45); }
+    .d-tags span.feat { color: var(--feature); border-color: rgba(249, 168, 212, .45); }
     #details p { color: #94a3b8; margin: 10px 0 4px; line-height: 1.5; }
-    #details p.d-missed { color: #fbbf24; font-size: 12px; border-left: 2px solid rgba(251, 191, 36, 0.5); padding-left: 8px; }
+    #details p.d-missed { color: var(--warn); font-size: 13px; border-left: 2px solid rgba(252, 165, 165, 0.5); padding-left: 8px; }
     .d-file { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
     .d-filepath { font: 11px/1.4 ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
     .d-facts { color: var(--dim); font-size: 11px; }
     .d-actions { display: flex; gap: 6px; margin-top: 6px; }
     .d-actions button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
-    .d-actions button.primary { background: #fbbf24; border-color: #fbbf24; color: #0b0f17; font-weight: 600; }
+    .d-actions button.primary { background: var(--act); border-color: var(--act); color: var(--act-ink); font-weight: 600; }
     .d-actions button:hover { filter: brightness(1.15); }
-    #details p.d-rank { color: #fde68a; font-size: 12px; margin: 8px 0 0; }
+    #details p.d-rank { color: #f1f5f9; font-size: 13px; margin: 8px 0 0; }
     .d-rels { margin-top: 14px; }
-    .d-rels h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
-    .d-rels.out h3, .d-rels.out i { color: #fbbf24; }
-    .d-rels.in h3, .d-rels.in i { color: #22d3ee; }
+    .d-rels h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+    .d-rels.out h3, .d-rels.out i { color: var(--out); }
+    .d-rels.in h3, .d-rels.in i { color: var(--in); }
     .d-rels ul { list-style: none; margin: 0; padding: 0; }
     /* A relation row: arrow, name and tag on the first line; what it reaches on the next, up to two
        lines; its Inspect and cited-lines buttons below that, all aligned at the name. */
@@ -174,8 +184,8 @@
     .d-rels .d-rel > i { grid-column: 1; }
     .d-rels b { color: #e2e8f0; font-weight: 600; grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
     .d-rels .d-rel > .d-seen-tag { grid-column: 3; grid-row: 1; }
-    .d-rels .d-rel > span { grid-column: 2 / 4; color: var(--dim); font-size: 12px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-    .d-rels .d-cite, .d-rels .d-inspect { color: var(--text); font-size: 12px; padding: 3px 8px; min-height: 24px; flex: none; border: 1px solid var(--line); border-radius: 6px; margin: 3px 0 2px; }
+    .d-rels .d-rel > span { grid-column: 2 / 4; color: var(--dim); font-size: 13px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+    .d-rels .d-cite, .d-rels .d-inspect { color: var(--text); font-size: 13px; padding: 3px 8px; min-height: 24px; flex: none; border: 1px solid var(--line); border-radius: 6px; margin: 3px 0 2px; }
     .d-rels .d-cite::after { content: ' ▸'; color: var(--dim); }
     .d-rels .d-cite[aria-expanded="true"]::after { content: ' ▾'; }
     .d-rels li > .d-inspect { margin-left: 28px; }
@@ -183,7 +193,7 @@
     .d-rels .d-inspect:hover { color: var(--text); }
     .d-rels .d-cite[aria-expanded="true"] { color: var(--text); }
     .d-steps { margin-top: 14px; }
-    .d-steps h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6ee7b7; }
+    .d-steps h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ok); }
     .d-steps ol, .d-steps ul { list-style: none; margin: 0; padding: 0; }
     .d-steps h3.d-beside { margin-top: 10px; color: var(--dim); }
     .d-steps li.beside { opacity: 0.8; }
@@ -200,39 +210,39 @@
     .d-kindtag { color: var(--dim); }
     #details p.d-run { margin: 2px 0 6px; color: var(--dim); font-size: 11px; font: 11px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
     .d-tables { margin-top: 12px; }
-    .d-tables h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #86efac; }
+    .d-tables h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ok); }
     .d-tables ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-    .d-tables li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 12px; }
+    .d-tables li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13px; }
     .d-tables li[hidden] { display: none; }
     .d-tables code { font: 11px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
-    .d-tables span { color: #86efac; white-space: nowrap; }
-    .d-more { margin-top: 6px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+    .d-tables span { color: var(--ok); white-space: nowrap; }
+    .d-more { margin-top: 6px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
     .d-unseen ul { list-style: none; margin: 6px 0 0; padding: 0; }
     .d-unseen ul[hidden] { display: none; }
-    .d-unseen .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid rgba(253, 230, 138, 0.6); color: var(--text); font: inherit; padding: 4px 8px; margin: 2px 0; cursor: pointer; }
-    .d-unseen .d-rel:hover { background: rgba(251, 191, 36, 0.1); }
+    .d-unseen .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid rgba(252, 165, 165, 0.6); color: var(--text); font: inherit; padding: 4px 8px; margin: 2px 0; cursor: pointer; }
+    .d-unseen .d-rel:hover { background: var(--sel); }
     .d-unseen .d-rel span { color: var(--dim); font-size: 11px; }
     .d-outline .d-rel em { font-size: 11px; }
     .d-why.d-shared { padding: 6px 8px; margin: 8px 0 0; border: 1px solid var(--line); border-radius: 6px; }
     .k-runtime .d-kindtag { color: #c4b5fd; }
     .k-types .d-kindtag { color: var(--dim); font-style: italic; }
     .d-names { color: var(--text); }
-    .d-why .cite { background: none; border: 0; padding: 0; font: 11px ui-monospace, Consolas, monospace; color: #fde68a; cursor: pointer; text-decoration: underline dotted; }
+    .d-why .cite { background: none; border: 0; padding: 0; font: 11px ui-monospace, Consolas, monospace; color: var(--runtime); cursor: pointer; text-decoration: underline dotted; }
     .d-why .cite:hover { color: #fff; }
     /* Long identifiers break inside the panel rather than push it sideways at 320 px. */
     #details { overflow-x: hidden; }
     .d-why .cite, .d-why .d-names, .d-edge b, .d-filepath { max-width: 100%; min-width: 0; overflow-wrap: anywhere; text-align: left; }
     /* What the project's own tests showed: green when seen, amber when not. */
-    #details p.d-seen { margin: 8px 0 0; padding-left: 8px; border-left: 2px solid rgba(74, 222, 128, 0.6); color: #bbf7d0; font-size: 12px; line-height: 1.5; }
-    #details p.d-seen.none { border-left-color: rgba(251, 191, 36, 0.6); color: #fde68a; }
-    .d-seen-tag { font-style: normal; font-size: 10px; color: #86efac; flex: none; }
-    .d-seen-tag.none { color: #fde68a; }
+    #details p.d-seen { margin: 8px 0 0; padding-left: 8px; border-left: 2px solid rgba(110, 231, 183, 0.6); color: var(--ok); font-size: 13px; line-height: 1.5; }
+    #details p.d-seen.none { border-left-color: rgba(252, 165, 165, 0.6); color: var(--warn); }
+    .d-seen-tag { font-style: normal; font-size: 11px; color: var(--ok); flex: none; }
+    .d-seen-tag.none { color: var(--warn); }
     .d-seen-tag.outside { color: var(--dim); }
     .d-none { color: var(--dim); font-size: 11px; padding: 2px 6px; }
     #code { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; }
     .code { position: absolute; overflow: hidden; background: rgba(3, 6, 12, 0.7); border-radius: 6px; }
     .code[hidden] { display: none; }
-    .code-cap { position: absolute; padding: 4px 10px; border-radius: 6px; background: rgba(9, 12, 20, 0.92); border: 1px solid var(--line); color: var(--text); font: 12px ui-monospace, Consolas, monospace; white-space: nowrap; }
+    .code-cap { position: absolute; padding: 4px 10px; border-radius: 6px; background: rgba(9, 12, 20, 0.92); border: 1px solid var(--line); color: var(--text); font: 13px ui-monospace, Consolas, monospace; white-space: nowrap; }
     .code-cap[hidden] { display: none; }
     /* Both are laid out at 16 px from the card's top-left and scaled; columns sit where the code view puts them. */
     .code pre, .code canvas { position: absolute; left: 0; top: 0; margin: 0; transform-origin: 0 0; }
@@ -250,24 +260,24 @@
     /* Lines the graph marked: a cyan edge and their kind; lines a link cites: amber. */
     .code pre .mark { box-shadow: inset 3px 0 #22d3ee; background: rgba(34, 211, 238, 0.07); }
     .code pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.8em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
-    .code pre .cited { background: rgba(251, 191, 36, 0.16); box-shadow: inset 3px 0 #fbbf24; }
-    .code pre .cited b { color: #fde68a; border-color: rgba(251, 191, 36, 0.6); }
+    .code pre .cited { background: rgba(196, 181, 253, 0.16); box-shadow: inset 3px 0 var(--runtime); }
+    .code pre .cited b { color: var(--runtime); border-color: rgba(196, 181, 253, 0.6); }
     .d-ev { flex-basis: 100%; margin: 0 0 6px 22px; display: flex; flex-direction: column; gap: 4px; }
     .d-ev > div { border-left: 2px solid var(--line); padding: 1px 0 1px 8px; }
-    .d-ev .at { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 10px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; }
-    .d-ev .at .cite { background: none; border: 0; padding: 0; font: inherit; color: #fde68a; cursor: pointer; text-decoration: underline dotted; }
+    .d-ev .at { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--dim); font-family: ui-monospace, Consolas, monospace; }
+    .d-ev .at .cite { background: none; border: 0; padding: 0; font: inherit; color: var(--runtime); cursor: pointer; text-decoration: underline dotted; }
     .d-ev .at .cite:hover { color: #fff; }
     .d-ev pre { margin: 1px 0 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: #cbd5e1; white-space: pre; overflow-x: auto; }
-    .d-ev .stale { border-left-color: #b45309; }
-    .d-ev em { display: block; font-size: 11px; color: #f59e0b; }
+    .d-ev .stale { border-left-color: rgba(252, 165, 165, 0.6); }
+    .d-ev em { display: block; font-size: 11px; color: var(--warn); }
     .d-hint { margin-top: 12px; color: var(--faint); font-size: 11px; }
     /* The controls a newcomer needs first: readable (AA contrast), not small print. */
     #help { background: rgba(148, 163, 184, 0.08); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
-    #help:hover { border-color: rgba(251, 191, 36, 0.5); }
+    #help:hover { border-color: rgba(226, 232, 240, 0.5); }
     #stage canvas:focus { outline: none; }
     /* The map's ring shows once a key has been used, not after a click, and runs below the top bar. */
     #stage canvas:focus-visible { outline: none; }
-    body.kbd #stage:has(canvas:focus-visible)::after { content: ''; position: absolute; inset: var(--bar, 52px) 0 0 0; border: 2px solid rgba(251, 191, 36, 0.6); pointer-events: none; z-index: 1; }
+    body.kbd #stage:has(canvas:focus-visible)::after { content: ''; position: absolute; inset: var(--bar, 52px) 0 0 0; border: 2px solid rgba(248, 250, 252, 0.6); pointer-events: none; z-index: 1; }
     /* Reduced motion: nothing slides, fades or flies. */
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
     /* Shown when the screen holds only empty space inside a card: how to get back. */
@@ -284,7 +294,7 @@
       .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }
       .reader-rail button::before { content: ''; position: absolute; inset: -10px -8px; }
     }
-    #welcome { position: fixed; z-index: 12; left: 12px; bottom: 12px; width: min(520px, calc(100vw - 24px)); padding: 12px 14px; background: rgba(9, 12, 20, 0.95); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 10px; font-size: 13px; color: var(--text); }
+    #welcome { position: fixed; z-index: 12; left: 12px; bottom: 12px; width: min(520px, calc(100vw - 24px)); padding: 12px 14px; background: rgba(9, 12, 20, 0.95); border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 10px; font-size: 13px; color: var(--text); }
     #welcome[hidden] { display: none; }
     /* The welcome stands where the arrow legend would: the legend waits until it is put away. */
     body:has(#welcome:not([hidden])) #arrows { display: none; }
@@ -293,12 +303,12 @@
     @media (max-width: 1099px) { body:has(#details:not([hidden]):not(.outline)) #welcome { top: calc(var(--bar, 52px) + 8px); bottom: auto; } }
     @media (max-width: 1099px) { #welcome { z-index: 16; bottom: 58px; max-height: calc(100vh - var(--bar, 52px) - 70px); overflow: auto; } }
     #welcome p { margin: 0 0 8px; line-height: 1.5; }
-    #welcome p b { color: #fde68a; }
+    #welcome p b { color: #f8fafc; }
     #welcome .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-    #welcome .chips span { color: var(--dim); font-size: 12px; }
-    #welcome .chips button { background: none; border: 1px solid rgba(251, 191, 36, 0.45); color: #fde68a; border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-    #welcome .chips button:hover { background: rgba(251, 191, 36, 0.14); }
-    #welcome .ok { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
+    #welcome .chips span { color: var(--dim); font-size: 13px; }
+    #welcome .chips button { background: none; border: 1px solid rgba(249, 168, 212, 0.45); color: var(--feature); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+    #welcome .chips button:hover { background: rgba(249, 168, 212, 0.14); }
+    #welcome .ok { background: var(--act); border: 0; color: var(--act-ink); font: inherit; font-weight: 600; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
     /* What the arrows are, at the map's foot. */
     #arrows { position: fixed; z-index: 11; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 5px 10px; background: #090c14; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; color: var(--dim); }
     #arrows[hidden] { display: none; }
@@ -324,9 +334,9 @@
     #failed h2 { margin: 0; color: #f1f5f9; font-weight: 600; }
     #failed p { margin: 0; color: var(--dim); }
     #failed .maps { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 720px; margin-top: 8px; }
-    #failed a { color: #fde68a; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; text-decoration: none; }
+    #failed a { color: #f1f5f9; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; text-decoration: none; }
     #empty { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); color: #b6c2d3; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; font-size: 13px; display: flex; gap: 12px; align-items: center; }
-    #empty button { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    #empty button { background: var(--act); border: 0; color: var(--act-ink); font: inherit; font-weight: 600; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
     /* Reading a file: one column of code over the map, left of the details panel. */
     .reader { position: fixed; z-index: 15; top: calc(var(--bar, 52px) + 12px); left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; background: #05080e; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
     .reader[hidden] { display: none; }
@@ -348,22 +358,22 @@
       .reader .reader-names { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 4px; row-gap: 0; align-items: center; }
       .reader .reader-back { grid-row: 1 / 3; font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
       /* The icons are decoration ("/ ''" keeps them out of the accessible name): the words name the action. */
-      .reader .reader-back::before { content: '←' / ''; font-size: 20px; }
+      .reader .reader-back::before { content: '←' / ''; font-size: 19px; }
       .reader .reader-title { grid-column: 2; font-size: 13px; }
       .reader .reader-where { grid-column: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; font-size: 11px; }
       .reader .reader-actions { gap: 2px; }
       .reader .reader-actions button { font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
       .reader .reader-copy::before { content: '⧉' / ''; font-size: 19px; }
-      .reader .reader-copy.copied::before { content: '✓' / ''; color: #86efac; }
-      .reader .reader-close::before { content: '✕' / ''; font-size: 16px; }
+      .reader .reader-copy.copied::before { content: '✓' / ''; color: var(--ok); }
+      .reader .reader-close::before { content: '✕' / ''; font-size: 15px; }
     }
     @media (max-width: 1099px) { body.reading #details { display: none; } }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-    .reader-title { font-weight: 650; color: #f1f5f9; font-size: 14px; white-space: nowrap; }
-    .reader-where { color: var(--dim); font: 12px ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reader-title { font-weight: 650; color: #f1f5f9; font-size: 15px; white-space: nowrap; }
+    .reader-where { color: var(--dim); font: 13px ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .reader-head button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-    .reader-head .reader-back { background: none; border: 0; color: #fde68a; padding: 4px 0; }
+    .reader-head .reader-back { background: none; border: 0; color: #f8fafc; padding: 4px 0; }
     .reader-actions { display: flex; gap: 6px; }
     .reader-body { position: relative; flex: 1; min-height: 0; display: flex; }
     .reader-scroll { flex: 1; overflow: auto; }
@@ -375,12 +385,14 @@
     .reader pre em { font-style: normal; }
     .reader pre .kw { color: #c4b5fd; } .reader pre .str { color: #86efac; } .reader pre .com { color: #8a99b0; font-style: italic; } .reader pre .num { color: #fdba74; } .reader pre .ty { color: #7dd3fc; }
     .reader pre .mark { box-shadow: inset 3px 0 #22d3ee; background: rgba(34, 211, 238, 0.07); }
-    .reader pre .cited { background: rgba(251, 191, 36, 0.14); box-shadow: inset 3px 0 #fbbf24; }
-    .reader pre .at { outline: 1px solid rgba(251, 191, 36, 0.7); }
+    .reader pre .cited { background: rgba(196, 181, 253, 0.14); box-shadow: inset 3px 0 var(--runtime); }
+    .reader pre .at { outline: 1px solid rgba(248, 250, 252, 0.7); }
     .reader pre span b { margin-left: 2ch; padding: 0 0.6ch; font-weight: 600; font-size: 0.85em; color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); border-radius: 4px; }
     .reader-rail { position: relative; width: 12px; flex: none; background: rgba(148, 163, 184, 0.06); }
-    .reader-rail button { position: absolute; left: 1px; right: 1px; height: 4px; padding: 0; border: 0; border-radius: 2px; background: #22d3ee; cursor: pointer; }
-    .reader-rail button.cited { background: #fbbf24; }
+    .reader-rail button { position: absolute; left: 1px; right: 1px; height: 6px; padding: 0; border: 0; border-radius: 2px; background: #22d3ee; cursor: pointer; }
+    /* A tick is pressed by a target larger than it draws. */
+    .reader-rail button::before { content: ''; position: absolute; inset: -4px -2px; }
+    .reader-rail button.cited { background: var(--runtime); }
     .reader-none { padding: 24px; color: var(--text); font-family: 'Segoe UI', sans-serif; }
     /* While reading, the map's own furniture steps aside. */
     body.reading #minimap, body.reading #empty { display: none !important; }
@@ -391,9 +403,9 @@
     .lens-menu { position: absolute; top: calc(100% + 6px); right: 0; min-width: 160px; padding: 4px; display: flex; flex-direction: column; z-index: 30; background: #0b1220; }
     .lens-menu[hidden] { display: none; }
     .lens-menu button { background: none; border: 0; color: var(--text); font: inherit; text-align: left; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
-    .lens-menu button:hover, .lens-menu button:focus-visible { background: rgba(251, 191, 36, 0.14); }
+    .lens-menu button:hover, .lens-menu button:focus-visible { background: var(--sel); }
     .lens-menu button:focus-visible, .menu button:focus-visible, .model-menu a:focus-visible { outline-offset: -2px; }
-    .lens-menu button.on { color: #fde68a; font-weight: 600; }
+    .lens-menu button.on { color: #f8fafc; font-weight: 600; }
     /* The legend hangs below the lens bar, so picking a lens never reflows the top bar. */
     /* The legend has its own place under the bar: over the map on a narrow screen, and on a wide one at the head of the details column, which steps down for it. */
     .lens-legend { position: fixed; top: calc(var(--bar, 52px) + 8px); right: 12px; z-index: 13; display: grid; grid-template-columns: auto minmax(60px, 1fr) auto; align-items: center; gap: 4px 8px; padding: 8px 12px; color: var(--dim); font-size: 11px; line-height: 16px; background: #090c14; border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); box-sizing: border-box; }
@@ -409,23 +421,23 @@
     .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
     /* Altimeter: depth gauge on the left edge. */
     /* Region title card. */
-    kbd { font: 600 10px ui-monospace, Consolas, monospace; color: #94a3b8; border: 1px solid #334155; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: rgba(15, 23, 42, 0.8); }
+    kbd { font: 600 11px ui-monospace, Consolas, monospace; color: #94a3b8; border: 1px solid #334155; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; background: rgba(15, 23, 42, 0.8); }
     #travel { white-space: nowrap; overflow: hidden; gap: 10px; text-align: left; background: var(--panel); border: 1px solid var(--line); color: var(--dim); border-radius: 10px; padding: 8px 12px; font: inherit; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
-    #travel:hover { color: var(--text); border-color: rgba(251, 191, 36, 0.4); }
+    #travel:hover { color: var(--text); border-color: rgba(226, 232, 240, 0.4); }
     /* Toast */
-    .toast { position: fixed; z-index: 50; left: 50%; bottom: 96px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 22, 0.92); border: 1px solid rgba(251, 191, 36, 0.35); color: #e2e8f0; padding: 9px 14px; border-radius: 10px; font-size: 13px; transition: opacity 0.18s, transform 0.18s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
+    .toast { position: fixed; z-index: 50; left: 50%; bottom: 96px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; display: flex; gap: 10px; align-items: center; background: rgba(10, 14, 22, 0.92); border: 1px solid rgba(148, 163, 184, 0.35); color: #e2e8f0; padding: 9px 14px; border-radius: 10px; font-size: 13px; transition: opacity 0.18s, transform 0.18s; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
     /* Palette */
-    .palette { position: fixed; z-index: 30; left: 50%; top: 14vh; transform: translate(-50%, 0); width: min(680px, 90vw); background: #090c14; border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); overflow: hidden; }
+    .palette { position: fixed; z-index: 30; left: 50%; top: 14vh; transform: translate(-50%, 0); width: min(680px, 90vw); background: #090c14; border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7); overflow: hidden; }
     .palette[hidden] { display: none; }
-    .palette input { width: 100%; background: none; border: 0; border-bottom: 1px solid #1e293b; color: #f1f5f9; font: 17px 'Segoe UI', sans-serif; padding: 16px 18px; outline: none; }
+    .palette input { width: 100%; background: none; border: 0; border-bottom: 1px solid #1e293b; color: #f1f5f9; font: 19px 'Segoe UI', sans-serif; padding: 16px 18px; outline: none; }
     .palette-list { max-height: 52vh; overflow: auto; padding: 6px; }
     .palette .row { display: grid; grid-template-columns: 86px auto 1fr; gap: 10px; align-items: baseline; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
-    .palette .row.on { background: rgba(251, 191, 36, 0.14); box-shadow: inset 3px 0 #fbbf24; }
-    .palette input:focus-visible { box-shadow: inset 0 -2px #fbbf24; }
+    .palette .row.on { background: var(--sel); box-shadow: inset 3px 0 var(--focus); }
+    .palette input:focus-visible { box-shadow: inset 0 -2px var(--focus); }
     /* On the amber highlight the path needs a lighter grey to keep 4.5:1. */
     .palette .row.on .sub { color: #a7b4c8; }
-    .palette .row .kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+    .palette .row .kind { font: 600 11px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
     .palette .row b { color: #e2e8f0; font-weight: 600; }
     .palette .row .sub { color: var(--faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* A phone: kind and name on one line, the path whole on the next, so same-named files stay apart. */
@@ -434,7 +446,7 @@
       .palette .row b { overflow-wrap: anywhere; }
       .palette .row .sub { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
     }
-    .palette .group { font: 600 10px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); padding: 10px 10px 4px; }
+    .palette .group { font: 600 11px ui-monospace, Consolas, monospace; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); padding: 10px 10px 4px; }
     .palette .none { color: #94a3b8; font-size: 13px; padding: 10px 10px 8px; }
     /* Tooltips */
     /* Context menu */
@@ -442,11 +454,11 @@
     .menu[hidden] { display: none; }
     .menu-title { font-size: 11px; color: var(--dim); padding: 6px 10px 4px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .menu button { display: flex; justify-content: space-between; gap: 16px; background: none; border: 0; color: var(--text); font: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-align: left; }
-    .menu button:hover, .menu button:focus-visible { background: rgba(251, 191, 36, 0.16); }
-    .tip { position: fixed; z-index: 20; width: 280px; pointer-events: none; background: rgba(9, 12, 20, 0.96); border: 1px solid #334155; border-radius: 10px; padding: 11px 13px 13px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); font-size: 12px; animation: tipin 0.12s ease; }
+    .menu button:hover, .menu button:focus-visible { background: var(--sel); }
+    .tip { position: fixed; z-index: 20; width: 280px; pointer-events: none; background: rgba(9, 12, 20, 0.96); border: 1px solid #334155; border-radius: 10px; padding: 11px 13px 13px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); font-size: 13px; animation: tipin 0.12s ease; }
     .tip[hidden] { display: none; }
     @keyframes tipin { from { opacity: 0; transform: translateY(4px); } }
-    .tip-kind { font: 600 9px ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+    .tip-kind { font: 600 11px ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
     .tip-title { font-size: 15px; font-weight: 600; color: #f1f5f9; margin: 2px 0 6px; }
     .tip-desc { color: #94a3b8; line-height: 1.45; margin-bottom: 6px; }
     .tip-counts { color: var(--dim); font-size: 11px; margin-bottom: 4px; }
@@ -459,20 +471,20 @@
     @media (max-width: 599px) {
       .help-grid { padding: 0 14px; gap: 20px; grid-template-columns: 1fr; }
       .help-head { padding: 10px 14px; }
-      .help-overlay h2 { font-size: 20px; letter-spacing: 0.2em; }
+      .help-overlay h2 { font-size: 19px; letter-spacing: 0.2em; }
       .help-row b { white-space: normal; }
     }
     .help-close { min-height: 44px; background: rgba(148, 163, 184, 0.12); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 18px; border-radius: 8px; cursor: pointer; }
     .help-overlay h2 { font: 300 26px 'Segoe UI', sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: #f1f5f9; margin: 0; }
     .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 32px; max-width: 1040px; width: 100%; padding: 0 24px; }
-    .help-col h3 { font: 600 11px ui-monospace, monospace; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+    .help-col h3 { font: 600 11px ui-monospace, monospace; letter-spacing: 0.2em; text-transform: uppercase; color: #f1f5f9; margin: 0 0 10px; }
     .help-row { display: grid; grid-template-columns: minmax(0, 10rem) 1fr; gap: 12px; padding: 6px 0; border-bottom: 1px solid #1e293b; color: #b6c2d3; align-items: baseline; }
     .help-row b { color: var(--text); font-weight: 600; }
     .help-row kbd { white-space: normal; justify-self: start; width: auto; }
     @media (max-width: 559px) {
       .lensbar { order: 2; margin-left: 0; }
       #travel { order: 2; font-size: 0; gap: 0; padding: 6px 10px; }
-      #travel::before { content: '⌕' / ''; font-size: 18px; line-height: 1; color: var(--text); }
+      #travel::before { content: '⌕' / ''; font-size: 19px; line-height: 1; color: var(--text); }
       #help { font-size: 0; padding: 5px 8px; }
       #help kbd { font-size: 13px; }
       #models { min-width: 0; }

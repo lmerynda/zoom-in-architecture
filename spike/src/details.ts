@@ -646,7 +646,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${count(n)} ${n ==
 
 /** A method as a small tag, coloured by what it does. */
 function methodTag(m: string): HTMLElement {
-  const t = el('span', `d-m m-${m.toLowerCase()}`, m)
+  const t = el('span', 'd-m', m)
   t.setAttribute('aria-hidden', 'true')
   return t
 }

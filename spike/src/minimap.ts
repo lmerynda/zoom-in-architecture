@@ -47,7 +47,7 @@ export class Minimap {
     // The view's box is clipped to the minimap: zoomed far out it is the minimap's own edge, not a line off it.
     g.save()
     g.beginPath(); g.rect(1, 1, W - 2, H - 2); g.clip()
-    g.strokeStyle = '#fbbf24'
+    g.strokeStyle = '#f8fafc'
     g.lineWidth = 1.5
     if (vw < 6) {
       // Deep zoom: the viewport is a dot, so mark it with a crosshair.

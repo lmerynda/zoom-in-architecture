@@ -109,7 +109,8 @@ export class Reader {
     this.total = src.lines.length
     this.pre.innerHTML = src.html.join('')
     // The rail: a tick per cited or marked line, where it falls in the file.
-    for (const n of new Set([...src.cited, ...src.marks.keys()])) {
+    // In line order, top to bottom, as they stand on the rail.
+    for (const n of [...new Set([...src.cited, ...src.marks.keys()])].sort((a, b) => a - b)) {
       if (n < 1 || n > this.total) continue
       const t = el('button', src.cited.has(n) ? 'cited' : 'mark')
       t.style.top = `${((n - 1) / this.total) * 100}%`
