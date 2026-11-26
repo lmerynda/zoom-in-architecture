@@ -498,6 +498,26 @@ try {
   })
   check('a selection keeps a runtime call\'s kind: a violet rim under its colour', rims.violet > 0, JSON.stringify(rims))
 
+  // The Coupling layout's link carries what you just picked, and the code you are reading; the tab
+  // names the map and how it is shown, in every view, by the map's own name.
+  await open('model=knights-of-darkness')
+  await page.evaluate(() => window.__spike.select(window.__spike.id('backend')))
+  await page.click('.layout-current')
+  const picked = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
+  check('the By coupling link carries a selection made a moment ago', picked.includes('layout=coupling') && picked.includes('at=backend'), picked)
+  await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+  await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
+  await page.click('.layout-current')
+  const readingLink = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
+  check('the By coupling link keeps the file being read and its line', /file=[^&]*MarketController\.java/.test(readingLink) && /line=\d+/.test(readingLink), readingLink)
+  const tabs = []
+  for (const q of ['model=knights-of-darkness', 'model=knights-of-darkness&layout=coupling', 'model=knights-of-darkness&view=requests']) {
+    await open(q)
+    await sleep(400)
+    tabs.push(await page.evaluate(() => ({ tab: document.title, heading: document.querySelector('#details h2')?.textContent })))
+  }
+  check('the tab names the map by its own name and how it is shown', tabs[0].tab === 'Knights of Darkness: Architecture' && tabs[1].tab === 'Knights of Darkness: Architecture, laid out by coupling' && tabs[2].tab === 'Knights of Darkness: Requests' && tabs.every(t => t.heading === 'Knights of Darkness'), JSON.stringify(tabs))
+
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })
   await open('model=knights-of-darkness')

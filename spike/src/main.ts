@@ -59,8 +59,11 @@ async function loadModel(): Promise<ModelJson> {
   const res = await fetch(`${import.meta.env.BASE_URL}models/${modelFile}.json`)
   // A dev server answers an unknown file with its page: no JSON is no map, as a 404 is.
   if (!res.ok || !res.headers.get('content-type')?.includes('json')) throw new Error(`model ${modelFile}: ${res.ok ? 404 : res.status}`)
-  return res.json()
+  return named(await res.json())
 }
+
+/** The map by its own name in every view: the Requests model's title says "· requests", the view says it already. */
+const named = (m: ModelJson): ModelJson => (m.title ? { ...m, title: m.title.replace(/ · requests$/, '') } : m)
 
 const ring = (n: number) => ({ a: new Float64Array(n), k: 0, full: false })
 type Ring = ReturnType<typeof ring>
@@ -85,7 +88,7 @@ function showIntro(tree: Tree, surface: Surface, feature: (name: string) => void
   const features = [...new Set(tree.els.flatMap(e => e.features ?? []))]
   const endpoints = surface.api?.endpoints.length ?? 0
   const p = document.createElement('p'), b = document.createElement('b')
-  b.textContent = tree.els[0].title.replace(/ · requests$/, '')
+  b.textContent = tree.els[0].title
   const n = (k: number, w: string) => `${count(k)} ${w}${k === 1 ? '' : 's'}`
   const counts = [...topCounts(tree.children[0].map(i => tree.els[i].kind)), ...(endpoints ? [n(endpoints, 'endpoint')] : []), ...(features.length ? [n(features.length, 'feature')] : [])]
   p.append(b, ` is mapped here: ${counts.join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). ${matchMedia('(pointer: coarse)').matches ? 'Help lists every gesture.' : 'Help (?) lists every control.'}`)
@@ -160,8 +163,10 @@ async function main() {
   /** The model as last loaded, so the toggle can lay it out again with or without type-only imports. */
   let raw = model
   let tree = new Tree(model, { types: showTypes })
-  /** The map's own name, the same in every view. */
-  const mapTitle = () => tree.els[0].title.replace(/ · requests$/, '')
+  /** The map's own name, the same in every view (loadModel and live updates drop " · requests"). */
+  const mapTitle = () => tree.els[0].title
+  /** How the map is shown, for the tab and the page's heading. */
+  const shownAs = view === 'requests' ? 'Requests' : coupling ? 'Architecture, laid out by coupling' : 'Architecture'
   let published = model.published
   // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
   /**
@@ -816,7 +821,8 @@ async function main() {
     refreshSurface()
     intro(true)
   })()
-  $('title').textContent = `${mapTitle()}: ${view === 'requests' ? 'Requests' : coupling ? 'Architecture, laid out by coupling' : 'Architecture'}`
+  // The heading and the browser tab both name the map and how it is shown.
+  $('title').textContent = document.title = `${mapTitle()}: ${shownAs}`
   // The welcome is up now: the first frame keeps clear of it.
   if (!$('welcome').hidden) setWhole()
 
@@ -928,13 +934,20 @@ async function main() {
       const ep = r > 0 ? surface.api?.endpoints.find(x => x.id === tree.els[r].id) : null
       return { at: null, file: file ?? ep?.handler?.path ?? null, req }
     }
+    // Within this view (Architecture's other layout) the code being read comes along too.
+    const here = new URLSearchParams(location.search), reading = here.get('file')
     for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a, .layout-menu a')) {
       const base = (a.dataset.base ??= a.getAttribute('href') ?? '')
       const toRequests = new URLSearchParams(base).get('view') === 'requests'
       a.href = toRequests === (view === 'requests')
-        ? placeUrl(base, { at: v.selected, in: v.here, lens, req: view === 'requests' ? null : req })
+        ? placeUrl(base, { at: v.selected, in: v.here, lens, req: view === 'requests' ? null : req, file: reading, line: Number(here.get('line')) || null })
         : placeUrl(base, toRequests ? intoRequests() : fromRequests())
     }
+  }
+  // A link is brought up to date as it is used, not only on the timer: picked mid-flight, it carries
+  // the selection just made.
+  for (const type of ['pointerdown', 'focusin', 'keydown'] as const) {
+    addEventListener(type, e => { if ((e.target as Element | null)?.closest?.('#views a, .layout-menu a')) viewLinks() }, true)
   }
 
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
@@ -1027,7 +1040,7 @@ async function main() {
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
-      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(json, json.buildMs ?? 0) }
+      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(named(json), json.buildMs ?? 0) }
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
@@ -1071,7 +1084,8 @@ async function main() {
       // A long path gives way in its middle: the map, the place you are in and its parent stay.
       const buttons = [...crumbs.querySelectorAll('button')]
       for (let k = 1; k < buttons.length - 2 && crumbs.scrollWidth > crumbs.clientWidth + 1; k++) { buttons[k].textContent = '…'; buttons[k].style.flex = 'none' }
-      document.title = here > 0 ? `${tree.els[here].title} · ${tree.els[0].title}` : tree.els[0].title
+      // The tab names the place, the map and how it is shown: "War · Knights of Darkness: Architecture".
+      document.title = `${here > 0 ? `${tree.els[here].title} · ` : ''}${mapTitle()}: ${shownAs}`
       if (!cam.flying && !edgeOpen()) showOutline()
     }
     if (!cam.flying && outlined !== here && renderer.selected <= 0 && !edgeOpen()) showOutline()
