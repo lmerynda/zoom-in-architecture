@@ -5,7 +5,7 @@ import { installControls } from './controls/install'
 import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
 import { buildApi, callsIn, clientParts, endpointOf, featureFacts, isPage, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
-import { CARD_W, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
+import { CARD_W, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, type LocalLayout, type World } from './layout'
 import { runLayout } from './layoutPool'
 import { buildLenses, type LensName } from './lens'
 import { Minimap } from './minimap'
@@ -262,41 +262,76 @@ async function main() {
     }
     return best
   }
+  /** Where framing the whole map last put the camera: the reader is still at the whole map while the camera is there. */
+  let wholeAt: [number, number, number] | null = null
+  const atWhole = () => !!wholeAt && !cam.flying && renderer.selected <= 0 && Math.abs(cam.z / wholeAt[2] - 1) < 1e-3 && Math.hypot(cam.x - wholeAt[0], cam.y - wholeAt[1]) * cam.z < 1
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
-    if (i === 0) renderer.wholeZ = f.z
+    if (i === 0) { renderer.wholeZ = f.z; wholeAt = [f.x, f.y, f.z] }
     cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
+  /** Frames the whole map at once, no flight: on load, and for a stage that changed under it. */
+  const setWhole = () => {
+    const f = frameFor(0)
+    cam.set(f.x, f.y, f.z)
+    renderer.wholeZ = f.z
+    wholeAt = [f.x, f.y, f.z]
+  }
   const resize = () => {
+    const was = atWhole()
     cam.resize(app.screen.width, app.screen.height)
     measureHud()
+    if (was) setWhole()
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
-  let reshaping: ReturnType<typeof setTimeout> | undefined
+  let reshaping: ReturnType<typeof setTimeout> | undefined, relaying = false
   const reshape = () => {
     clearTimeout(reshaping)
-    reshaping = setTimeout(() => {
-      const next = stageAspect()
-      if (Math.abs(Math.log(next / rootAspect)) < Math.log(1.15)) return
-      rootAspect = next
-      void swapModel(raw).then(() => {
-        const settled = () => { if (morph) return void requestAnimationFrame(settled); if (renderer.selected <= 0) fit(0) }
-        settled()
-      })
-    }, 300)
+    reshaping = setTimeout(() => void relayout(), 300)
+  }
+  /**
+   * A new shape for the stage lays out only the whole map's own level again, in place: the model,
+   * the selection and the panel (an arrow being inspected) stay. The reader stays where they were:
+   * at the whole map, framed again; else on the selection, or the card at the screen's centre.
+   */
+  const relayout = async () => {
+    const next = stageAspect()
+    if (Math.abs(Math.log(next / rootAspect)) < Math.log(1.15)) return
+    // A live update or another relayout in flight: try again once it is done.
+    if (morph || relaying) return reshape()
+    relaying = true
+    const was = atWhole(), before = tree
+    rootAspect = next
+    try {
+      const nextJobs = layoutJobs(tree, coupling, rootAspect)
+      const { reused, rerun } = reuseLayouts(tree, jobs, local, tree, nextJobs)
+      const fresh = rerun.length ? await runLayout(rerun) : new Map<number, LocalLayout>()
+      // A live update replaced the model meanwhile: it was laid out for this shape already.
+      if (tree !== before) return
+      jobs = nextJobs
+      local = new Map([...reused, ...fresh])
+      const anchor = renderer.selected > 0 ? renderer.selected : renderer.pick(cam.w / 2, cam.h / 2)
+      const r = world.rect, a = anchor * 4, [sx, sy] = cam.toScreen(r[a], r[a + 1]), w0 = r[a + 2]
+      const placed = placeWorld(tree, local)
+      world.rect.set(placed.rect)
+      world.content.set(placed.content)
+      world.local = local
+      renderer.router.reset()
+      if (was) setWhole()
+      else if (anchor > 0) {
+        const z = cam.z * (w0 / r[a + 2])
+        cam.set(r[a] - (sx - cam.w / 2) / z, r[a + 1] - (sy - cam.h / 2) / z, z)
+      }
+    } finally { relaying = false }
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
   const measureHud = () => {
     renderer.hud = ['stats', 'minimap', 'help', 'details', 'arrows'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
-  {
-    cam.resize(app.screen.width, app.screen.height)
-    const f = frameFor(0)
-    cam.set(f.x, f.y, f.z)
-    renderer.wholeZ = f.z
-  }
+  cam.resize(app.screen.width, app.screen.height)
+  setWhole()
   // Pixi applies a window resize a frame later; reading the screen before that keeps the old
   // size, and everything outside it is culled as off-screen.
   app.renderer.on('resize', resize)
@@ -307,7 +342,7 @@ async function main() {
     setSafeTop(h)
     // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
     // the whole map is framed again for it while you have not moved from it.
-    if (renderer.selected <= 0 && !cam.flying && renderer.wholeZ > 0 && Math.abs(cam.z / renderer.wholeZ - 1) < 0.02) fit(0)
+    if (atWhole()) setWhole()
     reshape()
   }).observe($('top'))
 
@@ -763,7 +798,7 @@ async function main() {
   })()
   $('title').textContent = `${tree.els[0].title.replace(/ · requests$/, '')}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
   // The welcome is up now: the first frame keeps clear of it.
-  if (!$('welcome').hidden) { const f = frameFor(0); cam.set(f.x, f.y, f.z); renderer.wholeZ = f.z }
+  if (!$('welcome').hidden) setWhole()
 
   /**
    * What the arrows are: runtime calls, uses in code, and type-only imports, with the toggle that

@@ -17,6 +17,13 @@ export class EdgeRouter {
 
   constructor(private tree: Tree, private world: World) {}
 
+  /** Forgets every route, for a level laid out again in place (its local routes changed too). */
+  reset() {
+    this.grids.clear()
+    this.siblings.clear()
+    this.invalidate()
+  }
+
   /** Forgets routes that depend on world positions, while those positions are animating. */
   invalidate() {
     this.exits.clear()

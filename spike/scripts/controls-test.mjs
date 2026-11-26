@@ -403,12 +403,45 @@ try {
     const whole = await page.evaluate(() => {
       const s = window.__spike, r = s.world.rect, z = s.cam.z, stage = document.getElementById('stage').getBoundingClientRect()
       const top = document.getElementById('top').getBoundingClientRect().bottom + 8, bottom = stage.bottom - (innerWidth < 1100 ? 58 : 28)
-      const k = s.tree.children[s.id('backend')][0]
-      return { across: +((r[2] * z) / stage.width).toFixed(2), down: +((r[3] * z) / (bottom - top)).toFixed(2), nested: +Math.min(r[k * 4 + 3] * z * 0.15, 24).toFixed(1) }
+      // The titles as drawn: each card of the server's, on one line or two, its size on screen.
+      const titles = s.tree.children[s.id('backend')].map(k => { const v = s.renderer.views[k], t = v?.title2?.visible ? v.title2 : v?.title; return t?.visible ? +(t.scale.y * 32).toFixed(1) : 0 })
+      return { across: +((r[2] * z) / stage.width).toFixed(2), down: +((r[3] * z) / (bottom - top)).toFixed(2), titles }
     })
-    check(`at ${width}×${height} the whole map fills the stage on one side`, Math.max(whole.across, whole.down) >= 0.9, JSON.stringify(whole))
-    if (width === 1920) check('at 1920 the cards inside the server are titled at 10 px or more', whole.nested >= 10, JSON.stringify(whole))
+    // Upright and wide screens fill the stage on one side; a phone on its side fills its width.
+    const fills = mobile ? whole.across >= 0.9 : Math.max(whole.across, whole.down) >= 0.9
+    check(`at ${width}×${height} the whole map fills the stage${mobile ? "'s width" : ' on one side'}`, fills, JSON.stringify(whole))
+    if (width === 1920) check('at 1920 every card inside the server is titled at 10 px or more', whole.titles.every(px => px >= 10), JSON.stringify(whole))
   }
+
+  // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness')
+  await landed()
+  await page.mouse.move(800, 700)
+  await page.mouse.down()
+  await page.mouse.move(660, 700, { steps: 8 })
+  await page.mouse.up()
+  await sleep(400)
+  const panned = await camera()
+  await page.setViewport({ width: 1601, height: 1000 })
+  await sleep(900)
+  const afterNudge = await camera()
+  check('a one-pixel resize keeps a pan', Math.abs(afterNudge[0] - panned[0]) < 1 && Math.abs(afterNudge[2] / panned[2] - 1) < 1e-3, JSON.stringify({ panned, afterNudge }))
+  await page.evaluate(() => { const s = window.__spike; s.cam.set(s.cam.x, s.cam.y, s.cam.z * 3.5) })
+  await sleep(300)
+  const zoomed = await camera()
+  await page.setViewport({ width: 1240, height: 1000 })
+  await sleep(1500)
+  const afterShape = await camera()
+  check('a resize that lays the map out again keeps a zoom the reader chose', afterShape[2] > zoomed[2] * 0.5, JSON.stringify({ zoomed, afterShape }))
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness&at=backend')
+  await page.evaluate(() => document.querySelector('#details .d-rels.out .d-inspect').click())
+  await sleep(400)
+  await page.setViewport({ width: 1240, height: 1000 })
+  await sleep(1500)
+  const kept = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, title: document.querySelector('#details h2')?.textContent }))
+  check('a resize keeps an arrow being inspected open', kept.kind === 'Arrow' && kept.title === 'Game server → Game database', JSON.stringify(kept))
   await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
