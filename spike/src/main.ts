@@ -276,7 +276,7 @@ async function main() {
     return best
   }
   // A live update moving into place (swapModel, stepMorph): declared here, as a resize reads it.
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number] } | null = null
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number]; resized: boolean } | null = null
   /**
    * The card the camera was last framed on and where that put it: while the camera is still there,
    * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
@@ -312,7 +312,7 @@ async function main() {
     // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
     else renderer.wholeZ = frameFor(0).z
     // A resize is not the reader taking the camera from a live update's morph.
-    if (morph) morph.last = [cam.x, cam.y, cam.z]
+    if (morph) { morph.last = [cam.x, cam.y, cam.z]; morph.resized = true }
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
@@ -1037,7 +1037,7 @@ async function main() {
     // At the whole map when it is installed (not when it was asked for: the reader may have moved
     // while it was laid out), a new version is framed whole again once it has moved into place.
     refitAfterMorph = atWhole()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z] }
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z], resized: false }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
@@ -1070,7 +1070,8 @@ async function main() {
     renderer.router.invalidate()
     // The refit waits for the morph, and is dropped if the reader moved meanwhile (a wheel, a pan).
     if (u >= 1) {
-      const stayed = !morph.handsOff && cam.settled && Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1
+      // A resize moved the camera too (not the reader): the whole map is still framed after it.
+      const stayed = !morph.handsOff && cam.settled && (morph.resized || (Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1))
       morph = null
       if (refitAfterMorph && stayed) fit(0)
       refitAfterMorph = false
