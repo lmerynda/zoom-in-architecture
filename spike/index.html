@@ -377,7 +377,8 @@
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
     .reader-title { font-weight: 650; color: #f1f5f9; font-size: 15px; white-space: nowrap; }
     .reader-where { color: var(--dim); font: 13px ui-monospace, Consolas, monospace; display: flex; min-width: 0; white-space: nowrap; }
-    .reader-where .rw-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    /* The folders take only the room the file's name and line leave; the name gives way last. */
+    .reader-where .rw-path { flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .reader-where .rw-file { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .reader-where .rw-line { flex: none; }
     .reader-head button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }

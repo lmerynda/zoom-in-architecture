@@ -465,7 +465,7 @@ try {
   await open('model=excalidraw&in=app.ai')
   await landed()
   const shortCrumb = await page.evaluate(() => [...document.querySelectorAll('#crumbs > button')].map(b => ({ t: b.textContent, w: Math.round(b.getBoundingClientRect().width) })))
-  check('at 320 px a one-word crumb is 44 px wide', shortCrumb.length > 1 && shortCrumb.every(c => c.w >= 44 || !c.w), JSON.stringify(shortCrumb))
+  check('at 320 px a one-word crumb is 44 px wide', shortCrumb.some(c => c.t === 'AI' && c.w >= 44) && shortCrumb.every(c => c.w >= 44 || !c.w), JSON.stringify(shortCrumb))
 
   // Under a lens, an edge chip keeps off a container's value as it does off a card's text.
   await page.setViewport({ width: 1600, height: 1000 })
