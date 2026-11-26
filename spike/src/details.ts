@@ -650,9 +650,10 @@ function methodTag(m: string): HTMLElement {
 function endpointRow(ep: Endpoint, open: () => void, sub = ''): HTMLLIElement {
   const li = el('li')
   const b = el('button', 'd-ep')
-  b.append(methodTag(ep.method), el('b', '', ep.route), el('span', '', sub || [ep.handler?.name, ep.returns && `→ ${ep.returns}`].filter(Boolean).join(' ')))
+  const line = sub || [ep.handler?.name, ep.returns && `→ ${ep.returns}`].filter(Boolean).join(' ')
+  b.append(methodTag(ep.method), el('b', '', ep.route), el('span', '', line))
   if (ep.seen === 0) { b.append(el('em', 'd-seen-tag none', 'untested')); b.classList.add('unseen') }
-  b.setAttribute('aria-label', `${ep.method} ${ep.route}${ep.seen === 0 ? ', not seen in tests' : ''}`)
+  b.setAttribute('aria-label', `${ep.method} ${ep.route}${ep.seen === 0 ? ', not seen in tests' : ''}${line ? `: ${line.replace('→', 'returns')}` : ''}`)
   b.onclick = open
   li.append(b)
   return li
@@ -941,7 +942,8 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
     const ul = el('ul')
     for (const k of answers) {
       const m = tree.els[k].metadata ?? {}
-      const what = m.model || (role(k) === 'response' && returns) || tree.els[k].title.replace(/^\d+ · /, '')
+      // The type as written; else what the map says it answers ("Renders findOwners"); else its name.
+      const what = m.model || (role(k) === 'response' && returns) || tree.els[k].description.replace(/\.$/, '') || tree.els[k].title.replace(/^\d+ · /, '')
       ul.append(rowBtn(what, [m.answer === 'body' ? 'as the response body' : m.answer ?? '', role(k) === 'view' ? 'a view' : ''].filter(Boolean).join(' · '), () => act.go(k)))
     }
     if (!answers.length && returns) ul.append(rowBtn(returns, '', null))

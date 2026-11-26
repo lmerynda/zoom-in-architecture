@@ -178,7 +178,8 @@ export interface Marks { route: Mark[]; schedule: Mark[] }
 /**
  * Entry points the map's files mark, by kind, counted once per file and line: HTTP routes and
  * scheduled jobs. (Sockets and processes are marked where code reaches out as much as where it
- * listens, so they are not counted as ways in.)
+ * listens, so they are not counted as ways in.) Until maps carry entry points of their own, this
+ * is what the scanner's marks say.
  */
 export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'metadata'>[]): Marks {
   const byId = new Map(els.map(e => [e.id, e]))
@@ -191,6 +192,8 @@ export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'metadata
     for (const m of (e.metadata?.marks ?? '').split(' ')) {
       const [line, kind] = m.split(':')
       if ((kind !== 'route' && kind !== 'schedule') || seen.has(`${path}:${line}`)) continue
+      // A timer in a page or a component (a poll, an animation) is marked as a schedule, but it is no way in.
+      if (kind === 'schedule' && /\.(tsx|jsx|vue|svelte|html?)$/i.test(path)) continue
       seen.add(`${path}:${line}`)
       out[kind].push({ path, line: Number(line), top: top(e) })
     }

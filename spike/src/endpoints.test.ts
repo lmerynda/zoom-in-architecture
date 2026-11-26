@@ -108,6 +108,8 @@ describe('markedEntries', () => {
     expect(m.route.map(r => `${r.path}:${r.line}`)).toEqual([`${ctrl}:34`, `${ctrl}:66`, 'src/Zélan.java:8'])
     expect(m.schedule).toEqual([{ path: 'src/Zélan.java', line: 20, top: 'server' }])
     expect(markedEntries([])).toEqual({ route: [], schedule: [] })
+    // A timer in a page is no way in.
+    expect(markedEntries([el('web', null), el('web.p', 'web', { metadata: { path: 'web/Collab.tsx', marks: '841:schedule 9:route' } })]).schedule).toEqual([])
   })
 })
 
