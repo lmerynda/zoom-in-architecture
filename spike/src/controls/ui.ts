@@ -364,14 +364,14 @@ export class Help {
   private box = el('div', 'help-box')
   private back: HTMLElement | null = null
 
-  constructor(connections: boolean) {
+  constructor(coupling: boolean) {
     // A touch screen gets its own gestures first; the mouse and keys still apply with a keyboard attached.
     const touch: [string, [string, string][]] = ['Touch', [['Tap', 'Select: amber arrows it uses, cyan what uses it'], ['Double-tap', 'Go into a card; on a file, read its code'], ['Drag', 'Pan'], ['Pinch', 'Zoom'], ['Tap the bar at the foot', 'Show or hide the panel'], ['Search', 'Find any part by name']]]
     const coarse = matchMedia('(pointer: coarse)').matches
     const groups: [string, [string, string][]][] = [
       ...(coarse ? [touch] : []),
       ['Mouse', [['Wheel', 'Zoom at the pointer'], ['Drag', 'Pan'], ['Click', 'Select: amber arrows it uses, cyan what uses it'], ['Double-click', 'Go into a card; on a file, read its code'], ['Right-click', 'Go in, read code, copy path'], ['Click a cited line', 'Open its code at that line']]],
-      ['Keys', [['Ctrl+K or /', 'Search the map'], ['Backspace or Alt+←', 'Back to the previous place'], ['Alt+→', 'Forward'], ['Alt+↑', 'Up to the parent'], [']  /  [', 'Step through what it uses / what uses it'], ['Enter', 'Go to the card stepped to, or into the selection'], ...(connections ? [['.  /  ,', 'Next / previous by connections in this level'] as [string, string]] : []), ['Arrows, + / −', 'Move and zoom'], ['Esc', 'Close the top layer, then clear the selection'], ['?', 'This page']]],
+      ['Keys', [['Ctrl+K or /', 'Search the map'], ['Backspace or Alt+←', 'Back to the previous place'], ['Alt+→', 'Forward'], ['Alt+↑', 'Up to the parent'], [']  /  [', 'Step through what it uses / what uses it'], ['Enter', 'Go to the card stepped to, or into the selection'], ...(coupling ? [['.  /  ,', 'Next / previous by coupling rank in this level'] as [string, string]] : []), ['Arrows, + / −', 'Move and zoom'], ['Esc', 'Close the top layer, then clear the selection'], ['?', 'This page']]],
     ]
     const legend: [string, string][] = [
       ['Card', 'A part of the product; a card inside a card is a part of it'],

@@ -70,7 +70,7 @@ export interface LayoutJob {
   headed: boolean[]
   /** Sibling edges, one per unordered pair, with how many relations they carry. */
   edges: { s: number; t: number; count: number }[]
-  /** Connections view: each child's importance (relations crossing its boundary), in `children` order; placed centre-out. */
+  /** Coupling layout: each child's importance (relations crossing its boundary), in `children` order; placed centre-out. */
   weights?: number[]
   /**
    * A request's path: each child's place in the sequence (0, 1, 2…), or -1 for a card beside it
@@ -116,7 +116,7 @@ export function lanePlace(job: LayoutJob & { lane: number[] }): { pos: number[];
 
 /**
  * How connected each node is: the relations that cross its boundary, to anything outside it.
- * The Connections view ranks siblings by it and places the most connected at the centre.
+ * The Coupling layout ranks siblings by it and places the most connected at the centre.
  */
 export function importance(tree: Tree): Float64Array {
   const w = new Float64Array(tree.size)
@@ -145,7 +145,7 @@ export function siblingPartners(tree: Tree): Int32Array {
 }
 
 /**
- * What ranks a node among its siblings in the Connections view: the share of its siblings it
+ * What ranks a node among its siblings in the Coupling layout: the share of its siblings it
  * reaches, plus half its relations on a log scale against its busiest sibling. Breadth leads, so a
  * shared-types library that a few parts import hundreds of times does not outrank the part that
  * talks to all of its peers; volume still counts, so a heavy part missing one sibling is not
@@ -173,7 +173,7 @@ export function ranks(tree: Tree, w: Float64Array): Int32Array {
 const RING = 0.3
 
 /**
- * The Connections view's arrangement of one level, on the same grid as the cards (so edges still
+ * The Coupling layout's arrangement of one level, on the same grid as the cards (so edges still
  * run in the gutters). The most connected child sits at the centre (exactly, unless a side would
  * be left empty); the rest fill rings
  * outward in rank order, so distance from the centre follows rank: a card never sits farther out
@@ -299,7 +299,7 @@ export function toLocal(w: World, i: number, v: number, x: boolean) {
 
 export function layoutJobs(tree: Tree, coupling = false, rootAspect?: number): LayoutJob[] {
   const edges = tree.siblingEdges()
-  // The Connections view sizes by connection, not by code: the most connected child of a level of
+  // The Coupling layout sizes by connection, not by code: the most connected child of a level of
   // four or more is the big card at its centre.
   const weight = coupling ? rankKey(tree) : null
   const span = coupling ? couplingSpans(tree, weight!) : spans(tree)

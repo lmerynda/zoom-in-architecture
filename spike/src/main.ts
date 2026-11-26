@@ -23,9 +23,9 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const modelName = new URLSearchParams(location.search).get('model') ?? 'acme'
 /** A second view of the same import, such as its requests; it reads code from the import's repo. */
 const view = new URLSearchParams(location.search).get('view')
-/** The Connections view lays out the architecture model by connection; other views have their own model. */
-const coupling = view === 'connections'
-const modelFile = view && !coupling ? `${modelName}.${view}` : modelName
+/** The Architecture view laid out by coupling instead of map order: a layout of the same model. */
+const coupling = !view && new URLSearchParams(location.search).get('layout') === 'coupling'
+const modelFile = view ? `${modelName}.${view}` : modelName
 /** The largest on-screen font size the wheel zooms code on the map to. */
 const MAX_READ_PX = 28
 const TYPES_KEY = 'zoom.showTypes'
@@ -148,7 +148,7 @@ async function main() {
   const t0 = performance.now()
   // Whether the open model is a project's upload (not a sample), for its provenance in the breadcrumb.
   let uploaded = false, crumbsStale = false
-  void renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view)
+  void renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view, coupling)
     .then(entry => { uploaded = entry?.source === 'import'; crumbsStale = true })
   const model = await loadModel()
   // The current model version; live updates replace all four.
@@ -158,6 +158,8 @@ async function main() {
   /** The model as last loaded, so the toggle can lay it out again with or without type-only imports. */
   let raw = model
   let tree = new Tree(model, { types: showTypes })
+  /** The map's own name, the same in every view. */
+  const mapTitle = () => tree.els[0].title.replace(/ · requests$/, '')
   let published = model.published
   // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
   /**
@@ -188,7 +190,7 @@ async function main() {
   Renderer.installFont()
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
-  // In the Connections view each card shows its rank among its siblings and how connected it is.
+  // Laid out by coupling, each card shows its rank among its siblings and how connected it is.
   const rankFor = (t: Tree) => { if (!coupling) return null; const w = importance(t); return { weight: w, rank: ranks(t, rankKey(t)), partners: siblingPartners(t) } }
   renderer.ranking = rankFor(tree)
   app.stage.addChild(renderer.stage)
@@ -491,7 +493,7 @@ async function main() {
     endpoint: id => openEndpoint(id),
     list: f => showApi(f),
   }
-  /** In the Connections view, why a card ranks where it does among its siblings. */
+  /** Laid out by coupling, why a card ranks where it does among its siblings. */
   const rankText = (i: number) => {
     const rk = renderer.ranking
     if (!rk || i <= 0) return undefined
@@ -784,7 +786,7 @@ async function main() {
     return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null, req: view === 'requests' ? null : undefined }
   }, () => cam.w)
   controls = installControls({
-    app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true },
+    app, tree, world, cam, renderer, minimap, lenses, coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true },
     api: () => surface.api, requests: view === 'requests', endpoint: id => openEndpoint(id), list: f => showApi(f), showFeature,
   })
   resize()
@@ -802,7 +804,7 @@ async function main() {
     refreshSurface()
     intro(true)
   })()
-  $('title').textContent = `${tree.els[0].title.replace(/ · requests$/, '')}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
+  $('title').textContent = `${mapTitle()}: ${view === 'requests' ? 'Requests' : coupling ? 'Architecture, laid out by coupling' : 'Architecture'}`
   // The welcome is up now: the first frame keeps clear of it.
   if (!$('welcome').hidden) setWhole()
 
@@ -870,7 +872,7 @@ async function main() {
     if (crossed && target > 0 && !(file && line)) focusHeading()
   }
   /**
-   * The view switch keeps your subject: Architecture and Connections share ids. The Requests view
+   * The view switch keeps your subject: Architecture's two layouts share ids. The Requests view
    * has its own, so the subject crosses by its file, and the Requests card you were on rides along
    * in the address (`req`): coming back to the same file, that card is selected again (an endpoint,
    * its response, or the step of withdraw rather than of the first endpoint that runs the file). An
@@ -914,7 +916,7 @@ async function main() {
       const ep = r > 0 ? surface.api?.endpoints.find(x => x.id === tree.els[r].id) : null
       return { at: null, file: file ?? ep?.handler?.path ?? null, req }
     }
-    for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a')) {
+    for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a, .layout-menu a')) {
       const base = (a.dataset.base ??= a.getAttribute('href') ?? '')
       const toRequests = new URLSearchParams(base).get('view') === 'requests'
       a.href = toRequests === (view === 'requests')
@@ -1017,7 +1019,7 @@ async function main() {
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
-  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view))
+  import.meta.hot?.on('models:index', () => renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view, coupling))
 
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)
@@ -1047,8 +1049,9 @@ async function main() {
       lastCrumb = key
       crumbs.replaceChildren(...[0, ...path].map((i, k) => {
         const b = document.createElement('button')
-        b.textContent = tree.els[i].title
-        b.title = tree.els[i].title
+        // Every view names the map as the map's own title (Requests' model adds " · requests").
+        b.textContent = i === 0 ? mapTitle() : tree.els[i].title
+        b.title = b.textContent
         b.onclick = () => controls.go(i)
         if (k === path.length) { b.className = 'here'; b.setAttribute('aria-current', 'location') }
         return b

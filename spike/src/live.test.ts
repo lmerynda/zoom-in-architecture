@@ -54,7 +54,7 @@ describe('reuseLayouts', () => {
     expect(ids(rerun.map(j => j.id))).toEqual(['', 'b'])
   })
 
-  it('in the Connections view, lays a level out again when its children\'s importance changed', () => {
+  it('laid out by coupling, lays a level out again when its children\'s importance changed', () => {
     // a's children and its own edges stay the same; a.y gains a relation to b, so it outranks a.x.
     const c: ModelJson = { ...v1, relations: [...v1.relations, { source: 'a.y', target: 'b.z', title: '' }, { source: 'a.y', target: 'gone', title: '' }] }
     const a = new Tree(v1), b = new Tree(c)

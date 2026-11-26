@@ -62,8 +62,11 @@ try {
 
   // The view switch keeps the subject.
   await sleep(400)
-  const href = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Connections').href)
-  check('the Connections link carries the selection', href.includes('at=backend.kingdom'), href)
+  // Connections is no view of its own: Architecture lays out by coupling from its Layout menu.
+  const views = await page.evaluate(() => [...document.querySelectorAll('#views > a')].map(a => a.textContent))
+  check('the views are Architecture and Requests; coupling is a layout of Architecture', views.join(',') === 'Architecture,Requests', JSON.stringify(views))
+  const href = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
+  check('the By coupling layout link carries the selection', href.includes('layout=coupling') && href.includes('at=backend.kingdom'), href)
   await page.goto(href, { waitUntil: 'load' })
   await ready()
   check('switching view keeps the subject', (await selected()) === 'backend.kingdom', String(await selected()))

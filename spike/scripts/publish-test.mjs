@@ -335,10 +335,11 @@ try {
   await sleep(400)
   await shot('03-source-edit')
 
-  // The Connections view: the same map laid out by connection, most connected in the middle, and `.`
-  // walks a level from the most connected down.
-  await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Connections').click())
-  await page.waitForFunction(() => location.search.includes('view=connections') && window.__spike?.ready, { timeout: 60000 })
+  // The Coupling layout: the same map laid out by connection, most connected in the middle, and `.`
+  // walks a level from the most connected down. It is picked from the Layout menu.
+  await page.click('.layout-current')
+  await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').click())
+  await page.waitForFunction(() => location.search.includes('layout=coupling') && window.__spike?.ready, { timeout: 60000 })
   await sleep(1500)
   const cv = await page.evaluate(() => {
     const s = window.__spike, r = s.world.rect, rk = s.renderer.ranking, top = s.tree.children[0]
@@ -349,7 +350,7 @@ try {
   await page.keyboard.press('.')
   await sleep(2200)
   const picked = await page.evaluate(() => window.__spike.tree.els[window.__spike.renderer.selected]?.id)
-  check('the Connections view puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
+  check('the Coupling layout puts the most connected in the middle, and . walks from it', cv.first === cv.nearest && picked === cv.first, JSON.stringify({ ...cv, picked }))
   // Its grid's gutters are narrow; the landscape's arrows still say what they carry (the customer's
   // arrow runs beside a card at its middle and once went unlabelled).
   const counts = await page.evaluate(() => {
@@ -360,7 +361,7 @@ try {
     s.manual(false)
     return labels
   })
-  await shot('connections-landscape')
+  await shot('coupling-landscape')
   // Each card wears its rank in its corner, readable, not inside the small print.
   // (An open card says it in its header instead.)
   const badges = await page.evaluate(() => {
@@ -372,8 +373,8 @@ try {
       headers: top.filter(i => rd.open(i) > 0).map(i => views[i]?.meta?.text ?? ''),
     }
   })
-  check('Connections cards wear their rank as a badge', badges.badges.length === badges.closed && [...badges.badges, ...badges.headers.map(h => h.split(' ')[0])].includes('#1'), JSON.stringify(badges))
-  check('the Connections landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
+  check('cards laid out by coupling wear their rank as a badge', badges.badges.length === badges.closed && [...badges.badges, ...badges.headers.map(h => h.split(' ')[0])].includes('#1'), JSON.stringify(badges))
+  check('the Coupling landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 

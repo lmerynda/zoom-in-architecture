@@ -19,8 +19,8 @@ export interface Ctx {
   renderer: Renderer
   minimap: Minimap
   lenses: Lens[]
-  /** The Connections view: `.` and `,` walk a level by rank there. */
-  connections: boolean
+  /** Laid out by coupling: `.` and `,` walk a level by rank there. */
+  coupling: boolean
   setLens: (name: LensName) => void
   select: (i: number) => void
   /** Flight to an element, framing it (no history; use `go`). */
@@ -70,7 +70,7 @@ export function installControls(c: Ctx) {
   // The model can be swapped live; every closure below reads these, and swap() reassigns them.
   let tree = c.tree, world = c.world, renderer = c.renderer
   const toast = new Toast()
-  const help = new Help(c.connections)
+  const help = new Help(c.coupling)
   const menu = new Menu()
 
   const view = (): View => {
@@ -143,12 +143,12 @@ export function installControls(c: Ctx) {
   }
 
   /**
-   * Connections view: `.` selects the next card of the level by rank, `,` the one before, staying
+   * Laid out by coupling: `.` selects the next card of the level by rank, `,` the one before, staying
    * at the level; the toast says why it ranks there. With nothing selected it starts at the #1.
    */
   let rankOf: { tree: Tree; rank: Int32Array; weight: Float64Array } | null = null
   const byImportance = (step: 1 | -1) => {
-    if (!c.connections) return toast.show('. and , step through a level by connections in the Connections view')
+    if (!c.coupling) return toast.show('. and , step through a level by rank in the Coupling layout (Layout, By coupling)')
     if (rankOf?.tree !== tree) rankOf = { tree, weight: importance(tree), rank: ranks(tree, rankKey(tree)) }
     const { rank, weight } = rankOf
     const sel = renderer.selected

@@ -31,7 +31,7 @@ const OUT = 0xfbbf24
 const IN = 0x22d3ee
 /** A call at runtime (HTTP, a store, a queue), as opposed to a use in code. */
 const RUNTIME = 0xc4b5fd
-/** A card's rank badge in the Connections view. */
+/** A card's rank badge in the Coupling layout. */
 const RANK = 0xfde68a
 const FLASH_MS = 3200
 /** Past this many files on screen, arrows wait for a card in focus. */
@@ -93,7 +93,7 @@ interface NodeView {
   inside?: BitmapText
   dossier?: BitmapText
   metric?: BitmapText
-  /** The card's rank in the Connections view, in its corner. */
+  /** The card's rank in the Coupling layout, in its corner. */
   rank?: BitmapText
   /** An open container's kind, count and rank, right of its header title. */
   meta?: BitmapText
@@ -173,7 +173,7 @@ export class Renderer {
   flash = new Map<number, { color: number; t0: number }>()
   /** Active lens, or null for the structure view. */
   lens: Lens | null = null
-  /** Connections view: each node's importance and its rank among its siblings, shown on its card. */
+  /** Coupling layout: each node's importance and its rank among its siblings, shown on its card. */
   ranking: { weight: Float64Array; rank: Int32Array; partners: Int32Array } | null = null
   /** A card's surface in words ("67 endpoints · 4 scheduled jobs"), set by the page once it knows the map's endpoints. */
   surface: ((i: number) => string) | null = null
@@ -615,7 +615,7 @@ export class Renderer {
     const title = (v.title ??= this.text(full, texts))
     v.titleEm ??= em(title)
     const lead = glyph ? ICON + ICON_GAP : 0
-    // In the Connections view a card's rank is its first fact: a badge in the corner, near title
+    // Laid out by coupling, a card's rank is its first fact: a badge in the corner, near title
     // size, that the title leaves room for.
     let rankRoom = 0, rankBadge: BitmapText | null = null
     const rpx = Math.min(h * 0.15, 24) * 0.85

@@ -40,6 +40,15 @@
     #views a { color: var(--dim); text-decoration: none; padding: 5px 9px; border-radius: 7px; white-space: nowrap; }
     #views a:hover { color: var(--text); }
     #views a.on { color: #0b0f17; background: #6ee7b7; font-weight: 600; }
+    /* Architecture's layout, as mapped or by coupling: a menu beside the views, like Colour by. */
+    .layoutbar { position: relative; display: inline-flex; }
+    .layout-current { background: rgba(148, 163, 184, 0.08); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+    .layout-current::after { content: ' ▾'; color: var(--dim); }
+    .layout-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 150px; padding: 4px; display: flex; flex-direction: column; z-index: 30; background: #0b1220; }
+    .layout-menu[hidden] { display: none; }
+    #views .layout-menu a { padding: 6px 10px; border-radius: 6px; color: var(--text); background: none; font-weight: 400; }
+    #views .layout-menu a:hover, #views .layout-menu a:focus-visible { background: rgba(251, 191, 36, 0.14); outline-offset: -2px; }
+    #views .layout-menu a.on { color: #fde68a; font-weight: 600; background: none; }
     /* The breadcrumb takes the room the bar has; long names give way, the place you are in last. */
     #crumbs { flex: 1 1 auto; min-width: 0; display: flex; gap: 2px; align-items: center; overflow: hidden; white-space: nowrap; }
     #crumbs button { background: none; border: 0; color: var(--dim); font: inherit; padding: 5px 6px; border-radius: 7px; cursor: pointer; min-width: 0; max-width: 18em; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
@@ -267,7 +276,8 @@
     /* On a touch screen the panel's rows and buttons are a finger wide. */
     @media (pointer: coarse) {
       /* The bar and the crumbs too: every control a finger presses is 44 px tall. */
-      #top button, #top a, #arrows button, .reader-head button, .lens-current, #crumbs button { min-height: 44px; }
+      #top button, #top a, #arrows button, .reader-head button, .lens-current, .layout-current, #crumbs button { min-height: 44px; }
+      #top .layout-menu a { display: flex; align-items: center; }
       #welcome .ok { position: sticky; bottom: 0; }
       .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
       .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }

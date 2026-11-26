@@ -91,7 +91,7 @@ try {
   await sleep(500)
   check('Esc clears the selection, then does nothing', (await page.evaluate(() => window.__spike.renderer.selected)) === -1 && sameCam(cam0, await camera()))
 
-  // . and , belong to the Connections view.
+  // . and , belong to the Coupling layout.
   await page.keyboard.press('.')
   await sleep(200)
   check('. does not select in the Architecture view', (await page.evaluate(() => window.__spike.renderer.selected)) === -1)
@@ -305,7 +305,7 @@ try {
     const bar = await page.evaluate(() => {
       const top = document.getElementById('top').getBoundingClientRect()
       const off = [...document.querySelectorAll('#top button, #top a')].filter(e => e.getClientRects().length && !e.closest('[hidden]')).map(e => [e.textContent.trim().slice(0, 20), e.getBoundingClientRect()]).filter(([, r]) => r.left < 0 || r.right > innerWidth + 0.5 || r.bottom > top.bottom + 0.5).map(([t]) => t)
-      const want = ['Search', 'Help', 'Architecture', 'Connections', 'Requests'].filter(t => ![...document.querySelectorAll('#top button, #top a')].some(e => e.getClientRects().length && e.textContent.includes(t)))
+      const want = ['Search', 'Help', 'Architecture', 'As mapped', 'Requests'].filter(t => ![...document.querySelectorAll('#top button, #top a')].some(e => e.getClientRects().length && e.textContent.includes(t)))
       const lens = document.querySelector('.lens-current')?.getClientRects().length > 0
       const legend = [...document.querySelectorAll('#arrows > *')].filter(e => e.getClientRects().length).map(e => e.textContent)
       return { off, want, lens, legend, welcome: !document.getElementById('welcome').hidden, barBottom: top.bottom, bar: getComputedStyle(document.documentElement).getPropertyValue('--bar') }
