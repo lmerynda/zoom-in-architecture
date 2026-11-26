@@ -385,8 +385,9 @@ try {
       const y0 = Math.min(...c.map(k => r[k * 4 + 1])), y1 = Math.max(...c.map(k => r[k * 4 + 1] + r[k * 4 + 3]))
       out.push({ title: t.els[i].title, n: c.length, parts: c.every(k => t.children[k].length), cover: Math.round((100 * (x1 - x0) * (y1 - y0)) / (bw * bh)) })
     }
-    const parts = out.filter(o => o.parts).sort((a, b) => a.cover - b.cover)
-    return { least: parts[0], many: parts.filter(o => o.n >= 3), few: parts.filter(o => o.n <= 2) }
+    // A lone part keeps to a 2 × 2 grid's card, as a lone file does: levels of two or more fill.
+    const parts = out.filter(o => o.parts && o.n >= 2).sort((a, b) => a.cover - b.cover)
+    return { least: parts[0], many: parts.filter(o => o.n >= 3), few: parts.filter(o => o.n === 2) }
   })
   // On main they covered 19-74%.
   check('a container of parts is filled by them: none under 55%, those of three or more over 80%', fill.least.cover >= 55 && fill.many.length > 0 && fill.many.every(f => f.cover >= 80), JSON.stringify(fill))

@@ -132,8 +132,10 @@ export function startRects(prevWorld: World, next: Tree, nextWorld: World, oldIn
     const r = a >= 0 && oldIndex[a] >= 0 ? prevWorld.rect.subarray(oldIndex[a] * 4, oldIndex[a] * 4 + 4) : nextWorld.rect.subarray(i * 4, i * 4 + 4)
     const cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2
     rect.set([cx, cy, 0, 0], i * 4)
-    // Its cards start as a point at the centre too (a tiny scale, not 0, so mapping back stays finite).
-    content.set([cx, cy, 0, 0, 0, 1, 1, 1e-9, 1e-9, 1e-9], i * PLACE)
+    // Its cards start as a point at the centre too: its own layout's bounds, at a tiny scale (not 0,
+    // so mapping back stays finite), so only the origin and the scales move during the morph.
+    const t = nextWorld.content.subarray(i * PLACE, i * PLACE + PLACE)
+    content.set([cx, cy, 0, t[3], t[4], t[5], t[6], 1e-9, 1e-9, 1e-9], i * PLACE)
   }
   return { rect, content }
 }

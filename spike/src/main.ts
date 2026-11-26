@@ -217,9 +217,11 @@ async function main() {
     const top = box('top'), panel = box('details'), mini = box('minimap'), hello = box('welcome')
     const t = (top?.bottom ?? 0) + 8
     // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
-    // A folded sheet frames as the bar it is, and so does the outline (nothing selected), which
-    // rests folded: a search that puts the selection down frames its find for the sheet it leaves.
-    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('collapsed') || $('details').classList.contains('outline') ? { top: H - 46 } : panel) : null
+    // A folded sheet frames as the bar it is. So does an outline that is about to fold: a search
+    // that puts the selection down frames its find before the outline replaces the open sheet
+    // (its grip, folded, comes with the next redraw). An outline the reader opened stays open.
+    const d = $('details'), folding = d.classList.contains('outline') && !d.querySelector(':scope > .d-grip')
+    const sheet = panel && panel.top > H / 2 ? (d.classList.contains('collapsed') || folding ? { top: H - 46 } : panel) : null
     const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = Math.min(sheet ? sheet.top - 12 : H - 28, hello && hello.top > H / 2 ? hello.top - 12 : Infinity)
     const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]

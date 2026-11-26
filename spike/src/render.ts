@@ -634,13 +634,18 @@ export class Renderer {
     const level = Math.min(h * 0.15, 24)
     let tpx = px, two: BitmapText | null = null
     const wrapSrc = humps(full)
-    if (/ /.test(wrapSrc) && (v.titleEm + lead) * px > tInner + 1 && h > level * 5) {
+    // Sticky: when the card is bigger than the screen, its text block stays in view; the title then
+    // has only the card's width right of where it is held.
+    const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
+    const room = Math.min(tInner, x + w - pad - rankRoom - bx)
+    if (/ /.test(wrapSrc) && (v.titleEm + lead) * px > room + 1 && h > level * 5) {
       const previewTop = el.metadata?.path && w >= CODE_W && el.metadata?.role !== 'type' ? codeBox(x, y, w, h).y : Infinity
       // The largest size that breaks it onto two lines: where the words do not split well at one
       // size (three lines), a smaller one: whole on two lines beats cut on one, down to a little under
       // the one-line size (never below TITLE_MIN).
-      for (let want = Math.min(level, (1.8 * (tInner - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55); want >= Math.max(TITLE_MIN, px * 0.9); want *= 0.92) {
-        const wrap = Math.round(((tInner - lead * want) * FONT_PX) / want / 8) * 8
+      for (let want = Math.min(level, (1.8 * (room - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55); want >= Math.max(TITLE_MIN, px * 0.9); want *= 0.92) {
+        // Rounded down to the 8 px step, so a line never runs past the room it was given.
+        const wrap = Math.floor(((room - lead * want) * FONT_PX) / want / 8) * 8
         two = v.title2 ??= this.text(wrapSrc, texts, wrap)
         if (two.text !== wrapSrc) two.text = wrapSrc
         if (two.style.wordWrapWidth !== wrap) two.style.wordWrapWidth = wrap
@@ -649,9 +654,7 @@ export class Renderer {
         two = null
       }
     }
-    // Sticky: when the card is bigger than the screen, its text block stays in view.
-    const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
-    const shownTitle = fitText(full, v.titleEm, Math.min(tInner, x + w - pad - rankRoom - bx) - lead * tpx, tpx)
+    const shownTitle = fitText(full, v.titleEm, room - lead * tpx, tpx)
     if (!two && title.text !== shownTitle) title.text = shownTitle
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
     const shown = two ?? title
