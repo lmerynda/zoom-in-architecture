@@ -93,11 +93,11 @@ export class Camera {
     }
   }
 
-  /** Where a flight under way ends: its centre in world units, or null. */
-  get destination(): [number, number] | null {
+  /** Where a flight under way ends: its centre in world units and its zoom, or null. */
+  get destination(): [number, number, number] | null {
     if (!this.fly) return null
-    const [cx, cy] = this.fly.at(this.fly.S)
-    return [cx, cy]
+    const [cx, cy, vw] = this.fly.at(this.fly.S)
+    return [cx, cy, this.w / vw]
   }
 
   /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */

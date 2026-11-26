@@ -282,12 +282,15 @@ async function main() {
    * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
    */
   // By id, not index: a live update may number the cards anew.
-  let framedAt: { id: string; x: number; y: number; z: number } | null = null
-  const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
+  // vw: the framing's view width in world units, which a resize does not change.
+  let framedAt: { id: string; x: number; y: number; z: number; vw: number } | null = null
+  const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.w / cam.z / framedAt.vw - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
   // The whole map framed, with or without a card selected in it (the map's crumb keeps the selection).
   const atWhole = () => atFramed() && framedAt!.id === ''
   /** A flight under way to the last framing (a card, or the whole map). */
-  const headedFramed = () => { const d = cam.destination; return !!d && !!framedAt && Math.hypot(d[0] - framedAt.x, d[1] - framedAt.y) * framedAt.z < 1 }
+  // Its centre and its view width: a Back or Forward to the same centre at another zoom is not it,
+  // and a resize under the flight does not make it another.
+  const headedFramed = () => { const d = cam.destination; return !!d && !!framedAt && Math.hypot(d[0] - framedAt.x, d[1] - framedAt.y) * framedAt.z < 1 && Math.abs(cam.w / d[2] / framedAt.vw - 1) < 1e-3 }
   /** A flight under way to the whole map's framing (Fit, the map's crumb, a refit). */
   const headedWhole = () => headedFramed() && framedAt!.id === ''
   /** The card last framed, in the current tree (-1 once it is gone). */
@@ -295,7 +298,7 @@ async function main() {
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
     if (i === 0) renderer.wholeZ = f.z
-    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f }
+    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f, vw: cam.w / f.z }
     cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
   /** Frames card i at once, no flight: on load, and for a stage that changed under it. */
@@ -303,7 +306,7 @@ async function main() {
     const f = frameFor(i)
     cam.set(f.x, f.y, f.z)
     if (i === 0) renderer.wholeZ = f.z
-    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f }
+    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f, vw: cam.w / f.z }
   }
   const setWhole = () => setFrame(0)
   const resize = () => {
@@ -317,12 +320,21 @@ async function main() {
     else renderer.wholeZ = frameFor(0).z
     // A resize is not the reader taking the camera from a live update's morph.
     if (morph) { morph.last = [cam.x, cam.y, cam.z]; morph.resized = true }
-    // A flight to a framing was aimed for the old screen: it flies on to that framing on this one.
-    if (flyingTo >= 0) fit(flyingTo)
+    // A flight to a framing was aimed for the old screen: once the window stops changing it is aimed
+    // again at that framing on this one (each resize step would restart it, and it would stall).
+    if (flyingTo >= 0) {
+      clearTimeout(reaiming)
+      // Only if nothing has been framed since and the reader has not taken over (a wheel stops the
+      // flight short of its framing).
+      const target = framedAt
+      reaiming = setTimeout(() => { if (framedAt === target && (headedFramed() || atFramed())) fit(flyingTo) }, 150)
+    }
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
   let reshaping: ReturnType<typeof setTimeout> | undefined, relaying = false
+  /** A flight to a framing, aimed again once a resize settles. */
+  let reaiming: ReturnType<typeof setTimeout> | undefined
   /** Live updates being laid out: a relayout waits for them, and they for nothing. */
   let swapping = 0
   const reshape = () => {
