@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildGraph, entryPointsOf, summary, useLines } from './graph.mjs'
+import { buildGraph, entryPointsOf, hintsOf, summary, useLines } from './graph.mjs'
 import { folderText, graphText } from './zoom.mjs'
 
 const g = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -94,6 +94,14 @@ describe('buildGraph', () => {
 
   it('lists config and deploy files, which name the other processes', () => {
     expect(g.config).toEqual(['.github/workflows/release.yml', 'py/alembic.ini', 'server/src/main/resources/application.properties'])
+  })
+
+  it('marks no line where a pattern only names a call (a scanner’s own rules)', () => {
+    expect(hintsOf(String.raw`  ['schedule', /@Scheduled.*|setIntervals*(.*/],`)).toEqual([])
+    expect(hintsOf(String.raw`const re = /fetchs*(.*/`)).toEqual([])
+    // The calls themselves still are.
+    expect(hintsOf("@Scheduled(fixedRate = 5000)
+fetch('/api/orders')").map(h => h.kind)).toEqual(['schedule', 'call'])
   })
 
   it('marks the lines where one process talks to another', () => {

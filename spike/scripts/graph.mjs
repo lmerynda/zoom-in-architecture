@@ -285,6 +285,8 @@ export function hintsOf(src) {
     if (/^\s*(\/\/|\*|#)/.test(line)) return
     for (const [kind, re] of HINTS) {
       const m = line.match(re)
+      // Right after a slash, a bar or a backslash, the words are a pattern naming them (a scanner's own rules), not a call.
+      if (m && /[/|\\]/.test(line[m.index - 1] ?? '')) break
       // A call split over lines (`@router.get(` then the path): the next line says where it goes.
       const text = m && (/\($/.test(m[0].trim()) && lines[i + 1] ? `${m[0].trim()} ${lines[i + 1].trim()}` : m[0].trim())
       if (m) { out.push({ line: i + 1, kind, text: text.slice(0, 140) }); break }
