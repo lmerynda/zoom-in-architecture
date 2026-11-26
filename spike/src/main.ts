@@ -853,9 +853,23 @@ async function main() {
     problemFocus = problemKey(tree, problems!.list[problemAt])
     const home = listHome, at = home ? tree.byId.get(home.id) ?? 0 : 0
     // The view it was opened from, when the map and the window are as they were then; else the whole
-    // part across the screen, which keeps it the place (going into a crowded part frames a card inside it).
+    // part in view, which keeps it the place (going into a crowded part frames a card inside it).
     const same = home && home.version === liveVersion && home.size === `${cam.w}x${cam.h}` && home.view.here === (at > 0 ? home.id : null)
-    const r = world.rect, whole = { x: r[at * 4] + r[at * 4 + 2] / 2, y: r[at * 4 + 1] + r[at * 4 + 3] / 2, z: Math.min(cam.w / r[at * 4 + 2], cam.h / r[at * 4 + 3]), selected: null, here: at > 0 ? tree.els[at].id : null }
+    // The whole map as it always frames; a part whole in the largest space the panels leave.
+    const r = world.rect
+    let fit = frameFor(0)
+    if (at > 0) {
+      fit = { z: 0, x: 0, y: 0 }
+      for (const [l, t, rr, b] of freeFrames()) {
+        const z = Math.min((rr - l - 16) / r[at * 4 + 2], (b - t - 16) / r[at * 4 + 3])
+        if (z <= fit.z) continue
+        // Over the screen's centre, where render.ts reads the place from, even if that sets it lower in its frame.
+        const half = (v: number) => (v * z) / 2, along = (lo: number, hi: number, size: number, mid: number) => Math.max(mid - half(size) + 8, Math.min(mid + half(size) - 8, (lo + hi) / 2))
+        const sx = along(l, rr, r[at * 4 + 2], cam.w / 2), sy = along(t, b, r[at * 4 + 3], cam.h / 2)
+        fit = { z, x: r[at * 4] + r[at * 4 + 2] / 2 - (sx - cam.w / 2) / z, y: r[at * 4 + 1] + r[at * 4 + 3] / 2 - (sy - cam.h / 2) / z }
+      }
+    }
+    const whole = { ...fit, selected: null, here: at > 0 ? tree.els[at].id : null }
     controls.visit(same ? home!.view : whole)
     controls.remember(at)
   }

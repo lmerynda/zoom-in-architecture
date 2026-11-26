@@ -455,6 +455,24 @@ try {
   await sleep(600)
   const phoneBack = await page.evaluate(() => ({ collapsed: document.getElementById('details').classList.contains('collapsed'), focus: document.activeElement?.dataset?.problem ?? document.activeElement?.tagName }))
   check('on a phone Back to the list keeps the sheet open with focus on the row', !phoneBack.collapsed && phoneBack.focus === '0', JSON.stringify(phoneBack))
+  // The window changed in between: back to the whole map as it frames, its cards above the sheet.
+  for (const [w, h] of [[430, 844], [390, 845]]) {
+    await page.evaluate(() => window.__spike.openProblem(0))
+    await landed()
+    await page.setViewport({ width: w, height: h, hasTouch: true, isMobile: true })
+    await sleep(600)
+    await page.click('.d-problem-nav button:nth-child(3)')
+    await landed()
+    await sleep(700)
+    const root = await page.evaluate(() => {
+      const s = window.__spike, path = s.renderer.breadcrumb(), sheet = document.getElementById('details').getBoundingClientRect().top
+      const shown = s.tree.children[0].filter(i => { const [, y, , hh] = s.renderer.screenRectOf(i); return y + hh / 2 < sheet })
+      return { place: path.length, list: document.querySelector('.d-problems > summary')?.textContent, total: s.problems.list.length, above: shown.length, parts: s.tree.children[0].length }
+    })
+    check(`at ${w} × ${h}, Back to the list returns to the whole map's list, its parts above the sheet`, root.place === 0 && root.list === `Problems · ${root.total}` && root.above === root.parts, JSON.stringify(root))
+    await page.setViewport({ width: 390, height: 844, hasTouch: true, isMobile: true })
+    await sleep(600)
+  }
   await open('model=excalidraw')
   // The editor across the screen's width: its outline, with its own problems, is the place.
   await page.evaluate(() => { const s = window.__spike, i = s.tree.els.findIndex(e => e.title === 'Excalidraw editor'), r = s.world.rect; s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2, s.cam.w / r[i * 4 + 2]) })
