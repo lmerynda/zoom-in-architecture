@@ -44,7 +44,7 @@ const SUB_MIN = 10
 /** No line under a title is drawn smaller than this, in px: smaller is not read, only seen as noise. */
 const MIN_TEXT = 9
 /** How far a long title may shrink below its level's size before it is cut or wrapped: siblings' names read near one size. */
-const TITLE_SHRINK = 0.75
+const TITLE_SHRINK = 0.85
 /** ...but never below this, in px: a whole name smaller than this is not read. */
 const TITLE_MIN = 9
 
@@ -597,7 +597,10 @@ export class Renderer {
     const pad = 0.07 * w
     const inner = w - 2 * pad
     const el = this.tree.els[i]
-    const full = el.title.length > 60 ? el.title.slice(0, 59) + '…' : el.title
+    const par = this.tree.els[this.tree.parent[i]]?.title ?? '', route = el.metadata?.route
+    const rest = el.metadata?.method && route && par.startsWith('/') && route.startsWith(par + '/') ? route.slice(par.length) : ''
+    const name = rest ? `${el.metadata!.method} …${rest}` : el.title
+    const full = name.length > 60 ? name.slice(0, 59) + '…' : name
     const title = (v.title ??= this.text(full, texts))
     v.titleEm ??= em(title)
     const lead = glyph ? ICON + ICON_GAP : 0
@@ -637,10 +640,10 @@ export class Renderer {
         else two = null
       }
     }
-    const shownTitle = fitText(full, v.titleEm, tInner - lead * tpx, tpx)
-    if (!two && title.text !== shownTitle) title.text = shownTitle
     // Sticky: when the card is bigger than the screen, its text block stays in view.
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
+    const shownTitle = fitText(full, v.titleEm, Math.min(tInner, x + w - pad - rankRoom - bx) - lead * tpx, tpx)
+    if (!two && title.text !== shownTitle) title.text = shownTitle
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
     const shown = two ?? title
     shown.visible = true

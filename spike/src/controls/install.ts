@@ -291,7 +291,13 @@ export function installControls(c: Ctx) {
   canvas.addEventListener('contextmenu', e => {
     e.preventDefault()
     tooltip.close()
-    const n = renderer.pick(e.offsetX, e.offsetY)
+    // From the keyboard (the Menu key), at the selected card; from a pointer, at the card under it.
+    const kbd = e.button !== 2 && renderer.selected > 0
+    if (kbd) {
+      const r = renderer.screenRectOf(renderer.selected), cr = canvas.getBoundingClientRect()
+      e = new PointerEvent('contextmenu', { clientX: cr.left + Math.max(8, Math.min(cr.width - 8, r[0] + r[2] / 2)), clientY: cr.top + Math.max(8, Math.min(cr.height - 8, r[1] + Math.min(r[3] / 2, 40))) })
+    }
+    const n = kbd ? renderer.selected : renderer.pick(e.offsetX, e.offsetY)
     if (n <= 0) return menu.open(e.clientX, e.clientY, tree.els[0].title, [{ label: 'Whole map', run: () => go(0) }, { label: 'Back', key: '⌫', run: back }])
     c.select(n)
     const file = tree.els[n].metadata?.path
@@ -324,6 +330,8 @@ export function installControls(c: Ctx) {
     if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') return
     held.add(k)
     if (k === '/') { e.preventDefault(); return palette.open() }
+    // Shift+F10, as the Menu key: the selected card's menu.
+    if (e.shiftKey && k === 'f10' && renderer.selected > 0) { e.preventDefault(); return void canvas.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 })) }
     if (k === '?') return help.toggle(true)
     if (k === 'backspace' || (e.altKey && k === 'arrowleft')) { e.preventDefault(); return back() }
     if (e.altKey && k === 'arrowright') { e.preventDefault(); return forward() }

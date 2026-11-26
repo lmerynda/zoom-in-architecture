@@ -247,6 +247,12 @@
     /* Shown when the screen holds only empty space inside a card: how to get back. */
     /* First visit only: what the map is, beside the breadcrumb; gone at the first scroll, click or key. */
     /* First visit: what the map is, its counts and features to start from; it stays until Got it. */
+    /* On a touch screen the panel's rows and buttons are a finger wide. */
+    @media (pointer: coarse) {
+      .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
+      .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }
+      .reader-rail button::before { content: ''; position: absolute; inset: -10px -8px; }
+    }
     #welcome { position: fixed; z-index: 12; left: 12px; bottom: 12px; width: min(520px, calc(100vw - 24px)); padding: 12px 14px; background: rgba(9, 12, 20, 0.95); border: 1px solid rgba(251, 191, 36, 0.4); border-radius: 10px; font-size: 13px; color: var(--text); }
     #welcome[hidden] { display: none; }
     /* The welcome stands where the arrow legend would: the legend waits until it is put away. */

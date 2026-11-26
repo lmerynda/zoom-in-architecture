@@ -25,7 +25,7 @@ export class Toast {
     document.body.append(this.root)
   }
   show(text: string, hint = '') {
-    this.root.replaceChildren(el('span', '', text), ...(hint ? [el('kbd', '', hint)] : []))
+    this.root.replaceChildren(el('span', '', text), ...(hint ? [el('span', 'sr-only', '. '), el('kbd', '', hint)] : []))
     this.root.classList.add('show')
     clearTimeout(this.timer)
     this.timer = window.setTimeout(() => this.root.classList.remove('show'), 2600)

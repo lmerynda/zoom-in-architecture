@@ -54,6 +54,7 @@ export class Reader {
     this.scroller.tabIndex = 0
     this.scroller.append(this.pre)
     const body = el('div', 'reader-body')
+    this.rail.setAttribute('aria-hidden', 'true')
     body.append(this.scroller, this.rail)
     this.root.append(head, body)
     this.root.addEventListener('keydown', e => {
@@ -105,6 +106,7 @@ export class Reader {
       t.style.top = `${((n - 1) / this.total) * 100}%`
       t.title = `Line ${n}${src.marks.get(n) ? ` · ${src.marks.get(n)!.join(', ')}` : ''}${src.cited.has(n) ? ' · cited' : ''}`
       t.onclick = () => this.goto(n)
+      t.tabIndex = -1
       this.rail.append(t)
     }
     this.goto(line)

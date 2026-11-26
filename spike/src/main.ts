@@ -158,6 +158,8 @@ async function main() {
   // The map takes keyboard focus like any control, so its keys act only when it has it.
   app.canvas.tabIndex = 0
   app.canvas.setAttribute('aria-label', 'Map: arrow keys move, + and − zoom, ? lists the controls')
+  app.canvas.setAttribute('role', 'application')
+  $('stage').setAttribute('role', 'main')
   Renderer.installFont()
   const cam = new Camera()
   let renderer = new Renderer(app, tree, world, cam)
@@ -187,12 +189,12 @@ async function main() {
   const frameFor = (i: number) => {
     const r = world.rect, W = cam.w, H = cam.h
     const box = (id: string) => { const e = document.getElementById(id); return e && !e.hidden && e.getClientRects().length ? e.getBoundingClientRect() : null }
-    const top = box('top'), panel = box('details'), mini = box('minimap')
+    const top = box('top'), panel = box('details'), mini = box('minimap'), hello = box('welcome')
     const t = (top?.bottom ?? 0) + 8
     // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
     // A folded sheet frames as the bar it is.
     const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('collapsed') ? { top: H - 46 } : panel) : null
-    const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = sheet ? sheet.top - 12 : H - 28
+    const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = Math.min(sheet ? sheet.top - 12 : H - 28, hello && hello.top > H / 2 ? hello.top - 12 : Infinity)
     const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]
     if (over && !panel) frames[0] = [0, t, right, over.top - 8]
