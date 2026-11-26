@@ -113,7 +113,9 @@ function showIntro(tree: Tree, surface: Surface, feature: (name: string) => void
   ok.className = 'ok'
   ok.textContent = 'Got it'
   ok.onclick = () => { try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ } box.hidden = true }
+  const focused = document.activeElement === ok
   box.replaceChildren(p, ...(chips.childElementCount ? [chips] : []), ok)
+  if (focused) ok.focus()
   box.hidden = false
 }
 
@@ -276,13 +278,16 @@ async function main() {
    * The card the camera was last framed on and where that put it: while the camera is still there,
    * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
    */
-  let framedAt: { i: number; x: number; y: number; z: number } | null = null
+  // By id, not index: a live update may number the cards anew.
+  let framedAt: { id: string; x: number; y: number; z: number } | null = null
   const atFramed = () => !!framedAt && !cam.flying && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
-  const atWhole = () => atFramed() && framedAt!.i === 0 && renderer.selected <= 0
+  const atWhole = () => atFramed() && framedAt!.id === '' && renderer.selected <= 0
+  /** The card last framed, in the current tree (-1 once it is gone). */
+  const framedCard = () => (framedAt!.id === '' ? 0 : tree.byId.get(framedAt!.id) ?? -1)
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
     if (i === 0) renderer.wholeZ = f.z
-    framedAt = { i, ...f }
+    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f }
     cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
   /** Frames card i at once, no flight: on load, and for a stage that changed under it. */
@@ -290,7 +295,7 @@ async function main() {
     const f = frameFor(i)
     cam.set(f.x, f.y, f.z)
     if (i === 0) renderer.wholeZ = f.z
-    framedAt = { i, ...f }
+    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f }
   }
   const setWhole = () => setFrame(0)
   const resize = () => {
@@ -373,7 +378,7 @@ async function main() {
     setSafeTop(h)
     // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
     // what was framed (the whole map, or the card a link opened at) is framed again for it while you have not moved.
-    if (atFramed()) setFrame(framedAt!.i)
+    if (atFramed() && framedCard() >= 0) setFrame(framedCard())
     reshape()
   }).observe($('top'))
 

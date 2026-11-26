@@ -453,12 +453,8 @@ try {
     await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
     const head = await page.evaluate(() => {
       const h = document.querySelector('.reader-head').getBoundingClientRect(), r = s => document.querySelector(s).getBoundingClientRect()
-      // Where the line number is drawn: its digits inside the path's box, not cut off.
-      const where = document.querySelector('.reader-where'), text = where.querySelector('bdi').firstChild, n = text.textContent.length
-      const range = document.createRange()
-      range.setStart(text, n - 2)
-      range.setEnd(text, n)
-      const digits = range.getBoundingClientRect(), box = where.getBoundingClientRect()
+      // Where the line number is drawn: inside the row's box, not cut off, whatever the path is.
+      const where = document.querySelector('.reader-where'), digits = where.querySelector('.rw-line').getBoundingClientRect(), box = where.getBoundingClientRect()
       return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: where.textContent, lineShown: digits.left >= box.left - 0.5 && digits.right <= box.right + 0.5 }
     })
     if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, its line number in view', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where) && head.lineShown, JSON.stringify(head))

@@ -287,7 +287,7 @@
     @media (pointer: coarse) {
       /* The bar and the crumbs too: every control a finger presses is 44 px tall. */
       #top button, #top a, #arrows button, .reader-head button, .lens-current, .layout-current, #crumbs button { min-height: 44px; }
-      #travel, #help { min-width: 44px; justify-content: center; }
+      #travel, #help, #crumbs button { min-width: 44px; justify-content: center; }
       #top .layout-menu a { display: flex; align-items: center; }
       #welcome .ok { position: sticky; bottom: 0; }
       .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
@@ -360,7 +360,8 @@
       /* The icons are decoration ("/ ''" keeps them out of the accessible name): the words name the action. */
       .reader .reader-back::before { content: '←' / ''; font-size: 19px; }
       .reader .reader-title { grid-column: 2; font-size: 13px; }
-      .reader .reader-where { grid-column: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; font-size: 11px; }
+      .reader .reader-where { grid-column: 2; font-size: 11px; white-space: nowrap; }
+      .reader .reader-where .rw-path { direction: rtl; text-align: left; }
       .reader .reader-actions { gap: 2px; }
       .reader .reader-actions button { font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
       .reader .reader-copy::before { content: '⧉' / ''; font-size: 19px; }
@@ -371,7 +372,9 @@
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
     .reader-names { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
     .reader-title { font-weight: 650; color: #f1f5f9; font-size: 15px; white-space: nowrap; }
-    .reader-where { color: var(--dim); font: 13px ui-monospace, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reader-where { color: var(--dim); font: 13px ui-monospace, Consolas, monospace; display: flex; min-width: 0; white-space: nowrap; }
+    .reader-where .rw-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .reader-where .rw-line { flex: none; }
     .reader-head button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
     .reader-head .reader-back { background: none; border: 0; color: #f8fafc; padding: 4px 0; }
     .reader-actions { display: flex; gap: 6px; }

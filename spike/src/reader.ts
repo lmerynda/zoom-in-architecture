@@ -81,12 +81,18 @@ export class Reader {
   private expect = 0
   private line = 1
   private lineAt() { return Math.max(1, Math.min(this.total, Math.floor((this.scroller.scrollTop + this.scroller.clientHeight / 3) / LINE_PX) + 1)) }
-  private name(n: number) { this.line = n; this.at(`${this.path}:${n}`); this.onLine(n) }
+  private name(n: number) { this.line = n; this.at(this.path, n); this.onLine(n) }
   /**
-   * The file and line, isolated and set left to right whatever script the path is in: on a phone
-   * the row cuts the path from its start, so the file's own name and the line stay in view.
+   * The file and line: the path isolated and set left to right whatever script it is in, cut from
+   * its start on a phone so the file's own name stays in view, and the line beside it, never cut.
    */
-  private at(s: string) { const b = document.createElement('bdi'); b.dir = 'ltr'; b.textContent = s; this.where.replaceChildren(b) }
+  private at(path: string, line?: number) {
+    const p = el('span', 'rw-path'), b = document.createElement('bdi')
+    b.dir = 'ltr'
+    b.textContent = path
+    p.append(b)
+    this.where.replaceChildren(p, ...(line ? [el('span', 'rw-line', `:${line}`)] : []))
+  }
 
   /** Opens `path` (shown as `title`, inside `parent`) at `line`, or says why it cannot. */
   open(path: string, title: string, parent: string, line: number, src: Source | null, retry: () => void) {

@@ -104,17 +104,18 @@ try {
     s.fit(0)
     while (s.cam.flying) await new Promise(r => setTimeout(r, 50))
     await new Promise(r => setTimeout(r, 800))
-    const z0 = s.cam.z
-    return z0
+    // Over a card that holds more (Game server), wherever the layout put it: a wheel there goes in.
+    const [x, y, w, h] = s.renderer.screenRectOf(s.id('backend'))
+    return { z0: s.cam.z, at: [x + w / 2, y + h / 2] }
   })
-  await page.mouse.move(500, 500)
+  await page.mouse.move(wheel.at[0], wheel.at[1])
   for (let k = 0; k < 12; k++) { await page.mouse.wheel({ deltaY: -240 }); await sleep(40) }
   await sleep(1200)
   const zoomedIn = await page.evaluate(() => window.__spike.cam.z)
   await page.keyboard.press('Backspace')
   await landed()
   const zBack = await page.evaluate(() => window.__spike.cam.z)
-  check('Back returns from a wheel excursion', zoomedIn > wheel * 3 && Math.abs(Math.log(zBack / wheel)) < 0.2, JSON.stringify({ wheel, zoomedIn, zBack }))
+  check('Back returns from a wheel excursion', zoomedIn > wheel.z0 * 3 && Math.abs(Math.log(zBack / wheel.z0)) < 0.2, JSON.stringify({ wheel, zoomedIn, zBack }))
 
   // 4b. Arrows: among many files they wait for a card in focus; over a line, the pairs it carries are named.
   const quiet = await page.evaluate(async () => {
