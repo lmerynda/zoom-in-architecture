@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { foldEvidence, kindWord, relationRows, seenText, tableRows } from './details'
+import { arrowTitle, foldEvidence, kindWord, relationRows, seenText, tableRows } from './details'
 import { Tree, type ModelJson } from './model'
 
 const el = (id: string, parent: string | null, extra = {}) => ({ id, parent, title: id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -77,5 +77,19 @@ describe('tableRows', () => {
       { table: 'user_entity', ops: 'reads' },
     ])
     expect(tableRows('')).toEqual([])
+  })
+})
+
+describe('arrowTitle', () => {
+  const t = new Tree({ name: 'm', elements: [el('a', null), el('a.x', 'a'), el('b', null), el('b.y', 'b')], relations: [{ source: 'a.x', target: 'b.y', title: 'uses' }, { source: 'b', target: 'a', title: 'calls' }] })
+  const at = (s: string) => t.byId.get(s)!
+  const k = (src: string) => [...Array(t.rels.length / 2).keys()].filter(i => t.els[t.rels[i * 2]].id === src)
+  it('points one way when every relation runs one way, either order given', () => {
+    expect(arrowTitle(t, at('a'), at('b'), k('a.x'))).toBe('a → b')
+    expect(arrowTitle(t, at('a'), at('b'), k('b'))).toBe('b → a')
+  })
+  it('says ↔ only when both ways have a relation', () => {
+    expect(arrowTitle(t, at('a'), at('b'), [...k('a.x'), ...k('b')])).toBe('a ↔ b')
+    expect(arrowTitle(t, at('a'), at('b'), [])).toBe('a → b')
   })
 })

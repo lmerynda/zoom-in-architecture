@@ -196,7 +196,7 @@ try {
   await page.keyboard.press('Enter')
   await sleep(300)
   const inspected = await page.evaluate(() => ({ kind: document.querySelector('#details .d-kind')?.textContent, title: document.querySelector('#details h2')?.textContent, focus: document.activeElement?.tagName, rels: document.querySelectorAll('#details .d-edge li').length }))
-  check('a Uses row inspects the arrow by keyboard: every relation, focus on its heading', inspected.kind === 'Arrow' && inspected.title === 'Game server ↔ Game database' && inspected.focus === 'H2' && inspected.rels >= 15, JSON.stringify(inspected))
+  check('a Uses row inspects the arrow by keyboard: every relation, focus on its heading', inspected.kind === 'Arrow' && inspected.title === 'Game server → Game database' && inspected.focus === 'H2' && inspected.rels >= 15, JSON.stringify(inspected))
   await page.keyboard.press('Escape')
   await sleep(300)
   const returned = await page.evaluate(() => ({ title: document.querySelector('#details h2')?.textContent, kind: document.querySelector('#details .d-kind')?.textContent, focus: document.activeElement?.tagName }))

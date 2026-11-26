@@ -244,7 +244,13 @@ async function main() {
     cam.resize(app.screen.width, app.screen.height)
     measureHud()
     const next = portraitAspect()
-    if (!!next !== !!rootAspect) { rootAspect = next; void swapModel(raw).then(() => { if (renderer.selected <= 0) fit(0) }) }
+    if (!!next !== !!rootAspect) {
+      rootAspect = next
+      void swapModel(raw).then(() => {
+        const settled = () => { if (morph) return void requestAnimationFrame(settled); if (renderer.selected <= 0) fit(0) }
+        settled()
+      })
+    }
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
@@ -512,7 +518,7 @@ async function main() {
     renderer.edge = null
     rows = { uses: [], usedBy: [], mark: () => {} }
     outlined = -1
-    renderLines(details, tree, picked.map(p => ({ s: p.s, t: p.t, count: p.rels.length })), (_, k) => pickEdge(picked[k], { rels: picked[k].rels, from: picked }))
+    renderLines(details, tree, picked.map(p => ({ s: p.s, t: p.t, count: p.rels.length, rels: p.rels })), (_, k) => pickEdge(picked[k], { rels: picked[k].rels, from: picked }))
     $('announce').textContent = `${picked.length} arrows share this line`
   }
 

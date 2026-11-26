@@ -71,6 +71,10 @@
       #views { order: 5; flex: 1 1 auto; padding: 0; }
       #views a { padding: 6px 7px; font-size: 13px; }
       #crumbs button { min-height: 28px !important; }
+      #crumbs > button:not(:nth-last-of-type(-n+2)) { display: none; }
+      #crumbs > button:nth-last-of-type(2) { flex: 0 1 auto; max-width: 40%; }
+      #crumbs > button:nth-last-of-type(2)::before { content: '‹'; margin-right: 6px; color: var(--faint); }
+      #crumbs > button.here { flex: 0 1 auto; min-width: 0; }
       .lensbar { order: 6; margin-left: auto; }
       /* The lens menu opens under the bar at the screen's right edge, wherever its button wrapped to. */
       .lens-menu { position: fixed; top: calc(var(--bar, 52px) + 4px); right: 8px; left: auto; max-width: calc(100vw - 16px); }
@@ -96,7 +100,9 @@
     .d-grip[aria-expanded="true"] i::before { content: '▾ '; }
     .d-grip[aria-expanded="true"] { min-height: 0; height: 0; padding: 0; border: 0; background: none; margin: -14px -16px 0; overflow: visible; justify-content: flex-end; }
     .d-grip[aria-expanded="true"] b, .d-grip[aria-expanded="true"] span { display: none; }
-    .d-grip[aria-expanded="true"] i { position: absolute; top: 8px; right: 12px; background: #0b1220; min-height: 32px; display: flex; align-items: center; }
+    .d-grip[aria-expanded="true"] i { position: absolute; top: 6px; right: 12px; background: #0b1220; min-height: 40px; min-width: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+    .d-grip[aria-expanded="true"]:focus-visible { outline: none; }
+    .d-grip[aria-expanded="true"]:focus-visible i { outline: 2px solid #fbbf24; outline-offset: 2px; }
     .d-grip:focus-visible { outline-offset: -3px; }
     #details { scroll-padding-top: 56px; }
     #details.collapsed { max-height: 46px; overflow: hidden; }

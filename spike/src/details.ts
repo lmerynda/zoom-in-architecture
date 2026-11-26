@@ -339,7 +339,15 @@ const KIND_ONE = { runtime: 'call at runtime', code: 'use in code', types: 'type
  * The panel for a click on a stretch several arrows share: which arrows run there, heaviest first,
  * each a button that opens that one arrow's panel. The hover tooltip names the same set.
  */
-export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; t: number; count: number }[], choose: (l: { s: number; t: number }, k: number) => void) {
+/** An arrow's name, pointing the way its relations run: → when all go one way, ↔ only when both ways have some. */
+export function arrowTitle(tree: Tree, s: number, t: number, rels: number[]): string {
+  const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
+  const fwd = rels.some(k => inside(s, tree.rels[k * 2]) && inside(t, tree.rels[k * 2 + 1])), rev = rels.some(k => inside(t, tree.rels[k * 2]) && inside(s, tree.rels[k * 2 + 1]))
+  const [a, b] = rev && !fwd ? [t, s] : [s, t]
+  return `${tree.els[a].title} ${fwd && rev ? '↔' : '→'} ${tree.els[b].title}`
+}
+
+export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; t: number; count: number; rels: number[] }[], choose: (l: { s: number; t: number }, k: number) => void) {
   panel.classList.remove('outline')
   panel.hidden = false
   const head = el('div', 'd-head')
@@ -351,7 +359,7 @@ export function renderLines(panel: HTMLElement, tree: Tree, lines: { s: number; 
   for (const [k, l] of lines.entries()) {
     const li = el('li')
     const b = el('button', 'd-rel')
-    b.append(el('b', '', `${tree.els[l.s].title} ↔ ${tree.els[l.t].title}`), el('span', '', `${l.count} relation${l.count === 1 ? '' : 's'}`))
+    b.append(el('b', '', arrowTitle(tree, l.s, l.t, l.rels)), el('span', '', `${l.count} relation${l.count === 1 ? '' : 's'}`))
     b.onclick = () => choose(l, k)
     li.append(b)
     ul.append(li)
@@ -373,6 +381,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${count(k) === 1 ? KIND_ONE[k] : KIND_WORD[k]}`).join(' · ')
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
+  head.querySelector('h2')!.textContent = arrowTitle(tree, s, t, rels)
   // Lines every relation cites (the config that wires all of a server's stores) are said once, above the list.
   const shared = new Set<string>()
   if (rels.length > 2) {
