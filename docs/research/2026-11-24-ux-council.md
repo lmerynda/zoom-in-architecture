@@ -128,3 +128,18 @@ Open, from the final round, ranked by the gain the seats expected:
   - a landscape phone does not fit the map to the full width.
 
 Still open from the first backlog: D22-D26, E29-E31 and the rest of F. The endpoint inventory above also covers the focus review's first item.
+
+## Status, 2026-11-26: stream 3, visual system and layout
+
+Stream 3 of the [open work](2026-11-25-open-work.md) closed the layout and visual items of the open list above, and D22-D26, E31 and F32-F34. Each item has a black-box check in `scripts/controls-test.mjs` (two in `answers-test.mjs` and `place-test.mjs`), before and after screenshots at 1600×1000, 390×844 and 200% zoom, and a review by Codex (gpt-6.2-astra, xhigh) whose blocking findings were fixed and checked again.
+
+- **Fill sparse containers.** A level of two or more parts fills its container to a margin of half a gutter, its cards stretching up to 1.4 times on one axis: on knights a level of parts covers 61-88% of its body, against 19-74% before. Files, and a part alone in its container, keep to a 2 × 2 grid's card (the earlier rule that a one-file app opens with its siblings), so a level of files fills only as far as that allows. That is a trade-off between the two asks, decided here.
+- **Fit the overview to the stage.** The whole map is packed for the stage's shape, trying several aspect targets and keeping the largest, and packed again in place when the stage changes shape. A phone on its side fills its width (zoom 0.43 to 0.53). At 1920 the server's cards are titled at 13-14 px.
+- **Long step names** take two lines, broken at a word or a CamelCase hump, their code a line lower. "KingdomOngoingAttackJpaRepository" (33 letters) still does not fit two lines at three quarters of the size and stays cut.
+- **Supporting types** stand on short rows of their own, with a braces glyph.
+- **Touch targets** in the bar and crumbs are 44 × 44 px on a touch screen; the reader's head is one row at 320 px.
+- **The small items:** the held container's kind stays on screen; chips keep off lens values and the lens legend.
+- **D22** arrows in a level of few run in lanes of their own; **D23** a selection keeps an arrow's kind (a violet rim for a runtime call, type-only dotted); **D24** was already fixed; **D25** chips keep off both legends; **D26** card edges inside an open container read at about 3:1.
+- **E29 and E30** came with stream 1 (search groups a shared file; picking a feature shows it in the panel). **E31** the lens legend names a level's least and most, the map's range apart.
+- **F32** text is 13 px with 11 / 15 / 19 px tiers, nothing smaller; the details column is 360-420 px. **F33** each accent has one meaning: amber what goes out, cyan in, violet runtime and cited lines, green seen, light red not seen or stale, pink features, white focus and actions. **F34** the column runs to the foot while the minimap is away; small person cards are cards, not pills; the welcome says how many features more; rail ticks are larger and in order; Vite no longer scans uploaded sources.
+- **Focus review item 9.** Connections is now **Coupling**, a layout of Architecture (Layout: As mapped, By coupling; `?layout=coupling`), not a view.
