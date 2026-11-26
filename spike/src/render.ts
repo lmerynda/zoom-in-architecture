@@ -715,7 +715,9 @@ export class Renderer {
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
     // A title held under the bar that would now sit on the card's code scrolls away with the card's
     // top instead, as it does once the code reaches the bar: the code is what is read there.
-    const codeAt = el.metadata?.path && w >= CODE_W && el.metadata.role !== 'type' ? box().y : Infinity
+    // Only where the card does show its code (a lens, or a type on a small card, shows none).
+    const shows = !!el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) && !(el.metadata?.role === 'type' && w < this.cam.w * 0.5)
+    const codeAt = shows ? box().y : Infinity
     if (by + tpx * (two ? 2.55 : 1.3) > codeAt - 1) {
       this.codeSlots.push({ i, ...box(), alpha: la })
       return
@@ -770,7 +772,7 @@ export class Renderer {
     }
 
     // Past its last level a file shows its own source, anchored to the card so zooming reads it.
-    const code = el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) && !(el.metadata?.role === 'type' && w < this.cam.w * 0.5) ? box() : null
+    const code = shows ? box() : null
     if (code) this.codeSlots.push({ i, ...code, alpha: la })
     const bottom = code ? code.y - pad * 0.4 : y + h - pad * 0.6
 
