@@ -281,7 +281,7 @@ async function main() {
    */
   // By id, not index: a live update may number the cards anew.
   let framedAt: { id: string; x: number; y: number; z: number } | null = null
-  const atFramed = () => !!framedAt && !cam.flying && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
+  const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
   const atWhole = () => atFramed() && framedAt!.id === '' && renderer.selected <= 0
   /** The card last framed, in the current tree (-1 once it is gone). */
   const framedCard = () => (framedAt!.id === '' ? 0 : tree.byId.get(framedAt!.id) ?? -1)
@@ -355,7 +355,10 @@ async function main() {
       world.local = local
       renderer.router.reset()
       // At the whole map before and still now (the reader may have moved while it was laid out).
+      // On the way to the whole map (Fit, the map's crumb, a live update's refit): it flies on to the new frame.
+      const goingWhole = !!framedAt && framedAt.id === '' && !!dest && Math.hypot(dest[0] - framedAt.x, dest[1] - framedAt.y) * framedAt.z < 1
       if (was && atWhole()) setWhole()
+      else if (goingWhole) fit(0)
       // Otherwise the camera moves with that card, a flight or a wheel zoom under way included.
       else if (anchor > 0) cam.remap(ax, ay, r[a], r[a + 1], r[a + 2] / aw)
       if (!(was && atWhole())) renderer.wholeZ = frameFor(0).z
@@ -1049,7 +1052,13 @@ async function main() {
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
     }
     renderer.router.invalidate()
-    if (u >= 1) { morph = null; if (refitAfterMorph && renderer.selected <= 0) fit(0); refitAfterMorph = false }
+    // The refit waits for the morph, and is dropped if the reader moved meanwhile (a wheel, a pan).
+    if (u >= 1) {
+      const stayed = cam.settled && Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1
+      morph = null
+      if (refitAfterMorph && stayed && renderer.selected <= 0) fit(0)
+      refitAfterMorph = false
+    }
   }
   let pending: Promise<void> = Promise.resolve()
   import.meta.hot?.on('model:update', ({ name }: { name: string }) => {

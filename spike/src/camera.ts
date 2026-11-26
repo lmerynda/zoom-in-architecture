@@ -46,6 +46,9 @@ export class Camera {
 
   get flying() { return this.fly != null }
 
+  /** Nothing in motion or about to move: no flight, no zoom easing toward a wheel's target, no glide. */
+  get settled() { return !this.fly && Math.abs(this.targetLogZ - Math.log(this.z)) < 1e-4 && Math.abs(this.vx) + Math.abs(this.vy) <= 0.02 }
+
   /** Duration of the flight in progress, in ms (0 when not flying). */
   get flightMs() { return this.fly?.dur ?? 0 }
 
