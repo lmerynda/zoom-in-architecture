@@ -226,11 +226,11 @@ try {
   await landed()
   await sleep(400)
   const toArch = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').href)
-  check('leaving Requests carries the file and the request', toArch.includes('file=backend/src/main/java/com/knightsofdarkness/web/market/MarketService.java') && toArch.includes(`req=${step.ep}`), toArch)
+  check('leaving Requests carries the file and the request', toArch.includes('file=backend/src/main/java/com/knightsofdarkness/web/market/MarketService.java') && toArch.includes(`req=${step.id}`), toArch)
   await page.goto(toArch, { waitUntil: 'load' })
   await ready()
   await sleep(400)
-  check('Architecture selects the file and keeps the request in its address', /marketService$/.test(await selected()) && (await query()).req === step.ep, JSON.stringify({ sel: await selected(), q: await query() }))
+  check('Architecture selects the file and keeps the request in its address', /marketService$/.test(await selected()) && (await query()).req === step.id, JSON.stringify({ sel: await selected(), q: await query() }))
   const toReq = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Requests').href)
   await page.goto(toReq, { waitUntil: 'load' })
   await ready()
@@ -240,6 +240,108 @@ try {
   await sleep(600)
   const part = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Requests').href)
   check('a part crosses to the resource of the endpoints it handles', new URL(part).searchParams.get('in') === 'backend.market', part)
+
+  // Returning from Architecture comes back to the card left: the endpoint itself, or its response.
+  for (const at of ['backend.market.e1', 'backend.market.e1.response']) {
+    await open(`${map}&view=requests&at=${at}`)
+    await sleep(500)
+    await page.goto(await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').href), { waitUntil: 'load' })
+    await ready()
+    await sleep(500)
+    await page.goto(await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Requests').href), { waitUntil: 'load' })
+    await ready()
+    check(`Requests → Architecture → Requests comes back to ${at}`, (await selected()) === at, String(await selected()))
+  }
+
+  // Takes reads the handler's parameters: what it is sent, apart from what it only builds for its reply.
+  await open(`${map}&view=requests&at=backend.auth.e2`)
+  await page.waitForFunction(() => /Also names/.test(document.querySelector('#details .d-effect.takes')?.textContent ?? ''), { timeout: 10000 }).catch(() => {})
+  const auth = await page.evaluate(() => { const s = document.querySelector('#details .d-effect.takes'); return { taken: [...s.querySelectorAll('ul')[0].querySelectorAll('.d-rel')].map(b => b.innerText.replace(/\s+/g, ' ')), also: s.querySelectorAll('ul')[1]?.innerText ?? '' } })
+  check('authenticate takes AuthRequestDto as its body and only names AuthResponseDto', auth.taken.some(t => t.startsWith('AuthRequestDto the request body')) && !auth.taken.some(t => t.startsWith('AuthResponseDto')) && auth.also.includes('AuthResponseDto'), JSON.stringify(auth))
+  await open(`${map}&view=requests&at=backend.market.e1`)
+  check('a table written and read counts as both', /In tests: writes 4 tables, reads 3/.test((await panel()).text), (await panel()).text.slice(0, 900))
+
+  // A surface that arrives after a selection by keyboard is drawn, and focus stays on the heading.
+  await page.setRequestInterception(true)
+  const slow = r => { if (r.url().includes('knights-of-darkness.requests.json')) setTimeout(() => r.continue(), 2500); else r.continue() }
+  page.on('request', slow)
+  await page.goto(`${base}?${map}`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => [...document.querySelectorAll('#details .d-outline button')].find(b => b.querySelector('b').textContent === 'Game server').focus())
+  await page.keyboard.press('Enter')
+  await sleep(3500)
+  const late = await page.evaluate(() => ({ surface: [...document.querySelectorAll('#details .d-surface button')].map(b => b.textContent), focus: document.activeElement === document.querySelector('#details h2') }))
+  check('a surface that arrives late reaches the open panel, focus kept on its heading', late.surface.includes('Endpoints · 67') && late.focus, JSON.stringify(late))
+  page.off('request', slow)
+  await page.setRequestInterception(false)
+
+  // A client's pages are on its surface.
+  await open(`${map}&at=browser`)
+  check('the game client lists its pages', await page.evaluate(() => [...document.querySelectorAll('#details .d-surface .d-more')].some(b => b.textContent === 'Pages · 15')))
+
+  // A search's whole match list holds what the search matched.
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('/')
+  await page.keyboard.type('post kingdom')
+  await sleep(300)
+  const more = await page.evaluate(() => [...document.querySelectorAll('.palette .row b')].map(b => b.textContent).find(t => /^All \d+ matching endpoints$/.test(t)))
+  await page.evaluate(() => [...document.querySelectorAll('.palette .row')].find(r => /^All \d+ matching/.test(r.querySelector('b').textContent)).click())
+  await sleep(300)
+  check('"All N matching endpoints" lists those N', !!more && (await panel()).rows.length === Number(more.match(/\d+/)[0]), JSON.stringify({ more, rows: (await panel()).rows.length }))
+  await page.keyboard.press('Escape')
+
+  // Keyboard: an endpoint picked by search in Architecture opens in Requests with focus on its heading.
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('/')
+  await page.keyboard.type('market buy')
+  await sleep(300)
+  await page.keyboard.press('Enter')
+  await crossed('requests')
+  check('an endpoint picked by keyboard opens with focus on its heading', await page.evaluate(() => document.activeElement === document.querySelector('#details h2')), await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)))
+
+  // A scheduled job shown from Requests opens its file in Architecture.
+  await open(`${map}&view=requests`)
+  await page.evaluate(() => { document.querySelector('#details .d-surface .d-more')?.click() })
+  await clickText('#details .d-jobs .cite', 'BotClock')
+  await crossed('')
+  check('a scheduled job from Requests opens in Architecture', /botClock$/i.test(await selected() ?? ''), String(await selected()))
+
+  // Older maps: every route, whole; their Serves name no line they do not know; a shared file's places differ.
+  await open('model=petclinic')
+  const pc = await page.evaluate(() => { [...document.querySelectorAll('#details .d-surface button')].find(b => b.textContent.startsWith('Endpoints')).click(); return [...document.querySelectorAll('#details .d-ep b')].map(b => b.textContent) })
+  check('an older map lists every route, a shortened one whole', pc.length === 17 && pc.includes('/owners/{ownerId}/edit'), JSON.stringify(pc))
+  await open('model=petclinic&at=petclinic.owners.ownerController')
+  check('Serves names no line the map does not know', !/line 1\b/.test(await page.evaluate(() => document.querySelector('#details .d-serves').innerText)))
+  await page.evaluate(() => window.__spike.controls.feature('Find owners'))
+  await sleep(500)
+  const fo = await page.evaluate(() => ({ pages: [...document.querySelectorAll('#details .d-pages li')].map(l => l.textContent), eps: [...document.querySelectorAll('#details .d-serves .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  check('a feature on a shared controller gets the endpoints it names, and its templates as pages', fo.pages.length === 2 && !fo.eps.some(e => e.startsWith('POST /owners/new')) && fo.eps.some(e => e.startsWith('GET /owners/find')), JSON.stringify(fo))
+  await open('model=petclinic&view=requests')
+  await page.evaluate(() => document.querySelector('#stage canvas').focus())
+  await page.keyboard.press('/')
+  await page.keyboard.type('OwnerRepository')
+  await sleep(300)
+  await page.evaluate(() => [...document.querySelectorAll('.palette .row')].find(r => /^file ×/.test(r.querySelector('.kind').textContent))?.click())
+  await sleep(200)
+  const subs = await page.evaluate(() => [...document.querySelectorAll('.palette .row .sub')].slice(1).map(s => s.textContent))
+  check('an older map\'s shared file opens out into places that say their route', subs.length > 2 && new Set(subs).size === subs.length && subs.every(s => /^step \d+ of (GET|POST) \//.test(s)), JSON.stringify(subs))
+  await page.keyboard.press('Escape')
+  await open('model=zoom-in-architecture')
+  await page.evaluate(() => window.__spike.controls.feature('Map a repository'))
+  await sleep(400)
+  check('a map with no pages calls nothing a page', await page.evaluate(() => document.querySelector('#details .d-kind').textContent === 'Feature' && !document.querySelector('#details .d-pages')))
+
+  // On a phone, See the API puts the welcome away so the list is in view.
+  await page.setViewport({ width: 320, height: 568, isMobile: true, hasTouch: true })
+  await page.evaluate(() => localStorage.clear())
+  await page.goto(`${base}?${map}`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready && document.querySelector('#welcome button.api'), { timeout: 60000 })
+  await page.click('#welcome button.api')
+  await sleep(500)
+  const phone = await page.evaluate(() => { const h = document.querySelector('#details h2').getBoundingClientRect(), f = document.querySelector('#details .d-filters').getBoundingClientRect(); const top = (x, y) => document.elementFromPoint(x, y)?.closest('#details') != null; return { welcome: document.getElementById('welcome').hidden, h2: top(h.left + 10, h.top + h.height / 2), filters: top(f.left + 10, f.top + f.height / 2) } })
+  await shot('08-phone-list')
+  check('on a phone See the API shows the list clear of the welcome', phone.welcome && phone.h2 && phone.filters, JSON.stringify(phone))
+  await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
   console.log('FAIL', e.stack ?? e)

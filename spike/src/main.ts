@@ -69,6 +69,8 @@ const values = (r: Ring) => Array.from(r.full ? r.a : r.a.slice(0, r.k))
 const pct = (v: number[], p: number) => { if (!v.length) return 0; const s = [...v].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))] }
 
 const INTRO_SEEN = 'zoom.introSeen'
+/** Set while the page crosses to another view, so the new page focuses what it opens at. */
+const CROSSED = 'zoom.crossed'
 /**
  * On a first visit, a short welcome: what the map holds, counted as a reader names it (apps,
  * databases, people, endpoints, features), the API in one press, and the features as places to
@@ -390,7 +392,13 @@ async function main() {
     reader.open(path, tree.els[i].title, tree.els[tree.parent[i]].title, line, src, () => void openCode(i, line))
   }
   /** Opens the page at another view of this map, at a place: Requests for an endpoint, Architecture for a part. */
-  const cross = (to: string | null, w: PlaceWords) => location.assign(placeUrl(`?model=${encodeURIComponent(modelName)}${to ? `&view=${to}` : ''}`, w))
+  // The page it opens puts keyboard focus on what it opens at, as a selection here would.
+  const cross = (to: string | null, w: PlaceWords) => {
+    try { sessionStorage.setItem(CROSSED, '1') } catch { /* storage blocked: focus stays where the page puts it */ }
+    location.assign(placeUrl(`?model=${encodeURIComponent(modelName)}${to ? `&view=${to}` : ''}`, w))
+  }
+  /** Sources fetched for reading a handler's parameters, by path. */
+  const sources = new Map<string, Promise<string | null>>()
   /**
    * An endpoint by its Requests id: selected here in the Requests view, where it is a card; across
    * to Requests from the other views. Opened from the endpoint list, its panel leads back to it.
@@ -404,7 +412,12 @@ async function main() {
   }
   const actions: PanelActions = {
     go: j => controls.goSelect(j),
-    openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
+    // A file this view does not show (a scheduled job, from Requests) opens in Architecture.
+    openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line); else if (view === 'requests') cross(null, { at: null, file: path, line }) },
+    source: path => {
+      if (!sources.has(path)) sources.set(path, fetch(`${import.meta.env.BASE_URL}source/${encodeURIComponent(modelName)}?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.text() : null), () => null))
+      return sources.get(path)!
+    },
     read: j => void openCode(j, startOf(j)),
     inspect: (a, b) => { pickEdge({ s: a, t: b }, { rels: relationsAcross(tree, a, b) }); focusHeading() },
     enter: j => controls.enterPlace(j),
@@ -462,8 +475,12 @@ async function main() {
     renderer.surface = i => surfaceText.get(i) ?? ''
     if (held?.kind === 'api') showApi(held.filter)
     else if (held?.kind === 'feature') showFeature(held.name)
-    else if (!edgeOpen() && !details.contains(document.activeElement)) showDetails()
-    else outlined = -1
+    else if (!edgeOpen()) {
+      // Focus in the panel goes to the redrawn heading, not to the page.
+      const inPanel = details.contains(document.activeElement)
+      showDetails()
+      if (inPanel) focusHeading()
+    }
   }
   let rows: PanelRows = { uses: [], usedBy: [], mark: () => {} }
   /** The place the outline shows, while nothing is selected. */
@@ -689,7 +706,8 @@ async function main() {
     api: () => surface.api, requests: view === 'requests', endpoint: id => openEndpoint(id), list: f => showApi(f), showFeature,
   })
   resize()
-  const intro = (again = false) => showIntro(tree, surface, name => controls.feature(name), () => { showApi({}); focusHeading() }, again)
+  // See the API on a narrow screen puts the welcome away: there it would stand over the list it opened.
+  const intro = (again = false) => showIntro(tree, surface, name => controls.feature(name), () => { if (matchMedia('(max-width: 1099px)').matches) $('welcome').querySelector<HTMLButtonElement>('.ok')?.click(); showApi({}); focusHeading() }, again)
   refreshSurface()
   intro()
   // The other view's model: the Requests model gives Architecture its endpoints, Architecture gives Requests its features and marks.
@@ -759,32 +777,43 @@ async function main() {
     if (framed > 0) { const f = frameFor(framed); cam.set(f.x, f.y, f.z) }
     if (target > 0 && file && line) void openCode(target, line)
     places.update(controls.view())
+    // Arrived from another view by a pick in the panel or search: focus is on what was picked.
+    let crossed = false
+    try { crossed = sessionStorage.getItem(CROSSED) === '1'; sessionStorage.removeItem(CROSSED) } catch { /* storage blocked */ }
+    if (crossed && target > 0 && !(file && line)) focusHeading()
   }
   /** In the Requests view, the endpoint card i is or is in; -1 outside any. */
   const requestOf = (i: number) => { for (let a = i; a > 0; a = tree.parent[a]) if (endpointOf(tree.els[a])) return a; return -1 }
   /**
    * The view switch keeps your subject: Architecture and Connections share ids. The Requests view
-   * has its own, so the subject crosses by its file, and the request you were in rides along in the
-   * address (`req`): coming back, the file opens in that request, not the first that holds it. A
-   * part crosses to the endpoints whose handlers it holds: one is selected, several framed by their
-   * resource.
+   * has its own, so the subject crosses by its file, and the Requests card you were on rides along
+   * in the address (`req`): coming back to the same file, that card is selected again (an endpoint,
+   * its response, or the step of withdraw rather than of the first endpoint that runs the file). An
+   * endpoint crosses as its handler's file. A part crosses to the endpoints whose handlers it
+   * holds: one is selected, several framed by their resource.
    */
   const viewLinks = () => {
     const v = controls.view()
     const subject = tree.byId.get(v.selected ?? v.here ?? '') ?? -1
     const file = subject > 0 ? tree.els[subject].metadata?.path ?? null : null
     const lens = renderer.lens?.name ?? null
-    const req = view === 'requests' ? (subject > 0 && requestOf(subject) > 0 ? tree.els[requestOf(subject)].id : null) : new URLSearchParams(location.search).get('req')
+    const req = view === 'requests' ? (subject > 0 && requestOf(subject) > 0 ? tree.els[subject].id : null) : new URLSearchParams(location.search).get('req')
     // Into Requests, from a part or file of this view.
     const intoRequests = (): PlaceWords => {
       const api = surface.api
       if (!api || subject <= 0) return { at: null, file }
+      // The endpoint the carried card is in.
+      let ep = null as (typeof api.endpoints)[number] | null
+      for (let a: string | null | undefined = req; a && !ep; a = api.parent.get(a)) ep = api.endpoints.find(x => x.id === a) ?? null
       if (file) {
-        const card = api.endpoints.find(ep => ep.id === req)?.cards.find(c => c.path === file)
+        // The card itself comes back when it shows the same file (the endpoint and its response stand for its handler's).
+        const own = ep?.cards.find(c => c.id === req)
+        if (ep && (own ? own.path === file : ep.handler?.path === file)) return { at: req }
+        const card = ep?.cards.find(c => c.path === file)
         return card ? { at: card.id } : { at: null, file }
       }
       const ids = endpointsUnder(tree, subject, api)
-      if (req && ids.includes(req)) return { at: req }
+      if (ep && ids.includes(ep.id)) return { at: ep.id }
       if (ids.length === 1) return { at: ids[0] }
       if (!ids.length) return { at: null }
       // Several: the resource they share.
@@ -792,9 +821,10 @@ async function main() {
       const common = ids.map(up).reduce((acc, chain) => acc.filter(a => chain.includes(a)))
       return { at: null, in: common[0] ?? null }
     }
-    // Out of Requests: a file as itself; an endpoint as its handler's file.
+    // Out of Requests: a file as itself; an endpoint, or a card of one with no file (its response), as its handler's file.
     const fromRequests = (): PlaceWords => {
-      const ep = subject > 0 && endpointOf(tree.els[subject]) ? surface.api?.endpoints.find(x => x.id === tree.els[subject].id) : null
+      const r = subject > 0 ? requestOf(subject) : -1
+      const ep = r > 0 ? surface.api?.endpoints.find(x => x.id === tree.els[r].id) : null
       return { at: null, file: file ?? ep?.handler?.path ?? null, req }
     }
     for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a')) {

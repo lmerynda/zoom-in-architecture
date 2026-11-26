@@ -43,20 +43,24 @@ export interface Api {
 }
 
 const VERBS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ANY|ALL|WS|WEBSOCKET'
-const TITLE = new RegExp(`^(${VERBS})\\s+(\\/\\S*)$`, 'i')
+const TITLE = new RegExp(`^(${VERBS})\\s+((?:\\/|…)\\S*)$`, 'i')
 /** The order methods are listed in. */
 export const METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 const methodRank = (m: string) => { const k = METHOD_ORDER.indexOf(m); return k < 0 ? METHOD_ORDER.length : k }
 
 /**
  * An endpoint's method and path, from its metadata, or, in maps built before endpoints carried
- * metadata, from a title of the form "GET /owners/find". Null for anything else.
+ * metadata, from a title of the form "GET /owners/find". Such a map shortens a path under a group
+ * of its own ("GET …/edit" under "/owners/{ownerId}"): `parent`, the group's title, gives it back
+ * whole. Null for anything else.
  */
-export function endpointOf(e: Pick<ElementJson, 'title' | 'metadata'>): { method: string; route: string } | null {
+export function endpointOf(e: Pick<ElementJson, 'title' | 'metadata'>, parent = ''): { method: string; route: string } | null {
   const m = e.metadata
   if (m?.method) return { method: m.method.toUpperCase(), route: m.route ?? e.title.replace(/^\S+\s+/, '') }
   const t = e.title.match(TITLE)
-  return t ? { method: t[1].toUpperCase(), route: t[2] } : null
+  if (!t) return null
+  const group = parent.split(' · ')[0]
+  return { method: t[1].toUpperCase(), route: t[2].startsWith('…') && group.startsWith('/') ? group.replace(/\/$/, '') + t[2].slice(1) : t[2] }
 }
 
 /** The names of a route's parameters: "/market/{id}/buy" → id; ":slug" and "<int:id>" too. */
@@ -73,7 +77,7 @@ export function buildApi(model: ModelJson): Api {
   const traced = !!model.published?.traced
   const endpoints: Endpoint[] = []
   for (const e of model.elements) {
-    const mr = endpointOf(e)
+    const mr = endpointOf(e, e.parent ? byId.get(e.parent)?.title : '')
     if (!mr) continue
     const app = top(e)
     let g = e
@@ -83,14 +87,15 @@ export function buildApi(model: ModelJson): Api {
     const first = steps.filter(s => s.metadata?.path && step(s) === 1)[0] ?? steps.find(s => s.metadata?.path)
     const handler = first?.metadata?.path ? {
       path: first.metadata.path,
-      line: Number(first.metadata.span?.split('-')[0]) || 1,
+      // 0: the map does not say where in the file it starts.
+      line: Number(first.metadata.span?.split('-')[0]) || 0,
       name: `${first.technology || first.metadata.path.split('/').pop()!.replace(/\.\w+$/, '')}.${first.title.replace(/^\d+ · /, '').replace(/\(\)$/, '')}`,
     } : null
     const response = steps.find(s => s.metadata?.role === 'response' && s.metadata.model) ?? steps.find(s => s.metadata?.role === 'response')
     const returns = response?.metadata?.model ?? e.description.match(/ returns (.+?)(?: as \w+)?\.?$/)?.[1] ?? ''
     const seen = traced && e.metadata?.seen != null ? Number(e.metadata.seen) : null
     endpoints.push({
-      id: e.id, method: mr.method, route: mr.route, title: e.title,
+      id: e.id, method: mr.method, route: mr.route, title: `${mr.method} ${mr.route}`,
       app: app.id, appTitle: app.title, group: g === e ? app.id : g.id, groupTitle: g === e ? app.title : g.title,
       handler, returns, seen, statuses: e.metadata?.statuses ?? '', tables: e.metadata?.tables ?? '',
       cards: steps.filter(s => s.metadata?.path).map(s => ({ path: s.metadata!.path, id: s.id })),
@@ -168,6 +173,7 @@ export function clientParts(api: Api): Set<string> {
 
 /** The endpoints whose handler is in a file, in the order they stand in it. */
 export function servedBy(api: Api, path: string): Endpoint[] {
+  // Stable: endpoints whose line the map does not say keep the list's order.
   return api.endpoints.filter(ep => ep.handler?.path === path).sort((a, b) => a.handler!.line - b.handler!.line)
 }
 
@@ -233,19 +239,84 @@ export function mergeTables(texts: string[]): string {
   return [...ops].map(([t, s]) => (s.size ? `${t}: ${[...s].sort().join(', ')}` : t)).join(' · ')
 }
 
+/** A name as a whole word in code, in any script: Página in "Página p", not in "Páginas". `after` follows it. */
+export const wordRe = (name: string, after = '') => new RegExp(`(?<![\\p{L}\\p{N}_$])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_$])${after}`, 'u')
+
+/** A file in a folder of pages: what a person looks at, by the project's own split. */
+export const PAGE_DIR = /(^|\/)(pages|screens|views|templates)\//i
+/** A file a person looks at: in a folder of pages, or a server-side template. (A component file alone is not a page.) */
+export const PAGE_FILE = new RegExp(`${PAGE_DIR.source}|\\.(html?|cshtml|razor|erb|jinja2?|hbs)$`, 'i')
+
+/** Words of a name, lower case, plurals folded, small words dropped: "Find owners" → find, owner. */
+const nameWords = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
+  .filter(w => w.length > 2 && !['and', 'the', 'for', 'with'].includes(w)).map(w => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
+
 /**
  * A feature where the product's parts meet its surface: the cards that carry it, the pages among
- * them (cards in a part that serves no endpoint, such as the browser client), the endpoints whose
- * handler is in a card that carries it, and the tables those endpoints touched in tests.
+ * them (page files, and the cards of a client: a part that calls endpoints and serves none), the
+ * endpoints whose handler is in a card that carries it, and the tables those endpoints touched in
+ * tests. A handler that carries several features (one controller for finding and adding owners)
+ * gives the feature only the endpoints its words name, when some do.
  */
 export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string) {
   const byId = new Map(els.map(e => [e.id, e]))
   const top = (id: string) => { let a = byId.get(id); while (a?.parent && byId.has(a.parent)) a = byId.get(a.parent); return a?.id ?? id }
   const carriers = els.filter(e => e.features?.includes(name))
-  const carries = (id: string) => { for (let a = byId.get(id); a; a = a.parent ? byId.get(a.parent) : undefined) if (a.features?.includes(name)) return true; return false }
-  const serving = new Set((api?.endpoints ?? []).map(ep => ep.app))
-  const pages = carriers.filter(e => !serving.has(top(e.id)) && byId.get(top(e.id))?.kind !== 'database').map(e => e.id)
+  const featuresOf = (id: string) => { const out = new Set<string>(); for (let a = byId.get(id); a; a = a.parent ? byId.get(a.parent) : undefined) for (const f of a.features ?? []) out.add(f); return out }
+  const clients = api ? clientParts(api) : new Set<string>()
+  const pages = carriers.filter(e => PAGE_FILE.test(e.metadata?.path ?? '') || clients.has(top(e.id))).map(e => e.id)
   const files = new Map(els.filter(e => e.metadata?.path).map(e => [e.metadata!.path, e.id]))
-  const endpoints = (api?.endpoints ?? []).filter(ep => { const f = ep.handler && files.get(ep.handler.path); return !!f && carries(f) })
+  const carried = (api?.endpoints ?? []).filter(ep => { const f = ep.handler && files.get(ep.handler.path); return !!f && featuresOf(f).has(name) })
+  const words = nameWords(name)
+  const named = (ep: Endpoint, all: boolean) => { const have = new Set(nameWords(`${ep.route} ${ep.handler?.name ?? ''}`)); return all ? words.every(w => have.has(w)) : words.some(w => have.has(w)) }
+  const endpoints = carried.filter(ep => {
+    if (featuresOf(files.get(ep.handler!.path)!).size < 2) return true
+    // Shared with other features: the endpoints that name every word of it, else any; else all of them.
+    const peers = carried.filter(x => x.handler!.path === ep.handler!.path)
+    return peers.some(x => named(x, true)) ? named(ep, true) : peers.some(x => named(x, false)) ? named(ep, false) : true
+  })
   return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, tables: mergeTables(endpoints.map(ep => ep.tables)) }
+}
+
+/**
+ * The parameter list of the handler declared at `line` (1-based; 0 when not known) of a file: the text between the
+ * parentheses after its name, over as many lines as it runs. Null when it cannot be found.
+ */
+export function handlerParams(src: string, line: number, method: string): string | null {
+  if (!method) return null
+  // Where the map does not say (line 0), the first declaration of that name in the file.
+  const all = src.split('\n'), text = (line >= 1 ? all.slice(line - 1, line + 15) : all).join('\n')
+  const at = text.search(wordRe(method, '\\s*\\('))
+  if (at < 0) return null
+  const open = text.indexOf('(', at)
+  let depth = 0
+  for (let k = open; k < text.length; k++) {
+    if (text[k] === '(') depth++
+    else if (text[k] === ')' && --depth === 0) return text.slice(open + 1, k)
+  }
+  return null
+}
+
+/**
+ * Which of the types a handler names it takes, and how: a parameter marked as the body is the
+ * request body, one marked as a query or path value says so, any other is a parameter.
+ */
+export function takenTypes(params: string, types: string[]): Map<string, string> {
+  const out = new Map<string, string>()
+  // Split at top-level commas: generics hold commas of their own.
+  const parts: string[] = []
+  let depth = 0, from = 0
+  for (let k = 0; k < params.length; k++) {
+    const c = params[k]
+    if ('<([{'.includes(c)) depth++
+    else if ('>)]}'.includes(c)) depth--
+    else if (c === ',' && depth === 0) { parts.push(params.slice(from, k)); from = k + 1 }
+  }
+  parts.push(params.slice(from))
+  for (const t of types) {
+    const p = parts.find(x => wordRe(t).test(x))
+    if (!p) continue
+    out.set(t, /@RequestBody|\[FromBody\]|\bBody\(|@Body\b/.test(p) ? 'the request body' : /@RequestParam|\[FromQuery\]|\bQuery\(|@Query\b/.test(p) ? 'a query parameter' : /@PathVariable|\[FromRoute\]|\bPath\(|@Param\b/.test(p) ? 'in the path' : 'a parameter of the handler')
+  }
+  return out
 }

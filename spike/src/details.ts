@@ -1,4 +1,4 @@
-import { clientParts, endpointOf, featureFacts, filterApi, groupApi, methodCounts, routeParams, servedBy, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
+import { clientParts, endpointOf, featureFacts, filterApi, groupApi, handlerParams, PAGE_DIR, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
 import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
 
@@ -21,7 +21,8 @@ export interface PanelActions extends ApiActions {
   inspect: (a: number, b: number) => void
   /** Goes into container i: framed open, nothing selected, the panel its outline. */
   enter: (i: number) => void
-}
+  /** A file's source as uploaded, to read a handler's parameters; null when the viewer has none. */
+  source: (path: string) => Promise<string | null>}
 
 /** Every relation between the subtrees of a and b, both directions, as relation indices. */
 export function relationsAcross(tree: Tree, a: number, b: number): number[] {
@@ -738,7 +739,7 @@ export function renderApi(panel: HTMLElement, s: Surface, f: ApiFilter, act: Api
  * no test called), the endpoints a client part calls, and its scheduled jobs, each opening its list.
  * `ids`: only these endpoints (a component's, by the handlers inside it).
  */
-export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { app?: string; ids?: string[]; label: string; calls?: string[] }): HTMLElement[] {
+export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { app?: string; ids?: string[]; label: string; calls?: string[]; pages?: { i: number; title: string }[] }): HTMLElement[] {
   const api = s.api
   const eps = api ? filterApi(api, { app: scope.app, ids: scope.ids }) : []
   const calls = api && scope.calls ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => scope.calls!.includes(c.top))) : []
@@ -746,7 +747,8 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
   const clients = api ? clientParts(api) : new Set<string>()
   const jobs = scope.ids ? [] : marks.schedule.filter(m => !clients.has(m.top))
   const routesOnly = !eps.length && !scope.ids && marks.route.length > 0
-  if (!eps.length && !calls.length && !jobs.length && !routesOnly) return []
+  const pages = scope.pages ?? []
+  if (!eps.length && !calls.length && !jobs.length && !routesOnly && !pages.length) return []
   const box = el('section', 'd-surface')
   box.append(el('h3', '', 'Surface'))
   const row = el('div', 'd-actions')
@@ -770,21 +772,18 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
   }
   if (row.childElementCount) box.append(row)
   if (routesOnly) box.append(el('p', 'd-facts', `${plural(marks.route.length, 'route')} marked in code; this map has no Requests view to list them`))
-  if (jobs.length) {
-    const toggle = el('button', 'd-more', `Scheduled jobs · ${jobs.length}`)
+  // A disclosure of short rows: a client's pages, a part's scheduled jobs.
+  const fold = (title: string, rows: { text: string; title: string; run: () => void }[]) => {
+    const toggle = el('button', 'd-more', `${title} · ${rows.length}`)
     toggle.setAttribute('aria-expanded', 'false')
     const ul = el('ul', 'd-jobs')
     ul.hidden = true
-    for (const j of jobs) {
-      const li = el('li'), b = el('button', 'cite', `${j.path.split('/').pop()}:${j.line}`)
-      b.title = `${j.path}:${j.line}: open the code here`
-      b.onclick = () => act.openPath(j.path, j.line, -1)
-      li.append(b)
-      ul.append(li)
-    }
+    for (const r of rows) { const li = el('li'), b = el('button', 'cite', r.text); b.title = r.title; b.onclick = r.run; li.append(b); ul.append(li) }
     toggle.onclick = () => { ul.hidden = !ul.hidden; toggle.setAttribute('aria-expanded', String(!ul.hidden)) }
     box.append(toggle, ul)
   }
+  if (pages.length) fold('Pages', pages.map(p => ({ text: p.title, title: `${p.title}: select it`, run: () => act.go(p.i) })))
+  if (jobs.length) fold('Scheduled jobs', jobs.map(j => ({ text: `${j.path.split('/').pop()}:${j.line}`, title: `${j.path}:${j.line}: open the code here`, run: () => act.openPath(j.path, j.line, -1) })))
   return [box]
 }
 
@@ -799,7 +798,7 @@ export function servesBox(s: Surface, path: string, act: ApiActions & PanelActio
   const box = el('section', 'd-rels d-serves')
   box.append(el('h3', '', `Serves · ${eps.length || marked.length}`))
   const ul = el('ul')
-  if (eps.length) for (const ep of eps) ul.append(endpointRow(ep, () => act.endpoint(ep.id), `line ${ep.handler!.line}${ep.returns ? ` · returns ${ep.returns}` : ''}`))
+  if (eps.length) for (const ep of eps) ul.append(endpointRow(ep, () => act.endpoint(ep.id), [ep.handler!.line ? `line ${ep.handler!.line}` : ep.handler!.name, ep.returns ? `returns ${ep.returns}` : ''].filter(Boolean).join(' · ')))
   else for (const m of marked) {
     const li = el('li'), b = el('button', 'd-rel')
     b.append(el('i', '', '⇠'), el('b', '', `Route at line ${m.line}`))
@@ -823,7 +822,13 @@ export function surfaceLead(tree: Tree, i: number, surface: Surface, act: PanelA
   if (!tree.children[i].length) return []
   const top = tree.parent[i] === 0
   const ids = top ? undefined : surface.requests ? endpointDescendants(tree, i) : endpointsUnder(tree, i, surface.api)
-  return top || ids?.length ? surfaceBox(surface, act, { app: top ? e.id : undefined, ids, label: e.title, calls: top ? [e.id] : undefined }) : []
+  // A client's pages: its files in a pages (screens, views, templates) folder.
+  const pages: { i: number; title: string }[] = []
+  if (top && surface.api && clientParts(surface.api).has(e.id)) {
+    const walk = (n: number) => { const p = tree.els[n].metadata?.path; if (p && PAGE_DIR.test(p)) pages.push({ i: n, title: tree.els[n].title }); for (const k of tree.children[n]) walk(k) }
+    walk(i)
+  }
+  return top || ids?.length ? surfaceBox(surface, act, { app: top ? e.id : undefined, ids, label: e.title, calls: top ? [e.id] : undefined, pages }) : []
 }
 
 /** The ids of the endpoints whose handler is a file at or under element i. */
@@ -881,17 +886,33 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
     out.push(p)
   }
 
-  // What it takes: the path's parameters, and the types the handler names that it does not return.
+  // What it takes: the path's parameters, and the types in the handler's parameter list, read from
+  // its source; the other types it names (built for the reply, say) are listed apart, not as taken.
   const returns = ep?.returns ?? ''
-  const named = kids.filter(k => role(k) === 'type' && !new RegExp(`\\b${tree.els[k].title.replace(/\W/g, '')}\\b`).test(returns))
-  const params = routeParams(mr.route)
+  const named = kids.filter(k => role(k) === 'type' && !wordRe(tree.els[k].title).test(returns))
+  const params = routeParams(ep?.route ?? mr.route)
   {
-    const s = section('takes', `Takes · ${params.length + named.length}`)
-    const ul = el('ul')
-    for (const p of params) ul.append(rowBtn(p, 'in the path', null))
-    for (const k of named) ul.append(rowBtn(tree.els[k].title, 'a type the handler names', () => act.go(k)))
-    if (!ul.childElementCount) s.append(el('div', 'd-none', 'nothing named: no path parameters or other types'))
-    else s.append(ul)
+    const s = section('takes', 'Takes')
+    const fill = (taken: Map<string, string> | null, failed = false) => {
+      const ul = el('ul')
+      for (const p of params) ul.append(rowBtn(p, 'in the path', null))
+      const rest = named.filter(k => !taken?.has(tree.els[k].title))
+      for (const k of named) if (taken?.has(tree.els[k].title)) ul.append(rowBtn(tree.els[k].title, taken.get(tree.els[k].title)!, () => act.go(k)))
+      s.querySelector('h3')!.textContent = taken ? `Takes · ${ul.childElementCount}` : 'Takes'
+      const parts: HTMLElement[] = [ul.childElementCount ? ul : el('div', 'd-none', taken ? 'nothing: no path parameters, and no type of the map in its parameters' : 'no path parameters')]
+      if (rest.length) {
+        const also = el('ul')
+        for (const k of rest) also.append(rowBtn(tree.els[k].title, taken ? 'named, not a parameter' : 'named by the handler', () => act.go(k)))
+        parts.push(el('div', 'd-sub', taken ? 'Also names' : failed ? 'Names (its parameters could not be read)' : 'Names'), also)
+      }
+      s.replaceChildren(s.querySelector('h3')!, ...parts)
+    }
+    fill(null)
+    const first = ep?.handler
+    if (first && named.length) void act.source(first.path).then(src => {
+      const list = src ? handlerParams(src, first.line, first.name.split('.').pop()!) : null
+      if (s.isConnected) fill(list == null ? null : takenTypes(list, named.map(k => tree.els[k].title)), list == null)
+    })
   }
 
   // What it reads and writes: the tables the tests saw, and the store calls on the code path.
@@ -907,7 +928,9 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
       const writes = tested.filter(r => r.ops !== 'reads'), reads = tested.filter(r => r.ops === 'reads')
       const ul = el('ul', 'd-table-rows')
       for (const r of [...writes, ...reads]) { const li = el('li', r.ops === 'reads' ? 'reads' : 'writes'); li.append(el('code', '', r.table), el('span', '', r.ops)); ul.append(li) }
-      s.append(el('div', 'd-sub', `In tests: writes ${writes.length}, reads ${reads.length}`), ul)
+      // A table written and read counts in both: "writes 4 tables, reads 4".
+      const read = tested.filter(r => r.ops.split(', ').includes('reads')).length
+      s.append(el('div', 'd-sub', `In tests: writes ${plural(writes.length, 'table')}, reads ${count(read)}`), ul)
     }
     if (calls.length) {
       s.append(el('div', 'd-sub', 'On the code path'))

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { searchMap } from './controls/logic'
-import { buildApi, clientParts, endpointOf, featureFacts, filterApi, groupApi, markedEntries, mergeTables, methodCounts, routeParams, servedBy, topCounts } from './endpoints'
+import { buildApi, clientParts, endpointOf, featureFacts, filterApi, groupApi, handlerParams, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
 import type { ElementJson, ModelJson } from './model'
 import { placeUrl } from './places'
 
@@ -40,6 +40,35 @@ describe('endpointOf', () => {
     expect(endpointOf({ title: '/owners' })).toBeNull()
     expect(endpointOf({ title: '' })).toBeNull()
     expect(endpointOf({ title: 'GETTER /x' })).toBeNull()
+  })
+})
+
+describe('older maps', () => {
+  it('give back a path shortened under its group', () => {
+    expect(endpointOf({ title: 'GET …/edit' }, '/owners/{ownerId}')).toEqual({ method: 'GET', route: '/owners/{ownerId}/edit' })
+    expect(endpointOf({ title: 'POST …/pets/new' }, '/owners/{ownerId}/ · x')).toEqual({ method: 'POST', route: '/owners/{ownerId}/pets/new' })
+    expect(endpointOf({ title: 'GET …/edit' })).toEqual({ method: 'GET', route: '…/edit' })
+    const api = buildApi({ name: 'p', elements: [el('app', null), el('app.o', 'app', { title: '/owners/{ownerId}' }), el('app.o.e', 'app.o', { title: 'GET …/edit' }), el('app.o.e.s1', 'app.o.e', { title: '1 · initUpdateOwnerForm()', metadata: { path: 'Owner.java' } })], relations: [] })
+    expect(api.endpoints.map(ep => ep.title)).toEqual(['GET /owners/{ownerId}/edit'])
+    // A step with no span: where the handler starts is not known, not line 1.
+    expect(api.endpoints[0].handler).toEqual({ path: 'Owner.java', line: 0, name: 'Owner.initUpdateOwnerForm' })
+  })
+})
+
+describe('handlerParams and takenTypes', () => {
+  const java = ['class C {', '  @PostMapping("/auth/authenticate")', '  public ResponseEntity<AuthResponseDto> login(', '      @RequestBody AuthRequestDto req,', '      Map<String, List<Integer>> extra) {', '    return new AuthResponseDto(x);', '  }', '}'].join('\n')
+  it('reads a handler\'s parameters over several lines, nested generics and all', () => {
+    expect(handlerParams(java, 2, 'login')).toBe('\n      @RequestBody AuthRequestDto req,\n      Map<String, List<Integer>> extra')
+    expect(handlerParams(java, 0, 'login')).toContain('AuthRequestDto')
+    expect(handlerParams(java, 2, 'nope')).toBeNull()
+    expect(handlerParams('', 1, 'login')).toBeNull()
+    expect(handlerParams(java, 2, '')).toBeNull()
+  })
+  it('tells a taken type from one only named, and how it is taken', () => {
+    const params = handlerParams(java, 2, 'login')!
+    expect([...takenTypes(params, ['AuthRequestDto', 'AuthResponseDto'])]).toEqual([['AuthRequestDto', 'the request body']])
+    expect([...takenTypes('@PathVariable UUID id, UserData user, @RequestParam Página p', ['UserData', 'Página', 'UUID'])]).toEqual([['UserData', 'a parameter of the handler'], ['Página', 'a query parameter'], ['UUID', 'in the path']])
+    expect(takenTypes('', ['X']).size).toBe(0)
   })
 })
 
@@ -126,6 +155,21 @@ describe('featureFacts', () => {
     expect(f.parts).toEqual(['server.offers', 'db'])
     expect(f.endpoints.map(ep => ep.route)).toEqual(['/market/allies', '/market/{id}/buy'])
     expect(f.tables).toBe('kingdom_entity: UPDATE · user_entity: SELECT')
+  })
+  it('gives a feature only the endpoints it names when their handler carries several, and calls only page files pages', () => {
+    const shared = [
+      el('app', null, { kind: 'webapp' }), el('app.owner', 'app', { features: ['Find owners', 'Add owner'] }),
+      el('app.owner.c', 'app.owner', { metadata: { path: 'Owner.java' } }),
+      el('app.owner.t', 'app.owner', { features: ['Find owners'], metadata: { path: 'templates/owners/findOwners.html' } }),
+      el('app.owner.h', 'app.owner', { features: ['Find owners'], metadata: { path: 'src/graph.ts' } }),
+    ]
+    const ep = (id: string, title: string, handler: string) => [el(id, 'app', { title }), el(`${id}.s`, id, { title: `1 · ${handler}()`, metadata: { path: 'Owner.java' } })]
+    const api = buildApi({ name: 'p', elements: [el('app', null), ...ep('app.e1', 'GET /owners/find', 'initFindForm'), ...ep('app.e2', 'POST /owners/new', 'processCreationForm'), ...ep('app.e3', 'GET /owners', 'processFindForm')], relations: [] })
+    const f = featureFacts(shared, api, 'Find owners')
+    expect(f.endpoints.map(e => e.title)).toEqual(['GET /owners', 'GET /owners/find'])
+    expect(f.pages).toEqual(['app.owner.t'])
+    expect(f.parts).toEqual(['app.owner', 'app.owner.h'])
+    expect(featureFacts(shared, api, 'Add owner').endpoints.map(e => e.title)).toEqual(['GET /owners', 'GET /owners/find', 'POST /owners/new'])
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
     expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], tables: '' })

@@ -1,4 +1,5 @@
-import type { Endpoint } from '../endpoints'
+import { endpointOf, type Endpoint } from '../endpoints'
+import { stepRole } from '../details'
 import type { Tree } from '../model'
 import { fuzzy, match, searchMap } from './logic'
 
@@ -48,7 +49,7 @@ export interface SearchActions {
   /** Opens an endpoint by its Requests id. */
   endpoint: (id: string) => void
   /** Lists the endpoints in the panel, filtered by words if given. */
-  list: (f?: { query?: string }) => void
+  list: (f?: { ids?: string[]; label?: string }) => void
   /** How many endpoints the map has: 0 when it has no Requests model. */
   listSize: () => number
 }
@@ -146,10 +147,13 @@ export class Palette {
   }
 
   private element = (i: number): Item => {
-    const e = this.tree.els[i]
-    const lane = e.metadata?.role ? this.tree.els[this.tree.parent[i]] : null, step = e.metadata?.role === 'step' ? lane : null
-    const sub = step ? `step ${e.metadata?.step} of ${step.title}` : lane?.metadata?.method ? `${e.metadata?.role} in ${lane.title}` : e.metadata?.path ?? pathOf(this.tree, i)
-    return { label: e.title, sub, kind: e.metadata?.method ? 'endpoint' : step ? 'step' : e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
+    const e = this.tree.els[i], p = this.tree.parent[i]
+    // A card of a request (in maps of any age): its role and the endpoint, by its whole path.
+    const role = stepRole(e), lane = p > 0 && role ? endpointOf(this.tree.els[p], this.tree.els[this.tree.parent[p]]?.title) : null
+    const where = lane ? `${lane.method} ${lane.route}` : ''
+    const number = e.metadata?.step ?? e.title.match(/^(\d+) · /)?.[1]
+    const sub = lane && role === 'step' ? `step ${number} of ${where}` : lane ? `${role} in ${where}` : e.metadata?.path ?? pathOf(this.tree, i)
+    return { label: e.title, sub, kind: endpointOf(e) ? 'endpoint' : lane && role === 'step' ? 'step' : e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
   }
   private featureItem = (name: string, n: number): Item => ({ label: name, sub: `carried by ${n} card${n === 1 ? '' : 's'}`, kind: 'feature', run: () => this.act.feature(name) })
   private listItem = (): Item => ({ label: `Endpoints · ${this.act.listSize()}`, sub: 'every endpoint, by resource, with method filters', kind: 'list', run: () => this.act.list() })
@@ -169,7 +173,7 @@ export class Palette {
     const scored = eps.map(ep => ({ ep, s: Math.max(match(q, ep.title), match(q, ep.route), (ep.handler ? match(q, ep.handler.name) : -1) - 5, (ep.returns ? match(q, ep.returns) : -1) - 10) }))
       .filter(x => x.s >= 40).sort((a, b) => b.s - a.s)
     const items: Item[] = scored.slice(0, 12).map(({ ep }) => ({ label: ep.title, sub: [ep.handler?.name, ep.returns && `→ ${ep.returns}`, 'opens in Requests'].filter(Boolean).join(' · '), kind: 'endpoint', run: () => this.act.endpoint(ep.id) }))
-    if (scored.length > 12) items.push({ label: `All ${scored.length} matching endpoints`, sub: 'in the panel', kind: 'list', run: () => this.act.list({ query: q }) })
+    if (scored.length > 12) items.push({ label: `All ${scored.length} matching endpoints`, sub: 'in the panel', kind: 'list', run: () => this.act.list({ ids: scored.map(x => x.ep.id), label: `“${q}”` }) })
     return { title: 'Endpoints · in Requests', best: scored[0]?.s ?? -1, items }
   }
 
