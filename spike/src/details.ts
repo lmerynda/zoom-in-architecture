@@ -463,19 +463,68 @@ export function seenTag(n: number): HTMLElement {
  * coverage, an endpoint's requests (statuses, tables) or that no test called it, a file that ran,
  * the tables seen in a store. On an untraced map, nothing: absence there means not looked at.
  */
+/**
+ * The lines seenLines shows, as text: what the trace counted, each count with the unit it counts.
+ * A step of a request says only that its code ran in that endpoint's tested requests: the count the
+ * trace has for it is not this step's own.
+ */
+export function seenText(tree: Tree, i: number): { lines: string[]; unseen: boolean } {
+  const m = tree.els[i].metadata
+  if (!tree.traced || !m) return { lines: [], unseen: false }
+  const lines: string[] = []
+  let unseen = false
+  if (m.seen?.includes('/')) lines.push(`Seen in tests: ${m.seen.split('/').map(n => count(+n)).join(' of ')} endpoints`)
+  else if (m.method && m.seen === '0') { lines.push('Not seen in tests: no test called it, so its path is inferred from code only'); unseen = true }
+  else if (m.method && m.seen) lines.push(`Seen in tests: ${count(+m.seen)} HTTP request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses.replace(/×(\d+)/g, (_, n) => `×${count(+n)}`)}` : ''}`)
+  else if (m.role === 'step' && m.seen && m.seen !== '0') lines.push('Ran in tests: its code ran during this endpoint’s tested requests')
+  else if (m.seen && m.seen !== '0') lines.push(`Ran in tests: ${count(+m.seen)} call${m.seen === '1' ? '' : 's'} into its code`)
+  return { lines, unseen }
+}
+
+/** "kingdom_entity: SELECT, UPDATE · user_entity: SELECT" as rows of a table and what was done to it, writes first. */
+export function tableRows(text: string): { table: string; ops: string }[] {
+  const VERB: Record<string, string> = { SELECT: 'reads', INSERT: 'inserts', UPDATE: 'updates', DELETE: 'deletes', MERGE: 'writes' }
+  const rows = text.split(' · ').map(s => s.trim()).filter(Boolean).map(s => {
+    const at = s.lastIndexOf(': ')
+    const table = at < 0 ? s : s.slice(0, at), sql = at < 0 ? [] : s.slice(at + 2).split(',').map(o => o.trim()).filter(Boolean)
+    const verbs = [...new Set(sql.map(o => VERB[o] ?? o.toLowerCase()))].sort((a, b) => Number(a === 'reads') - Number(b === 'reads'))
+    return { table, ops: verbs.join(', '), writes: verbs.some(v => v !== 'reads') }
+  })
+  return rows.sort((a, b) => Number(b.writes) - Number(a.writes) || a.table.localeCompare(b.table)).map(({ table, ops }) => ({ table, ops }))
+}
+
 export function seenLines(tree: Tree, i: number): HTMLElement[] {
   const t = tree.traced, m = tree.els[i].metadata
   if (!t || !m) return []
-  const out: string[] = []
-  let cls = 'd-seen'
-  if (m.seen?.includes('/')) out.push(`Seen in tests: ${m.seen.split('/').map(n => count(+n)).join(' of ')} endpoints`)
-  else if (m.method && m.seen === '0') { out.push('Not seen in tests: no test called it, so its path is inferred from code only'); cls = 'd-seen none' }
-  else if (m.method && m.seen) out.push(`Seen in tests: ${count(+m.seen)} request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses.replace(/×(d+)/g, (_, n) => `×${count(+n)}`)}` : ''}`)
-  else if (m.seen && m.seen !== '0') out.push(`Ran in tests: ${count(+m.seen)} time${m.seen === '1' ? '' : 's'}`)
-  if (m.tables) out.push(`Tables: ${m.tables}`)
-  if (!out.length) return []
-  const p = el('p', cls)
-  p.append(...out.flatMap((s, k) => (k ? [el('br'), s] : [s])))
-  p.title = `From ${t.command}, run ${new Date(t.at).toLocaleString()}`
-  return [p]
+  const { lines, unseen } = seenText(tree, i)
+  const out: HTMLElement[] = []
+  if (lines.length) {
+    const p = el('p', unseen ? 'd-seen none' : 'd-seen')
+    p.append(...lines.flatMap((s, k) => (k ? [el('br'), s] : [s])))
+    p.title = `From ${t.command}, run ${new Date(t.at).toLocaleString()}`
+    out.push(p)
+  }
+  // The tables the tests touched: one row each, what was done to it beside its name, writes first;
+  // a long list shows its first rows and opens on request.
+  if (m.tables) {
+    const rows = tableRows(m.tables), FIRST = 4
+    const box = el('section', 'd-tables')
+    box.append(el('h3', '', `Tables touched in tests · ${rows.length}`))
+    const ul = el('ul')
+    rows.forEach((r, k) => { const li = el('li'); li.append(el('code', '', r.table), el('span', '', r.ops)); if (k >= FIRST) li.hidden = true; ul.append(li) })
+    box.append(ul)
+    if (rows.length > FIRST) {
+      const more = el('button', 'd-more', `Show all ${rows.length}`)
+      more.setAttribute('aria-expanded', 'false')
+      more.onclick = () => {
+        const open = more.getAttribute('aria-expanded') !== 'true'
+        ul.querySelectorAll('li').forEach((li, k) => { if (k >= FIRST) li.hidden = !open })
+        more.setAttribute('aria-expanded', String(open))
+        more.textContent = open ? 'Show fewer' : `Show all ${rows.length}`
+      }
+      box.append(more)
+    }
+    out.push(box)
+  }
+  return out
 }

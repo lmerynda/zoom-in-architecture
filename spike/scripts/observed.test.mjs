@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classFiles, markObserved } from './observed.mjs'
+import { classFiles, markObserved, tableVerbs } from './observed.mjs'
 
 const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code', metadata: { path } })
 
@@ -52,18 +52,26 @@ describe('markObserved', () => {
     expect(at('app').seen).toBe('2/3')
   })
 
-  it('marks the steps whose classes ran, and leaves the others unclaimed rather than unseen', () => {
+  it('marks the steps whose classes ran with their own counts, and leaves the others unclaimed rather than unseen', () => {
     const { model, requests } = build()
     markObserved(model, requests, observed)
     const at = id => requests.elements.find(e => e.id === id).metadata.seen
-    expect([at('app.e1.s1'), at('app.e1.s2'), at('app.e1.s3')]).toEqual(['3', undefined, '3'])
+    // The repository ran twice in three requests (one stopped at 401): its count is its own.
+    expect([at('app.e1.s1'), at('app.e1.s2'), at('app.e1.s3')]).toEqual(['3', undefined, '2'])
   })
 
   it('marks a store link seen, and adds one a request needed but the code reading missed', () => {
     const { model, requests } = build()
     markObserved(model, requests, observed)
     expect(requests.relations[0].seen).toBe(3)
-    expect(requests.relations[1]).toEqual({ source: 'app.e2.s1', target: 'db', title: 'writes offers', kind: 'runtime', seen: 1 })
+    expect(requests.relations[1]).toEqual({ source: 'app.e2.s1', target: 'db', title: 'inserts offers', kind: 'runtime', seen: 1 })
+  })
+
+  it('says what each table had done to it, writes first, never one verb for all', () => {
+    expect(tableVerbs({ user_entity: ['SELECT'], market_offer_entity: ['SELECT', 'DELETE'], kingdom_entity: ['UPDATE', 'SELECT'] }))
+      .toBe('updates and reads kingdom_entity · deletes and reads market_offer_entity · reads user_entity')
+    expect(tableVerbs({ ü_tabelle: ['MERGE'] })).toBe('writes ü_tabelle')
+    expect(tableVerbs({})).toBe('')
   })
 
   it('marks the architecture: files that ran, their runtime links, and the tables of the one store reached', () => {

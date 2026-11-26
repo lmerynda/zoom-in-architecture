@@ -389,13 +389,13 @@ try {
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
   const traced = await page.evaluate(async () => {
-    const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen')].map(p => p.textContent).join(' | ')
+    const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li')].map(p => p.textContent).join(' | ')
     s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()
     const other = t.els.findIndex(e => e.metadata?.method && e.id !== 'server.api-orders.e1'); s.select(other); await new Promise(r => setTimeout(r, 100)); const unseen = text()
     s.select(t.byId.get('server')); await new Promise(r => setTimeout(r, 100)); const coverage = text()
     return { seen, unseen, coverage, legend: document.getElementById('arrows').textContent }
   })
-  check('a traced map says what its tests ran: requests, statuses, tables, coverage, and what they never called; with every call seen, the legend names no dash', /Seen in tests: 3 requests · 200 ×2 · 401 ×1/.test(traced.seen) && /Tables: orders: SELECT/.test(traced.seen) && /Not seen in tests/.test(traced.unseen) && /Seen in tests: 1 of 1 endpoints/.test(traced.coverage) && !/not seen in tests/.test(traced.legend), JSON.stringify(traced))
+  check('a traced map says what its tests ran: requests, statuses, tables, coverage, and what they never called; with every call seen, the legend names no dash', /Seen in tests: 3 HTTP requests · 200 ×2 · 401 ×1/.test(traced.seen) && /ordersreads/.test(traced.seen) && /Not seen in tests/.test(traced.unseen) && /Seen in tests: 1 of 1 endpoints/.test(traced.coverage) && !/not seen in tests/.test(traced.legend), JSON.stringify(traced))
   check('the Requests view opens on the edge, with each request\'s path', edge.top.join() === 'Storefront,Orders server,Go server,Shop kit,PostgreSQL' && edge.groups.join() === '/api/orders' && edge.path[0] === '1 · all()' && edge.path.at(-1).endsWith('· Response'), JSON.stringify(edge))
   await page.evaluate(() => { const s = window.__spike; s.fly(s.id('server.api-orders.e1')) })
   await page.waitForFunction(() => window.__spike.cam.flying, { timeout: 3000 }).catch(() => {})

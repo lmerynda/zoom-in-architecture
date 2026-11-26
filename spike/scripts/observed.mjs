@@ -19,7 +19,17 @@ export function classFiles(paths, classes) {
 const statusText = s => Object.entries(s).map(([k, n]) => `${k} ×${n}`).join(' · ')
 /** "kingdom_entity: SELECT, UPDATE · user_entity: SELECT" */
 const tableText = t => Object.entries(t).map(([k, ops]) => `${k}: ${ops.join(', ')}`).join(' · ')
-const writes = ops => ops.some(o => /INSERT|UPDATE|DELETE|MERGE/.test(o))
+/** SQL's verbs as a store arrow says them. */
+const VERB = { SELECT: 'reads', INSERT: 'inserts', UPDATE: 'updates', DELETE: 'deletes', MERGE: 'writes' }
+/** What a request did to each table, in words: "updates kingdom · deletes offer · reads user". Writes lead. */
+export function tableVerbs(tables) {
+  const rank = v => (v === 'reads' ? 1 : 0)
+  return Object.entries(tables)
+    .map(([t, ops]) => ({ t, verbs: [...new Set(ops.map(o => VERB[o] ?? o.toLowerCase()))].sort((a, b) => rank(a) - rank(b)) }))
+    .sort((a, b) => rank(a.verbs[0]) - rank(b.verbs[0]) || a.t.localeCompare(b.t))
+    .map(({ t, verbs }) => `${verbs.join(' and ')} ${t}`)
+    .join(' · ')
+}
 
 /**
  * Marks `model` (the architecture) and `requests` (the Requests view, or null) with `observed`.
@@ -69,11 +79,14 @@ export function markObserved(model, requests, observed) {
       apps.set(app, a)
       ep.metadata.statuses = statusText(o.statuses)
       if (Object.keys(o.tables).length) ep.metadata.tables = tableText(o.tables)
-      // Its steps whose classes ran in this request.
-      const ran = classFiles(requests.elements.filter(s => s.parent === ep.id && s.metadata?.path).map(s => s.metadata.path), Object.keys(o.code).map(c => c.slice(0, c.lastIndexOf('.'))))
-      const ranPaths = new Set(ran.values())
+      // Its steps whose classes ran in this request, each with its own count: the spans of its class's
+      // methods, not the endpoint's requests (a request can stop before it reaches a later step).
+      const perClass = new Map()
+      for (const [c, n] of Object.entries(o.code)) { const cls = c.slice(0, c.lastIndexOf('.')); perClass.set(cls, (perClass.get(cls) ?? 0) + n) }
+      const ran = classFiles(requests.elements.filter(s => s.parent === ep.id && s.metadata?.path).map(s => s.metadata.path), [...perClass.keys()])
+      const ranCount = new Map([...ran].map(([c, p]) => [p, perClass.get(c)]))
       const steps = requests.elements.filter(s => s.parent === ep.id)
-      for (const s of steps) if (s.metadata?.path && ranPaths.has(s.metadata.path)) s.metadata.seen = String(o.count)
+      for (const s of steps) if (s.metadata?.path && ranCount.has(s.metadata.path)) s.metadata.seen = String(ranCount.get(s.metadata.path))
       // Its store links are seen when it touched tables; none inferred but tables touched: add one.
       const mine = new Set(steps.map(s => s.id))
       const toStore = requests.relations.filter(r => mine.has(r.source) && els.get(r.target)?.kind === 'database')
@@ -81,8 +94,7 @@ export function markObserved(model, requests, observed) {
       for (const r of toStore) r.seen = o.count
       const handler = steps.find(s => s.metadata?.role === 'step' && s.metadata?.step === '1')
       if (!toStore.length && db && handler) {
-        const verb = Object.values(o.tables).some(writes) ? 'writes' : 'reads'
-        requests.relations.push({ source: handler.id, target: db.id, title: `${verb} ${Object.keys(o.tables).join(', ')}`, kind: 'runtime', seen: o.count })
+        requests.relations.push({ source: handler.id, target: db.id, title: tableVerbs(o.tables), kind: 'runtime', seen: o.count })
       }
     }
     for (const [app, a] of apps) { const e = els.get(app); if (e) e.metadata = { ...e.metadata, seen: `${a.seen}/${a.total}` } }

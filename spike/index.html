@@ -173,6 +173,14 @@
     .d-edge li.k-types b { font-weight: 500; color: var(--text); }
     .d-why { display: flex; flex-wrap: wrap; gap: 3px 8px; align-items: baseline; padding: 0 6px 0 28px; font-size: 11px; }
     .d-kindtag { color: var(--dim); }
+    .d-tables { margin-top: 12px; }
+    .d-tables h3 { margin: 0 0 4px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #86efac; }
+    .d-tables ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .d-tables li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 12px; }
+    .d-tables li[hidden] { display: none; }
+    .d-tables code { font: 11px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
+    .d-tables span { color: #86efac; white-space: nowrap; }
+    .d-more { margin-top: 6px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
     .d-why.d-shared { padding: 6px 8px; margin: 8px 0 0; border: 1px solid var(--line); border-radius: 6px; }
     .k-runtime .d-kindtag { color: #c4b5fd; }
     .k-types .d-kindtag { color: var(--dim); font-style: italic; }
