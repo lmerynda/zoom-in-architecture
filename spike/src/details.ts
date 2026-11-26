@@ -1,6 +1,7 @@
 import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
 import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
+import { traceSections } from './traces'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag)
@@ -256,6 +257,8 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     // What the scanner saw here but could not follow: the map has no arrow for it.
     ...(e.metadata?.missed ? [el('p', 'd-missed', `Not followed by the scanner, so not on the map: ${e.metadata.missed.split('; ').map(x => { const [line, ...spec] = x.split(' '); return `${spec.join(' ')} (line ${line})` }).join(', ')}`)] : []),
     ...(endpoint ? endpointEffects(tree, i, act, api, path2) : path2),
+    // Which pages and tests made its requests (traces.ts).
+    ...traceSections(tree, i, act.go),
     section('Uses', 'out', 'uses', uses),
     section('Used by', 'in', 'usedBy', usedBy),
   )
