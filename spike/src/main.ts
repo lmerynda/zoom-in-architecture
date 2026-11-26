@@ -286,8 +286,10 @@ async function main() {
   const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
   // The whole map framed, with or without a card selected in it (the map's crumb keeps the selection).
   const atWhole = () => atFramed() && framedAt!.id === ''
+  /** A flight under way to the last framing (a card, or the whole map). */
+  const headedFramed = () => { const d = cam.destination; return !!d && !!framedAt && Math.hypot(d[0] - framedAt.x, d[1] - framedAt.y) * framedAt.z < 1 }
   /** A flight under way to the whole map's framing (Fit, the map's crumb, a refit). */
-  const headedWhole = () => { const d = cam.destination; return !!d && !!framedAt && framedAt.id === '' && Math.hypot(d[0] - framedAt.x, d[1] - framedAt.y) * framedAt.z < 1 }
+  const headedWhole = () => headedFramed() && framedAt!.id === ''
   /** The card last framed, in the current tree (-1 once it is gone). */
   const framedCard = () => (framedAt!.id === '' ? 0 : tree.byId.get(framedAt!.id) ?? -1)
   const fit = (i = 0) => {
@@ -305,7 +307,7 @@ async function main() {
   }
   const setWhole = () => setFrame(0)
   const resize = () => {
-    const was = atWhole(), z0 = cam.z
+    const was = atWhole(), z0 = cam.z, flyingTo = headedFramed() ? framedCard() : -1
     cam.resize(app.screen.width, app.screen.height)
     // A live update moving into place scales its camera path with the window, as the camera did.
     if (morph) { const k = cam.z / z0; morph.cam0[2] *= k; morph.cam1[2] *= k }
@@ -315,6 +317,8 @@ async function main() {
     else renderer.wholeZ = frameFor(0).z
     // A resize is not the reader taking the camera from a live update's morph.
     if (morph) { morph.last = [cam.x, cam.y, cam.z]; morph.resized = true }
+    // A flight to a framing was aimed for the old screen: it flies on to that framing on this one.
+    if (flyingTo >= 0) fit(flyingTo)
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
@@ -1085,7 +1089,10 @@ async function main() {
       // there or has landed there (a reader's click or wheel would have changed or stopped it).
       const stillWhole = morph.flying && (headedWhole() || atWhole())
       morph = null
-      if (refitAfterMorph && (stayed || stillWhole)) fit(0)
+      // Or the reader asked for the whole map during the morph (the crumb, Fit): that flight aimed at
+      // a layout still moving, so it is framed again for the one now in place.
+      const askedWhole = atWhole() || headedWhole()
+      if ((refitAfterMorph && (stayed || stillWhole)) || askedWhole) fit(0)
       refitAfterMorph = false
     }
   }
