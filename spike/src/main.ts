@@ -1036,8 +1036,11 @@ async function main() {
     refreshSurface()
     // At the whole map when it is installed (not when it was asked for: the reader may have moved
     // while it was laid out), a new version is framed whole again once it has moved into place.
-    refitAfterMorph = atWhole()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z], resized: false }
+    // An update arriving while the last one still moves into place inherits its pending refit (the
+    // camera is mid-path then, not at a framing) and whether a resize moved it.
+    const pending = !!morph && refitAfterMorph && !morph.handsOff, resized = !!morph && morph.resized
+    refitAfterMorph = pending || atWhole()
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z], resized }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
