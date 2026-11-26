@@ -303,6 +303,7 @@ async function main() {
         // first stretch, stay inside the frame. The arrow's first 24 px come first, though: on a
         // narrow screen a wide card may lose the start of its name rather than its arrow.
         const hw = (fw + 32) / 2 / z, hh = (fh + 32) / 2 / z, m = 12 / z
+        // On a screen narrower than the card open, its name and the arrow's far end cannot both show: the name does.
         cx = Math.min(on.x0 + hw - m, Math.max(on.x0 + Math.min(on.x1 - on.x0, 160 / z) - hw + m, cx))
         cy = Math.min(on.y0 + hh - m, Math.max(on.y0 + Math.min(on.y1 - on.y0, 40 / z) - hh + m, cy))
         let px = route[0], py = route[1], need = 24 / z
@@ -793,7 +794,7 @@ async function main() {
    * holding it, when that was a file, which lists none), and that problem, whose row takes focus when
    * the one open now has none there. Kept by identity: a live update may reorder the list.
    */
-  let listHome: { id: string; view: ReturnType<typeof controls.view>; version: number } | null = null, originKey: ProblemKey | null = null
+  let listHome: { id: string; view: ReturnType<typeof controls.view>; version: number; size: string } | null = null, originKey: ProblemKey | null = null
   /** A problem whose row takes keyboard focus once the outline lists it again (after Esc or Back to the list), the flight there done. */
   let problemFocus: ProblemKey | null = null
   /** The place whose problems the outline's list shows (-1: none shown): the map marks those. */
@@ -825,7 +826,7 @@ async function main() {
       let home = path[path.length - 1] ?? 0
       while (home > 0 && !tree.children[home].length) home = tree.parent[home]
       // The view it was opened from shows that outline when nothing has moved since; the part's id finds it otherwise.
-      listHome = { id: tree.els[home].id, view: { ...controls.view(), selected: null }, version: liveVersion }
+      listHome = { id: tree.els[home].id, view: { ...controls.view(), selected: null }, version: liveVersion, size: `${cam.w}x${cam.h}` }
       originKey = problemKey(tree, p)
     }
     controls.leave()
@@ -851,7 +852,8 @@ async function main() {
     // Going into the place puts the arrow down and shows its outline and list, its row expanded for focus.
     problemFocus = problemKey(tree, problems!.list[problemAt])
     const home = listHome, at = home ? tree.byId.get(home.id) ?? 0 : 0
-    if (home && home.version === liveVersion && home.view.here === (at > 0 ? home.id : null)) controls.visit(home.view)
+    // The view it was opened from, when the map and the window are as they were then; else into the part again.
+    if (home && home.version === liveVersion && home.size === `${cam.w}x${cam.h}` && home.view.here === (at > 0 ? home.id : null)) { controls.visit(home.view); controls.remember(at) }
     else controls.enterPlace(at)
   }
   /** Whether the panel shows a problem's arrow now. */
@@ -1084,7 +1086,8 @@ async function main() {
     // The focused control by what it is: in a relation's row, that relation's two ends and the control's place in the row; else the heading, or a button's words.
     const relId = (t: Tree, k: number) => `${t.els[t.rels[k * 2]].id}>${t.els[t.rels[k * 2 + 1]].id}>${t.relKind[k]}`
     const row = active?.closest<HTMLElement>('li[data-rel]')
-    const focus = !active ? null : row ? { rel: relId(tree, Number(row.dataset.rel)), at: [...row.querySelectorAll('button')].indexOf(active as HTMLButtonElement) } : { tag: active.tagName, text: active.textContent }
+    // A citation is its path and line (its tooltip's start), so a line added before it does not take its place.
+    const focus = !active ? null : row ? { rel: relId(tree, Number(row.dataset.rel)), at: [...row.querySelectorAll('button')].indexOf(active as HTMLButtonElement), cite: active.classList.contains('cite') ? active.title.split(': ')[0] : '' } : { tag: active.tagName, text: active.textContent }
     const keep = problems && problemAt >= 0 ? { shown: problemShown(), key: problemKey(tree, problems.list[problemAt]), over: edgeReturn.selected > 0 ? tree.els[edgeReturn.selected].id : null, focus } : null
     tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
     problems = problemsOf(next)
@@ -1103,10 +1106,19 @@ async function main() {
       // The control with focus, found again by what it opens (a citation's path and line), else its words.
       const f = keep.focus
       const control = !f ? null : 'rel' in f
-        ? [...details.querySelectorAll<HTMLElement>('li[data-rel]')].find(li => relId(next, Number(li.dataset.rel)) === f.rel)?.querySelectorAll<HTMLElement>('button')[Number(f.at)] ?? null
+        ? (() => {
+          const li = [...details.querySelectorAll<HTMLElement>('li[data-rel]')].find(li => relId(next, Number(li.dataset.rel)) === f.rel)
+          const buttons = [...(li?.querySelectorAll<HTMLElement>('button') ?? [])]
+          return (f.cite ? buttons.find(b => b.classList.contains('cite') && b.title.split(': ')[0] === f.cite) : buttons[Number(f.at)]) ?? null
+        })()
         : f.tag === 'H2' ? details.querySelector<HTMLElement>('h2') : [...details.querySelectorAll<HTMLElement>('button')].find(e => e.textContent === f.text) ?? null
       if (control?.tagName === 'H2') control.tabIndex = -1
       control?.focus({ preventScroll: true })
+    } else if (keep?.shown) {
+      // The problem is gone: back to the selection it was opened over, as Esc would, focus on its heading.
+      const over = next.byId.get(keep.over ?? '') ?? -1
+      if (over > 0) select(over)
+      if (keep.focus) focusHeading()
     }
     refreshSurface()
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }

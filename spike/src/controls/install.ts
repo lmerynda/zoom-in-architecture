@@ -417,6 +417,8 @@ export function installControls(c: Ctx) {
     },
     /** Records the place being left, before a move the page makes itself (a problem opened), so Back returns. */
     leave,
+    /** Adds a part to search's Recent places, for a return the page makes itself (Back to the list). */
+    remember,
     view, go, goSelect, enterPlace, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },

@@ -262,6 +262,18 @@ try {
   const cite = await page.evaluate(() => { const b = document.querySelectorAll('.d-edge .cite')[1]; b.focus(); return b.title })
   const citeAfter = await page.evaluate(async () => { await window.__spike.swapModel(await (await fetch('/models/knights-of-darkness.json')).json()); return document.activeElement?.title })
   check('a live update keeps focus on the same citation', citeAfter === cite, JSON.stringify({ cite, citeAfter }))
+  const citeShift = await page.evaluate(async () => {
+    const s = window.__spike, b = [...document.querySelectorAll('.d-edge li[data-rel] .cite')].find(x => x.closest('li').querySelectorAll('.cite').length > 1 && x !== x.closest('li').querySelector('.cite'))
+    b.focus()
+    const title = b.title.split(': ')[0], k = Number(b.closest('li').dataset.rel), src = s.tree.els[s.tree.rels[k * 2]].id, dst = s.tree.els[s.tree.rels[k * 2 + 1]].id
+    const json = await (await fetch('/models/knights-of-darkness.json')).json()
+    const rel = json.relations.find(r => r.source === src && r.target === dst && r.lines?.length > 1)
+    const line = Number(title.split(':').pop())
+    rel.lines = [...rel.lines.filter(n => n < line), line - 1, ...rel.lines.filter(n => n >= line)]
+    await s.swapModel(json)
+    return { title, after: document.activeElement?.title?.split(': ')[0] }
+  })
+  check('a line added before the focused citation leaves focus on that citation', citeShift.after === citeShift.title, JSON.stringify(citeShift))
   await key('Escape')
   await page.evaluate(() => window.__spike.fit(0))
   await landed()
@@ -318,6 +330,28 @@ try {
   check('after a live edit renumbers the cards, Back to the list still returns to Kingdom', renumbered === 'backend.kingdom', renumbered)
   await open('model=knights-of-darkness')
   await page.click('.d-problems > summary')
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
+  await landed()
+  await sleep(400)
+
+  // A window resized while a problem is open: Back still returns to Kingdom's list.
+  await page.click('.d-problems li button')
+  await landed()
+  await page.setViewport({ width: 1300, height: 900 })
+  await sleep(600)
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const resized = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].id, focus: document.activeElement?.dataset?.problem ?? null } })
+  check('after the window is resized, Back to the list still returns to Kingdom, focus on a row', resized.here === 'backend.kingdom' && resized.focus !== null, JSON.stringify(resized))
+  await page.setViewport({ width: 1600, height: 1000 })
+  await sleep(600)
+  await focusMap()
+  await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
+  await sleep(300)
+  const recent = await page.evaluate(() => document.querySelector('.palette')?.textContent ?? '')
+  check('a part returned to by Back to the list is among search’s recent places', /Recent places/.test(recent) && recent.indexOf('Kingdom') > recent.indexOf('Recent places'), recent.slice(0, 200))
+  await page.keyboard.press('Escape')
   await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
   await landed()
   await sleep(400)
@@ -502,6 +536,22 @@ try {
     await s.swapModel(JSON.parse(text))
     return { was: p.title, now: now?.title ?? null, ring: now?.ring?.length ?? null, note: !!document.querySelector('.d-problem') }
   }, gwJson)
+  const handBack = await page.evaluate(async text => {
+    const s = window.__spike, client = s.tree.els.find(e => e.title === 'Browser client')
+    s.select(s.id(client.id))
+    const k = s.problems.list.findIndex(p => p.ring && p.ring.length > 3)
+    s.openProblem(k)
+    document.querySelector('.d-problem-nav button:nth-child(2)').focus()
+    const p = s.problems.list[k], a = s.tree.els[p.a].id, b = s.tree.els[p.b].id
+    const json = JSON.parse(text), one = json.relations.find(r => r.source.startsWith(a + '.') && r.target.startsWith(b + '.'))
+    json.relations.push(...Array.from({ length: 20 }, () => ({ ...one, source: one.target, target: one.source })))
+    await s.swapModel(json)
+    const out = { selected: s.tree.els[s.renderer.selected]?.title ?? null, focus: document.activeElement?.tagName, note: !!document.querySelector('.d-problem') }
+    await s.swapModel(JSON.parse(text))
+    return out
+  }, gwJson)
+  check('a problem an update closes hands back the selection it was opened over, focus on its heading', handBack.selected === 'Browser client' && handBack.focus === 'H2' && !handBack.note, JSON.stringify(handBack))
+  await key('Escape')
   check('a ring an edit turns into another problem is not shown as that problem', replaced.now === null || (replaced.now === replaced.was && replaced.ring > 3), JSON.stringify(replaced))
   check('an identical live update keeps each ring problem open as itself', moved.rings > 0 && moved.moved.length === 0, JSON.stringify(moved))
   await key('Escape')
