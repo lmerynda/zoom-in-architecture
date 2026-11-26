@@ -57,6 +57,24 @@ const state = () => page.evaluate(() => {
       const inside = (x, y) => x >= 0 && x <= right && y >= top && y <= bottom
       return r.lines.some(l => w.get(Math.min(l.s, l.t) * n + Math.max(l.s, l.t)) === 2 && l.pts.some((_, j) => j % 2 === 0 && j + 3 < l.pts.length && Array.from({ length: 21 }, (_, q) => q / 20).some(u => inside(l.pts[j] + (l.pts[j + 2] - l.pts[j]) * u, l.pts[j + 1] + (l.pts[j + 3] - l.pts[j + 1]) * u))))
     })(),
+    strongVisible: (() => {
+      const w = r.warnedLines(), n = s.tree.size, sheet = d.getBoundingClientRect(), bottom = sheet.top > innerHeight / 2 ? sheet.top : innerHeight
+      const right = sheet.top > innerHeight / 2 ? innerWidth : Math.min(innerWidth, sheet.left), top = document.getElementById('top').getBoundingClientRect().bottom
+      const inside = (x, y) => x >= 0 && x <= right && y >= top && y <= bottom
+      let len = 0, full = 0
+      for (const l of r.lines) {
+        if (w.get(Math.min(l.s, l.t) * n + Math.max(l.s, l.t)) !== 2) continue
+        for (let j = 0; j + 3 < l.pts.length; j += 2) {
+          const x0 = l.pts[j], y0 = l.pts[j + 1], x1 = l.pts[j + 2], y1 = l.pts[j + 3], seg = Math.hypot(x1 - x0, y1 - y0)
+          let inn = 0
+          for (let q = 0; q < 20; q++) if (inside(x0 + (x1 - x0) * (q + 0.5) / 20, y0 + (y1 - y0) * (q + 0.5) / 20)) inn++
+          len += seg * inn / 20
+          full += seg
+        }
+      }
+      // Enough of it: 16 px, or most of a line that is shorter (two neighbours a gutter apart).
+      return { len: Math.round(len), enough: len >= Math.min(16, 0.8 * full) && full > 0 }
+    })(),
     drawnWarned: (() => { const w = r.warnedLines(), n = s.tree.size; return r.lines.filter(l => w.has(Math.min(l.s, l.t) * n + Math.max(l.s, l.t))).length })(),
     legend: !!document.querySelector('#arrows .a-problem'),
     at: s.problemAt,
@@ -181,6 +199,58 @@ try {
   await key('Escape')
   await key('Escape')
 
+  // A card selected from the outline replaces the list: its marks go with it.
+  await page.evaluate(() => [...document.querySelectorAll('.d-outline button')].find(b => b.querySelector('b')?.textContent === 'Game server')?.click())
+  await sleep(300)
+  st = await state()
+  check('selecting a card in place of the open list drops the list’s marks', st.selected > 0 && st.warn === null && !st.legend, JSON.stringify(st))
+  await key('Escape')
+
+  // A hidden row: the sixth cycle, behind Show more, opened, stepped past, then Back to the list.
+  await page.evaluate(() => window.__spike.fit(0))
+  await landed()
+  await sleep(300)
+  await page.evaluate(() => document.querySelector('.d-problems .d-more')?.click())
+  await page.evaluate(() => document.querySelectorAll('.d-problems ul')[0].querySelectorAll('button')[5].click())
+  await landed()
+  await press(']')
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(500)
+  const hidden = await page.evaluate(() => { const a = document.activeElement; return { at: window.__spike.problemAt, focus: a?.dataset?.problem, shown: !!a && !a.closest('li')?.hidden } })
+  check('Back to the list focuses the open problem’s row, its group expanded even past Show more', Number(hidden.focus) === hidden.at && hidden.shown, JSON.stringify(hidden))
+
+  // A Tab on the way back is the reader's: landing does not take focus back.
+  await page.click('.d-problems li button')
+  await landed()
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await page.keyboard.press('Tab')
+  const tabbed = await page.evaluate(() => document.activeElement)
+  await landed()
+  await sleep(500)
+  const afterTab = await page.evaluate(() => ({ problem: document.activeElement?.dataset?.problem ?? null, tag: document.activeElement?.tagName }))
+  check('a Tab during the flight back keeps the focus the reader chose', afterTab.problem === null, JSON.stringify(afterTab))
+
+  // From a file, which lists nothing: Back to the list goes to the part holding it.
+  await page.evaluate(() => { const s = window.__spike, i = s.id('backend.kingdom.state.kingdomEntity'), r = s.world.rect; s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2, (s.cam.w / r[i * 4 + 2]) * 1.1) })
+  await sleep(400)
+  await key(']')
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const fromFile = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].id, list: !!document.querySelector('.d-problems'), focus: document.activeElement?.dataset?.problem ?? document.activeElement?.tagName } })
+  check('Back to the list from a file returns to the part holding it, its list shown', fromFile.here === 'backend.kingdom.state' && fromFile.list, JSON.stringify(fromFile))
+
+  // A live update with a citation focused keeps focus on that citation, not another "line 5".
+  await page.evaluate(() => window.__spike.openProblem(0))
+  await landed()
+  const cite = await page.evaluate(() => { const b = document.querySelectorAll('.d-edge .cite')[1]; b.focus(); return b.title })
+  const citeAfter = await page.evaluate(async () => { await window.__spike.swapModel(await (await fetch('/models/knights-of-darkness.json')).json()); return document.activeElement?.title })
+  check('a live update keeps focus on the same citation', citeAfter === cite, JSON.stringify({ cite, citeAfter }))
+  await key('Escape')
+  await page.evaluate(() => window.__spike.fit(0))
+  await landed()
+
   // Inside a part, the list holds only the problems at or under it, and the map marks only those.
   await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
   await landed()
@@ -290,6 +360,27 @@ try {
   await shot('gw-phone-problem')
   const navs = await page.evaluate(() => [...document.querySelectorAll('.d-problem-nav button')].map(b => b.getBoundingClientRect().height))
   check('on a phone the note offers Previous, Next and Back to the list, each a touch target', navs.length === 3 && navs.every(h => h >= 44), JSON.stringify(navs))
+  // A phone's Back to the list keeps the sheet open on the list, focus on the row.
+  await page.evaluate(() => window.__spike.openProblem(0))
+  await landed()
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const phoneBack = await page.evaluate(() => ({ collapsed: document.getElementById('details').classList.contains('collapsed'), focus: document.activeElement?.dataset?.problem ?? document.activeElement?.tagName }))
+  check('on a phone Back to the list keeps the sheet open with focus on the row', !phoneBack.collapsed && phoneBack.focus === '0', JSON.stringify(phoneBack))
+  await page.setViewport({ width: 320, height: 568, hasTouch: true, isMobile: true })
+  await open('model=excalidraw')
+  const exTotal = await page.evaluate(() => window.__spike.problems.list.length)
+  const exShort = []
+  for (let k = 0; k < exTotal; k++) {
+    await page.evaluate(k => window.__spike.openProblem(k), k)
+    await landed()
+    await sleep(150)
+    const s = await state()
+    if (!s.strongVisible.enough) exShort.push([k, s.strongVisible.len])
+  }
+  check('at 320 × 568 every Excalidraw problem shows 16 px of its marked line, or most of a shorter one', exTotal > 0 && exShort.length === 0, JSON.stringify(exShort))
+  await shot('ex-320-problem')
   await page.setViewport({ width: 1600, height: 1000 })
 
   // The Requests view lays out steps, not parts: no list, and ] keeps its own meaning.
@@ -333,6 +424,20 @@ try {
   for (let k = 0; k < 5; k++) await key(']')
   st = await state()
   check('five more steps land on the sixth', st.at === 5, JSON.stringify({ at: st.at }))
+  const gwJson = await page.evaluate(async () => await (await fetch('/models/galaxy-wars.json')).text())
+  const moved = await page.evaluate(async text => {
+    const s = window.__spike, out = []
+    const rings = s.problems.list.flatMap((p, k) => (p.ring && p.ring.length > 3 ? [k] : []))
+    for (const k of rings.slice(0, 6)) {
+      s.openProblem(k)
+      const before = s.problems.list[k], ids = [s.tree.els[before.a].id, s.tree.els[before.b].id]
+      await s.swapModel(JSON.parse(text))
+      const after = s.problems.list[s.problemAt]
+      if (!after || s.tree.els[after.a].id !== ids[0] || s.tree.els[after.b].id !== ids[1]) out.push(k)
+    }
+    return { rings: rings.length, moved: out }
+  }, gwJson)
+  check('an identical live update keeps each ring problem open as itself', moved.rings > 0 && moved.moved.length === 0, JSON.stringify(moved))
   await key('Escape')
   await page.evaluate(() => window.__spike.fit(0))
   await landed()

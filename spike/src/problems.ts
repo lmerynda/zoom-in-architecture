@@ -23,6 +23,8 @@ export interface Problem {
   rels: number[]
   /** A cycle's ring, from a round to a again. */
   ring?: number[]
+  /** A tangle: two parts using each other about equally, both ways flagged, so a and b may swap as counts change. */
+  both?: boolean
   /** What the list says: the two ends, the way the flagged uses run. */
   title: string
   /** Why it is listed, in a sentence or two. */
@@ -257,7 +259,7 @@ export function findProblems(tree: Tree): ProblemReport {
       if (count >= back * BALANCED) {
         rest[v].delete(u)
         cycles.push({
-          kind: 'cycle', level: c, a: b, b: a, rels: [...(L.rels.get(`${b}>${a}`) ?? []), ...rels], ring: [b, a, b], rank: 0,
+          kind: 'cycle', level: c, a: b, b: a, rels: [...(L.rels.get(`${b}>${a}`) ?? []), ...rels], ring: [b, a, b], both: true, rank: 0,
           title: `${title(b)} ↔ ${title(a)}`,
           why: `${title(b)} and ${title(a)} use each other about as much both ways (${back} and ${count}): a tangle, with no one side to cut.`,
         })
@@ -383,6 +385,16 @@ export function findProblems(tree: Tree): ProblemReport {
   return { list: [...cycles.map(({ rank: _, ...p }) => p), ...grains, ...couplings], layered, unlayered }
 }
 
+/** A problem by what it is rather than where it stands in the list, so it is found again after the list changes. */
+export interface ProblemKey { kind: ProblemKind; a: string; b: string; both: boolean }
+export const problemKey = (tree: Tree, p: Problem): ProblemKey => ({ kind: p.kind, a: tree.els[p.a].id, b: tree.els[p.b].id, both: !!p.both })
+/** Where a problem stands in a report now: the same kind between the same two cards, the same way round unless it is a tangle; -1 when gone. */
+export function findProblem(tree: Tree, report: ProblemReport, key: ProblemKey | null): number {
+  if (!key) return -1
+  const id = (i: number) => tree.els[i].id
+  return report.list.findIndex(p => p.kind === key.kind && ((id(p.a) === key.a && id(p.b) === key.b) || ((p.both || key.both) && id(p.a) === key.b && id(p.b) === key.a)))
+}
+
 const KIND_NAME: Record<ProblemKind, string> = { cycle: 'Cycles', grain: 'Against the grain', coupling: 'Heaviest couplings' }
 const KIND_ONE: Record<ProblemKind, string> = { cycle: 'Cycle', grain: 'Against the grain', coupling: 'Heavy coupling' }
 /** Rows a group shows before "Show N more". */
@@ -409,10 +421,10 @@ export function problemLine(tree: Tree, p: Problem, here: number): string {
 
 /**
  * The outline's Problems section: the place's problems by kind, each row opening that problem's
- * arrow. Folded, it says how many; open, the map marks them (`toggle`). A group holding `focus`
- * shows all its rows, so that row can take focus.
+ * arrow. Folded, it says how many; open, the map marks them (`toggle`). A group holding one of
+ * `focus` shows all its rows, so that row can take focus.
  */
-export function problemsSection(tree: Tree, report: ProblemReport, here: number, open: boolean, act: { open: (k: number) => void; toggle: (open: boolean) => void }, focus = -1): HTMLElement | null {
+export function problemsSection(tree: Tree, report: ProblemReport, here: number, open: boolean, act: { open: (k: number) => void; toggle: (open: boolean) => void }, focus: number[] = []): HTMLElement | null {
   if (here > 0 && !tree.children[here].length) return null
   const mine = problemsAt(tree, report, here)
   const box = el('details', 'd-problems')
@@ -428,7 +440,7 @@ export function problemsSection(tree: Tree, report: ProblemReport, here: number,
   for (const kind of ['cycle', 'grain', 'coupling'] as const) {
     const ks = mine.filter(k => report.list[k].kind === kind)
     if (!ks.length) continue
-    const whole = ks.includes(focus)
+    const whole = ks.some(k => focus.includes(k))
     box.append(el('h4', '', `${KIND_NAME[kind]} · ${ks.length}`))
     const ul = el('ul')
     ul.setAttribute('aria-label', KIND_NAME[kind])

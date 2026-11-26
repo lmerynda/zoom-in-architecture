@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson, type RelKind } from './model'
-import { COUPLING_MIN, findProblems, isEntry, judgedRelations, MAX_COUPLINGS, namedLayer, problemLine, problemsAt, ringCuts, sccs } from './problems'
+import { COUPLING_MIN, findProblem, findProblems, isEntry, judgedRelations, MAX_COUPLINGS, namedLayer, problemKey, problemLine, problemsAt, ringCuts, sccs } from './problems'
 
 /** A part (with children) or a file (with a path), titled by the last word of its id unless given. */
 const part = (id: string, title?: string, extra = {}) => ({ id, parent: id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null, title: title ?? id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -197,6 +197,20 @@ describe('entry files, order and scope', () => {
     // 0 → 1 → 2 → 0 and 0 → 1 → 3 → 0 share 0 → 1: cutting it (2) beats cutting both ways back (3 + 3).
     const two = [new Map([[1, 2]]), new Map([[2, 9], [3, 9]]), new Map([[0, 3]]), new Map([[0, 3]])]
     expect(ringCuts([0, 1, 2, 3], two)).toEqual([[0, 1]])
+  })
+
+  it('finds a problem again by what it is: a tangle either way round, a one-way cycle only its own way', () => {
+    const tangle = build(pair(), [...uses('app.a.x', 'app.b.y', 4), ...uses('app.b.y', 'app.a.x', 4)])
+    const flipped = build(pair(), [...uses('app.a.x', 'app.b.y', 4), ...uses('app.b.y', 'app.a.x', 5)])
+    const key = problemKey(tangle, findProblems(tangle).list[0])
+    expect(key.both).toBe(true)
+    expect(findProblem(flipped, findProblems(flipped), key)).toBe(0)
+    const one = build(pair(), [...uses('app.a.x', 'app.b.y', 9), ...uses('app.b.y', 'app.a.x', 1)])
+    const other = build(pair(), [...uses('app.a.x', 'app.b.y', 1), ...uses('app.b.y', 'app.a.x', 9)])
+    const k1 = problemKey(one, findProblems(one).list[0])
+    expect(findProblem(one, findProblems(one), k1)).toBe(0)
+    expect(findProblem(other, findProblems(other), k1)).toBe(-1)
+    expect(findProblem(one, findProblems(one), null)).toBe(-1)
   })
 
   it('lists at a place the problems at or under it', () => {
