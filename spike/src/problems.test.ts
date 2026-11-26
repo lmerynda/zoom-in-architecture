@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Tree, type ModelJson, type RelKind } from './model'
-import { COUPLING_MIN, findProblems, grainOrder, isEntry, MAX_COUPLINGS, namedLayer, problemLine, problemsAt } from './problems'
+import { COUPLING_MIN, findProblems, isEntry, judgedRelations, MAX_COUPLINGS, namedLayer, problemLine, problemsAt, ringCuts, sccs } from './problems'
 
 /** A part (with children) or a file (with a path), titled by the last word of its id unless given. */
 const part = (id: string, title?: string, extra = {}) => ({ id, parent: id.includes('.') ? id.slice(0, id.lastIndexOf('.')) : null, title: title ?? id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -78,12 +78,29 @@ describe('findProblems: against the grain', () => {
   const layered = [part('app'), part('app.store', 'Kingdom state and storage'), file('app.store.e', 'KingdomEntity'), file('app.store.t', 'KingdomTurn'),
     part('app.war', 'War'), file('app.war.svc', 'ArmyService'), file('app.war.kind', 'AttackType'), part('app.api', 'Kingdom API'), file('app.api.c', 'KingdomController')]
 
-  it('flags a store part reaching into a feature part, said once between the two parts', () => {
-    const t = build(layered, [...uses('app.store.t', 'app.war.kind', 2), ...uses('app.store.e', 'app.war.svc')])
+  it('flags a store reaching into a feature that names itself, said once between the two parts', () => {
+    const t = build(layered, [...uses('app.store.e', 'app.war.svc', 2), ...uses('app.store.t', 'app.war.svc')])
     const r = findProblems(t)
     expect(titles(t, r)).toEqual(['grain:Kingdom state and storage → War'])
     expect(r.list[0].rels).toHaveLength(3)
-    expect(r.list[0].why).toBe('A model or store uses a feature: 3 uses against the grain.')
+    expect(r.list[0].why).toBe('A model or store using a feature: 3 uses against the grain.')
+  })
+
+  it('does not guess: a target whose file and parts name no layer is not judged', () => {
+    expect(findProblems(build(layered, uses('app.store.e', 'app.war.kind', 3))).list).toEqual([])
+  })
+
+  it('judges a feature using the front only where a part names the front', () => {
+    const els = [...layered, part('app.game', 'Game loop'), file('app.game.c', 'SessionController')]
+    expect(findProblems(build(els, uses('app.war.svc', 'app.game.c'))).list).toEqual([])
+    const t = build(els, uses('app.war.svc', 'app.api.c'))
+    expect(findProblems(t).list.map(p => p.why)).toEqual(['A feature using the API or UI in front: 1 use against the grain.'])
+  })
+
+  it('gives each reason when one pair holds uses of two kinds', () => {
+    const els = [part('app'), part('app.low', 'Low'), file('app.low.h', 'MathHelpers'), file('app.low.s', 'OrderStore'), part('app.up', 'Up'), file('app.up.svc', 'OrderService'), file('app.up.c', 'OrderController')]
+    const mixed = build(els, [...uses('app.low.h', 'app.up.svc'), ...uses('app.low.s', 'app.up.c')])
+    expect(findProblems(mixed).list.map(p => p.why)).toEqual(['A shared part using a feature (1), a model or store using the API or UI in front (1): 2 uses against the grain.'])
   })
 
   it('flags a store using the API in front of it', () => {
@@ -142,7 +159,7 @@ describe('findProblems: heaviest couplings', () => {
     const t = build(pair(), [...uses('app.a.x', 'app.b.y', 30), ...uses('app.b.y', 'app.a.x', 2)])
     const r = findProblems(t)
     expect(titles(t, r)).toEqual(['cycle:Orders → Billing'])
-    expect(r.list[0].why).toContain('Among the heaviest couplings: 32 uses in all.')
+    expect(r.list[0].why).toContain('One of the 5 heaviest couplings: 32 uses in all.')
   })
 })
 
@@ -168,12 +185,17 @@ describe('layers from names', () => {
 describe('entry files, order and scope', () => {
   it('knows an entry file by its name', () => {
     const t = build([file('Program'), file('main'), file('index'), file('App'), file('GameApplication'), file('Programs'), file('domain')].map(e => ({ ...e, parent: null })), [])
-    expect(t.els.slice(1).map((_, k) => isEntry(t, k + 1))).toEqual([true, true, true, true, true, false, false])
+    // index.ts is a module's front, not a program's start: it is judged like any file.
+    expect(t.els.slice(1).map((_, k) => isEntry(t, k + 1))).toEqual([true, true, false, true, true, false, false])
   })
 
-  it('orders a ring so most weight runs forward: users first', () => {
-    const adj = [new Map([[1, 5]]), new Map([[2, 5]]), new Map([[0, 1]])]
-    expect(grainOrder([0, 1, 2], adj)).toEqual([0, 1, 2])
+  it('cuts a ring at its lightest use, and two rings sharing a use at that use alone', () => {
+    const ring = [new Map([[1, 5]]), new Map([[2, 5]]), new Map([[0, 1]])]
+    expect(ringCuts([0, 1, 2], ring)).toEqual([[2, 0]])
+    expect(ring[2].get(0)).toBe(1)
+    // 0 → 1 → 2 → 0 and 0 → 1 → 3 → 0 share 0 → 1: cutting it (2) beats cutting both ways back (3 + 3).
+    const two = [new Map([[1, 2]]), new Map([[2, 9], [3, 9]]), new Map([[0, 3]]), new Map([[0, 3]])]
+    expect(ringCuts([0, 1, 2, 3], two)).toEqual([[0, 1]])
   })
 
   it('lists at a place the problems at or under it', () => {
@@ -184,5 +206,79 @@ describe('entry files, order and scope', () => {
     expect(problemsAt(t, r, t.byId.get('top')!)).toEqual([0])
     expect(problemsAt(t, r, t.byId.get('other')!)).toEqual([])
     expect(problemLine(t, r.list[0], 0)).toBe('Cycle · 1 use · in app')
+  })
+})
+
+/** Per level, the rings of parts still using each other once every relation a cycle flags is cut. */
+function ringsLeft(t: Tree, r: ReturnType<typeof findProblems>): string[] {
+  const cut = new Set(r.list.filter(p => p.kind === 'cycle').flatMap(p => p.rels))
+  const levels = new Map<number, Map<number, number>[]>()
+  for (const k of judgedRelations(t)) {
+    if (cut.has(k)) continue
+    const s = t.rels[k * 2], u = t.rels[k * 2 + 1], c = t.lca(s, u), kids = t.children[c]
+    const a = kids.indexOf(t.childUnder(c, s)), b = kids.indexOf(t.childUnder(c, u))
+    if (t.els[kids[a]].metadata?.path || t.els[kids[b]].metadata?.path) continue
+    const adj = levels.get(c) ?? kids.map(() => new Map<number, number>())
+    levels.set(c, adj)
+    adj[a].set(b, 1)
+  }
+  return [...levels].flatMap(([c, adj]) => sccs(adj.length, adj).map(ring => `${t.els[c].title}: ${ring.map(j => t.els[t.children[c][j]].title).join(', ')}`))
+}
+
+describe('findProblems: what the flags leave', () => {
+  const parts = (ks: string[]) => [part('app'), ...ks.flatMap(k => [part(`app.${k}`, k.toUpperCase()), file(`app.${k}.f`, `${k}F`)])]
+
+  it('finds a ring left once a pair’s lighter way is cut', () => {
+    const t = build(parts(['a', 'b', 'c']), [...uses('app.a.f', 'app.b.f', 5), ...uses('app.b.f', 'app.a.f', 1), ...uses('app.b.f', 'app.c.f', 5), ...uses('app.c.f', 'app.a.f', 5)])
+    const r = findProblems(t)
+    expect(titles(t, r)).toEqual(['cycle:B → A', 'cycle:C → A'])
+    expect(ringsLeft(t, r)).toEqual([])
+  })
+
+  it('flags one use for a simple ring, however its weights fall', () => {
+    const t = build(parts(['a', 'b', 'c', 'd']), [...uses('app.a.f', 'app.b.f', 5), ...uses('app.b.f', 'app.c.f', 9), ...uses('app.c.f', 'app.d.f', 1), ...uses('app.d.f', 'app.a.f', 5)])
+    const r = findProblems(t)
+    expect(titles(t, r)).toEqual(['cycle:C → D'])
+    expect(r.list[0].ring!.map(i => t.els[i].title)).toEqual(['C', 'D', 'A', 'B', 'C'])
+  })
+
+  it('leaves no ring on random maps once every flagged use is cut (seeded)', () => {
+    let seed = 7
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+    const ks = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    for (let trial = 0; trial < 40; trial++) {
+      const rels = ks.flatMap(x => ks.flatMap(y => (x !== y && rand() < 0.3 ? uses(`app.${x}.f`, `app.${y}.f`, 1 + Math.floor(rand() * 6)) : [])))
+      const t = build(parts(ks), rels)
+      expect(ringsLeft(t, findProblems(t)), `trial ${trial}`).toEqual([])
+    }
+  })
+
+  it('opens a map whose parts chain 10,000 deep without overflowing the stack', () => {
+    const n = 10_000
+    const els = [part('app'), ...Array.from({ length: n }, (_, j) => [part(`app.p${j}`, `P${j}`), file(`app.p${j}.f`, `F${j}`)]).flat()]
+    const t = build(els, Array.from({ length: n - 1 }, (_, j) => uses(`app.p${j}.f`, `app.p${j + 1}.f`)).flat())
+    expect(findProblems(t).list).toEqual([])
+    const adj = Array.from({ length: n }, (_, j) => new Map([[(j + 1) % n, 1]]))
+    expect(sccs(n, adj)[0]).toHaveLength(n)
+  })
+
+  it('does not judge a link drawn between parts, only a file’s use of a file', () => {
+    const t = build([part('app'), part('app.a', 'A'), part('app.b', 'B')], [...uses('app.a', 'app.b', 12), ...uses('app.b', 'app.a', 1)])
+    expect(findProblems(t).list).toEqual([])
+  })
+
+  it('names the heaviest couplings five at most, counting those said on a cycle', () => {
+    const ks = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+    const rels = ks.slice(0, -1).flatMap((x, j) => uses(`app.${x}.f`, `app.${ks[j + 1]}.f`, 20 + j))
+    const r = findProblems(build(parts(ks), [...rels, ...uses('app.g.f', 'app.f.f', 1)]))
+    const named = r.list.filter(p => p.kind === 'coupling' || /heaviest couplings/.test(p.why)).length
+    expect(named).toBe(MAX_COUPLINGS)
+    expect(r.list[0].title).toBe('G → F')
+    expect(r.list[0].why).toContain('One of the 5 heaviest couplings: 26 uses in all.')
+  })
+
+  it('leaves an entry file’s wiring out of couplings too', () => {
+    const els = [part('app'), part('app.shell', 'Shell'), file('app.shell.main', 'main'), part('app.cmd', 'Commands'), file('app.cmd.run', 'Run')]
+    expect(findProblems(build(els, uses('app.shell.main', 'app.cmd.run', 30))).list).toEqual([])
   })
 })

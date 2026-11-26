@@ -192,7 +192,7 @@ export function installControls(c: Ctx) {
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
-    { name: 'Problems: cycles, uses against the grain, heaviest couplings', hint: ']', run: () => { c.select(-1); if (!c.stepProblem(0)) toast.show('No problems found on this map') } },
+    { name: 'Problems: cycles, uses against the grain, heaviest couplings', hint: ']', run: () => { if (!c.stepProblem(0)) toast.show('No problems found on this map') } },
   ]
   // A container found by search is framed, to look into, and the selection put down, so the panel
   // and the address name what was found, not what was selected before (Back brings that back); a
@@ -357,8 +357,10 @@ export function installControls(c: Ctx) {
     if (t && t !== document.body && t !== canvas && t.tagName !== 'HTML') {
       // A heading or text with focus (the panel's, after a pick) passes on the keys that open things.
       const control = t.closest('input, textarea, select, button, a, [contenteditable], [role="dialog"], [role="listbox"]')
-      const opener = k === '/' || k === '?' || k === 'backspace' || (e.altKey && k.startsWith('arrow'))
-      if (control || !opener) return
+      const opener = k === '/' || k === '?' || k === 'backspace' || k === ']' || k === '[' || (e.altKey && k.startsWith('arrow'))
+      // The Problems list and a problem's note pass ] and [ from their buttons too: they step problems.
+      const problems = (k === ']' || k === '[') && !!t.closest('.d-problems, .d-problem')
+      if ((control && !problems) || !opener) return
     }
     held.add(k)
     if (k === '/') { e.preventDefault(); return palette.open() }
@@ -411,8 +413,8 @@ export function installControls(c: Ctx) {
         tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), [...pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), 'Click: every relation and the lines that make it'], p![0], p![1])
       } else tooltip.update(p && small && !busy ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
-    /** Frames several cards together, recording the place left so Back returns. */
-    goFrame(nodes: number[]) { leave(); frame(nodes) },
+    /** Records the place being left, before a move the page makes itself (a problem opened), so Back returns. */
+    leave,
     view, go, goSelect, enterPlace, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },

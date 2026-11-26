@@ -270,7 +270,7 @@
       #top button, #top a, #arrows button, .reader-head button, .lens-current { min-height: 36px; }
       #crumbs button { min-height: 28px; }
       #welcome .ok { position: sticky; bottom: 0; }
-      .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel, .d-problems .d-rel, .d-problems > summary { min-height: 44px; }
+      .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel, .d-problems .d-rel, .d-problems > summary, .d-problem-nav button { min-height: 44px; }
       .d-rels .d-cite, .d-rels .d-inspect, .d-more, .d-actions button, .d-path button, #welcome .chips button { min-height: 36px; }
       .reader-rail button::before { content: ''; position: absolute; inset: -10px -8px; }
     }
@@ -322,7 +322,10 @@
     .d-problem .d-kindtag { color: #fda4af; font-size: 11px; font-weight: 600; }
     .d-problem p { margin: 4px 0 0; font-size: 12px; line-height: 1.45; }
     .d-problem p.d-ring { color: var(--dim); }
-    .d-problem p.d-hint { margin-top: 6px; }
+    .d-problem-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .d-problem-nav button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+    .d-problem-nav button:hover { filter: brightness(1.15); }
+    .d-problem-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .d-edge li.d-flagged { border-left: 3px solid #f43f5e; background: rgba(244, 63, 94, 0.07); }
     .d-edge li.d-flagged .d-flag { color: #fda4af; font-style: normal; font-size: 11px; }
     #arrows button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer; }

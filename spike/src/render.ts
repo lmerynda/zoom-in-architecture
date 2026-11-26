@@ -835,7 +835,8 @@ export class Renderer {
       drawn.push(...keep)
     }
     this.lines = []
-    const halos: number[][][] = [[], []]
+    // Problem halos by mark (listed, open) and by the width of the arrow they lie under.
+    const halos = new Map<number, { level: number; width: number; pts: number[][] }>()
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -855,10 +856,16 @@ export class Renderer {
       }
       paths[kind].push(clipped)
       const w = warned.get(Math.min(e.s, e.t) * this.tree.size + Math.max(e.s, e.t))
-      if (w) halos[w - 1].push(clipped)
       this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
+      if (w) {
+        // Wider than the arrow by a clear margin, however heavy the arrow is.
+        const width = TIER_W[tier] + (hot ? 0.5 : 1) + (w === 2 ? 10 : 6)
+        const h = halos.get(w * 100 + tier) ?? { level: w, width, pts: [] }
+        h.pts.push(clipped)
+        halos.set(w * 100 + tier, h)
+      }
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
       // project's own tests, a runtime call the trace could have seen and no test made. A call from
       // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
@@ -897,13 +904,13 @@ export class Renderer {
       [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)], [hg, 1, STEP, 0.95], [hg, 0.5, EDGE, 0.75],
     ]
     // Problems first, so every arrow draws over its halo: faint for each listed, strong for the open one.
-    halos.forEach((ps, k) => {
-      for (const p of ps) {
+    for (const h of [...halos.values()].sort((x, y) => x.level - y.level)) {
+      for (const p of h.pts) {
         g.moveTo(p[0], p[1])
         for (let j = 2; j < p.length; j += 2) g.lineTo(p[j], p[j + 1])
       }
-      if (ps.length) g.stroke({ width: k ? 11 : 6, color: WARN, alpha: k ? 0.6 : 0.22, join: 'round', cap: 'round' })
-    })
+      g.stroke({ width: h.width, color: WARN, alpha: h.level === 2 ? 0.6 : 0.24, join: 'round', cap: 'round' })
+    }
     TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
       const ps = strokes[kind][tier]
       for (const p of ps) {
