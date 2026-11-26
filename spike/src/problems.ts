@@ -386,13 +386,18 @@ export function findProblems(tree: Tree): ProblemReport {
 }
 
 /** A problem by what it is rather than where it stands in the list, so it is found again after the list changes. */
-export interface ProblemKey { kind: ProblemKind; a: string; b: string; both: boolean }
-export const problemKey = (tree: Tree, p: Problem): ProblemKey => ({ kind: p.kind, a: tree.els[p.a].id, b: tree.els[p.b].id, both: !!p.both })
-/** Where a problem stands in a report now: the same kind between the same two cards, the same way round unless it is a tangle; -1 when gone. */
+export interface ProblemKey { kind: ProblemKind; a: string; b: string; both: boolean; ring: string }
+/** A ring's members in order from a; a tangle's as a set, since its order follows its counts. */
+const ringOf = (tree: Tree, p: Problem) => (p.ring ? (p.both ? p.ring.slice(0, -1).map(i => tree.els[i].id).sort() : p.ring.map(i => tree.els[i].id)).join('>') : '')
+export const problemKey = (tree: Tree, p: Problem): ProblemKey => ({ kind: p.kind, a: tree.els[p.a].id, b: tree.els[p.b].id, both: !!p.both, ring: ringOf(tree, p) })
+/**
+ * Where a problem stands in a report now: the same kind between the same two cards, the same way
+ * round and the same ring (a tangle either way round, as a tangle still); -1 when gone.
+ */
 export function findProblem(tree: Tree, report: ProblemReport, key: ProblemKey | null): number {
   if (!key) return -1
   const id = (i: number) => tree.els[i].id
-  return report.list.findIndex(p => p.kind === key.kind && ((id(p.a) === key.a && id(p.b) === key.b) || ((p.both || key.both) && id(p.a) === key.b && id(p.b) === key.a)))
+  return report.list.findIndex(p => p.kind === key.kind && !!p.both === key.both && ringOf(tree, p) === key.ring && ((id(p.a) === key.a && id(p.b) === key.b) || (key.both && id(p.a) === key.b && id(p.b) === key.a)))
 }
 
 const KIND_NAME: Record<ProblemKind, string> = { cycle: 'Cycles', grain: 'Against the grain', coupling: 'Heaviest couplings' }

@@ -299,6 +299,21 @@ async function main() {
           const dx = route[j] - cx, dy = route[j + 1] - cy, d = Math.hypot(dx, dy), u = Math.min(1, left / Math.max(1e-9, d))
           cx += dx * u; cy += dy * u; left -= d
         }
+        // Not so far that the card's name leaves the view: its top-left corner, and its heading's
+        // first stretch, stay inside the frame. The arrow's first 24 px come first, though: on a
+        // narrow screen a wide card may lose the start of its name rather than its arrow.
+        const hw = (fw + 32) / 2 / z, hh = (fh + 32) / 2 / z, m = 12 / z
+        cx = Math.min(on.x0 + hw - m, Math.max(on.x0 + Math.min(on.x1 - on.x0, 160 / z) - hw + m, cx))
+        cy = Math.min(on.y0 + hh - m, Math.max(on.y0 + Math.min(on.y1 - on.y0, 40 / z) - hh + m, cy))
+        let px = route[0], py = route[1], need = 24 / z
+        for (let j = 2; j < route.length && need > 0; j += 2) {
+          const dx = route[j] - px, dy = route[j + 1] - py, d = Math.hypot(dx, dy), u = Math.min(1, need / Math.max(1e-9, d))
+          px += dx * u; py += dy * u; need -= d
+        }
+        for (const [x, y] of [[route[0], route[1]], [px, py]]) {
+          cx = Math.min(x + hw - m, Math.max(x - hw + m, cx))
+          cy = Math.min(y + hh - m, Math.max(y - hh + m, cy))
+        }
       }
       best = { z, x: cx - ((l + rr) / 2 - cam.w / 2) / z, y: cy - ((t + b) / 2 - cam.h / 2) / z }
     }
@@ -778,7 +793,7 @@ async function main() {
    * holding it, when that was a file, which lists none), and that problem, whose row takes focus when
    * the one open now has none there. Kept by identity: a live update may reorder the list.
    */
-  let listHome = -1, originKey: ProblemKey | null = null
+  let listHome: { id: string; view: ReturnType<typeof controls.view>; version: number } | null = null, originKey: ProblemKey | null = null
   /** A problem whose row takes keyboard focus once the outline lists it again (after Esc or Back to the list), the flight there done. */
   let problemFocus: ProblemKey | null = null
   /** The place whose problems the outline's list shows (-1: none shown): the map marks those. */
@@ -809,7 +824,8 @@ async function main() {
       const path = renderer.breadcrumb()
       let home = path[path.length - 1] ?? 0
       while (home > 0 && !tree.children[home].length) home = tree.parent[home]
-      listHome = home
+      // The view it was opened from shows that outline when nothing has moved since; the part's id finds it otherwise.
+      listHome = { id: tree.els[home].id, view: { ...controls.view(), selected: null }, version: liveVersion }
       originKey = problemKey(tree, p)
     }
     controls.leave()
@@ -834,7 +850,9 @@ async function main() {
   const backToProblems = () => {
     // Going into the place puts the arrow down and shows its outline and list, its row expanded for focus.
     problemFocus = problemKey(tree, problems!.list[problemAt])
-    controls.enterPlace(Math.max(0, listHome))
+    const home = listHome, at = home ? tree.byId.get(home.id) ?? 0 : 0
+    if (home && home.version === liveVersion && home.view.here === (at > 0 ? home.id : null)) controls.visit(home.view)
+    else controls.enterPlace(at)
   }
   /** Whether the panel shows a problem's arrow now. */
   const problemShown = () => problemAt >= 0 && details.querySelector('.d-problem') != null
@@ -1063,7 +1081,11 @@ async function main() {
     // A cycle is a pair either way round (a tangle's order follows its counts); the others keep their direction.
     // The selection it was opened over and the control with focus come back with it.
     const active = details.contains(document.activeElement) ? document.activeElement as HTMLElement : null
-    const keep = problems && problemAt >= 0 ? { shown: problemShown(), key: problemKey(tree, problems.list[problemAt]), over: edgeReturn.selected > 0 ? tree.els[edgeReturn.selected].id : null, focus: active ? { tag: active.tagName, title: active.title, text: active.textContent } : null } : null
+    // The focused control by what it is: in a relation's row, that relation's two ends and the control's place in the row; else the heading, or a button's words.
+    const relId = (t: Tree, k: number) => `${t.els[t.rels[k * 2]].id}>${t.els[t.rels[k * 2 + 1]].id}>${t.relKind[k]}`
+    const row = active?.closest<HTMLElement>('li[data-rel]')
+    const focus = !active ? null : row ? { rel: relId(tree, Number(row.dataset.rel)), at: [...row.querySelectorAll('button')].indexOf(active as HTMLButtonElement) } : { tag: active.tagName, text: active.textContent }
+    const keep = problems && problemAt >= 0 ? { shown: problemShown(), key: problemKey(tree, problems.list[problemAt]), over: edgeReturn.selected > 0 ? tree.els[edgeReturn.selected].id : null, focus } : null
     tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
     problems = problemsOf(next)
     problemAt = keep && problems ? findProblem(next, problems, keep.key) : -1
@@ -1080,7 +1102,9 @@ async function main() {
       showProblem(problemAt)
       // The control with focus, found again by what it opens (a citation's path and line), else its words.
       const f = keep.focus
-      const control = f && [...details.querySelectorAll<HTMLElement>('button, h2')].find(e => e.tagName === f.tag && (f.title ? e.title === f.title : e.textContent === f.text))
+      const control = !f ? null : 'rel' in f
+        ? [...details.querySelectorAll<HTMLElement>('li[data-rel]')].find(li => relId(next, Number(li.dataset.rel)) === f.rel)?.querySelectorAll<HTMLElement>('button')[Number(f.at)] ?? null
+        : f.tag === 'H2' ? details.querySelector<HTMLElement>('h2') : [...details.querySelectorAll<HTMLElement>('button')].find(e => e.textContent === f.text) ?? null
       if (control?.tagName === 'H2') control.tabIndex = -1
       control?.focus({ preventScroll: true })
     }

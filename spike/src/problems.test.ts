@@ -213,6 +213,18 @@ describe('entry files, order and scope', () => {
     expect(findProblem(one, findProblems(one), null)).toBe(-1)
   })
 
+  it('does not take a tangle for the ring it replaced between the same two parts', () => {
+    const ks = ['a', 'b', 'c']
+    const els = [part('app'), ...ks.flatMap(k => [part(`app.${k}`, k.toUpperCase()), file(`app.${k}.f`, `${k}F`)])]
+    const ring = build(els, [...uses('app.a.f', 'app.b.f', 5), ...uses('app.b.f', 'app.c.f', 5), ...uses('app.c.f', 'app.a.f', 2)])
+    const key = problemKey(ring, findProblems(ring).list[0])
+    expect(key.ring).toBe('app.c>app.a>app.b>app.c')
+    // A use back from A to C makes C and A a tangle: the ring is gone, not found as the tangle.
+    const tangled = build(els, [...uses('app.a.f', 'app.b.f', 5), ...uses('app.b.f', 'app.c.f', 5), ...uses('app.c.f', 'app.a.f', 2), ...uses('app.a.f', 'app.c.f', 2)])
+    expect(findProblems(tangled).list.map(p => p.title)).toEqual(['C ↔ A'])
+    expect(findProblem(tangled, findProblems(tangled), key)).toBe(-1)
+  })
+
   it('lists at a place the problems at or under it', () => {
     const els = [part('top'), part('top.app'), part('top.app.a', 'A'), file('top.app.a.f', 'Af'), part('top.app.b', 'B'), file('top.app.b.f', 'Bf'), part('other'), file('other.f', 'Of')]
     const t = build(els, [...uses('top.app.a.f', 'top.app.b.f', 4), ...uses('top.app.b.f', 'top.app.a.f', 1)])

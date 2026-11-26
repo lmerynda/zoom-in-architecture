@@ -75,6 +75,12 @@ const state = () => page.evaluate(() => {
       // Enough of it: 16 px, or most of a line that is shorter (two neighbours a gutter apart).
       return { len: Math.round(len), enough: len >= Math.min(16, 0.8 * full) && full > 0 }
     })(),
+    sourceHeading: (() => {
+      if (s.problemAt < 0) return null
+      const p = s.problems.list[s.problemAt], [x, y] = r.screenRectOf(p.a), sheet = d.getBoundingClientRect()
+      const bottom = sheet.top > innerHeight / 2 ? sheet.top : innerHeight, right = sheet.top > innerHeight / 2 ? innerWidth : sheet.left
+      return x >= -2 && x <= right - 40 && y >= document.getElementById('top').getBoundingClientRect().bottom - 2 && y <= bottom - 20
+    })(),
     drawnWarned: (() => { const w = r.warnedLines(), n = s.tree.size; return r.lines.filter(l => w.has(Math.min(l.s, l.t) * n + Math.max(l.s, l.t))).length })(),
     legend: !!document.querySelector('#arrows .a-problem'),
     at: s.problemAt,
@@ -244,6 +250,15 @@ try {
   // A live update with a citation focused keeps focus on that citation, not another "line 5".
   await page.evaluate(() => window.__spike.openProblem(0))
   await landed()
+  const relFocus = await page.evaluate(async () => {
+    const li = document.querySelectorAll('.d-edge li[data-rel]')[1], s = window.__spike, k = Number(li.dataset.rel)
+    li.querySelector('button.d-rel').focus()
+    const want = `${s.tree.els[s.tree.rels[k * 2]].id}>${s.tree.els[s.tree.rels[k * 2 + 1]].id}`
+    await s.swapModel(await (await fetch('/models/knights-of-darkness.json')).json())
+    const row = document.activeElement?.closest('li[data-rel]'), j = Number(row?.dataset.rel ?? -1)
+    return { want, got: j >= 0 ? `${s.tree.els[s.tree.rels[j * 2]].id}>${s.tree.els[s.tree.rels[j * 2 + 1]].id}` : null }
+  })
+  check('a live update keeps focus on the same relation’s row, not a neighbour with the same tooltip', relFocus.got === relFocus.want, JSON.stringify(relFocus))
   const cite = await page.evaluate(() => { const b = document.querySelectorAll('.d-edge .cite')[1]; b.focus(); return b.title })
   const citeAfter = await page.evaluate(async () => { await window.__spike.swapModel(await (await fetch('/models/knights-of-darkness.json')).json()); return document.activeElement?.title })
   check('a live update keeps focus on the same citation', citeAfter === cite, JSON.stringify({ cite, citeAfter }))
@@ -281,6 +296,31 @@ try {
   await sleep(600)
   const local = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].id, focus: document.activeElement?.dataset?.problem, at: s.problemAt } })
   check('Back to the list from a run started in Kingdom returns there, focus on the row it started from when the open one is not listed', local.here === 'backend.kingdom' && Number(local.focus) === (await page.evaluate(k => document.querySelector(`.d-problems [data-problem="${k}"]`) ? k : -1, local.at) >= 0 ? local.at : startRow), JSON.stringify({ ...local, startRow }))
+
+  // A live edit that renumbers the cards: Back still goes to Kingdom.
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
+  await landed()
+  await sleep(400)
+  await page.click('.d-problems li button')
+  await landed()
+  await press(']')
+  await page.evaluate(async () => {
+    const json = await (await fetch('/models/knights-of-darkness.json')).json()
+    json.elements = json.elements.filter(e => e.id !== 'developer')
+    json.relations = json.relations.filter(r => r.source !== 'developer' && r.target !== 'developer')
+    await window.__spike.swapModel(json)
+  })
+  await landed()
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const renumbered = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return s.tree.els[path[path.length - 1] ?? 0].id })
+  check('after a live edit renumbers the cards, Back to the list still returns to Kingdom', renumbered === 'backend.kingdom', renumbered)
+  await open('model=knights-of-darkness')
+  await page.click('.d-problems > summary')
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom')))
+  await landed()
+  await sleep(400)
 
   // N2: search opened during the flight back keeps focus.
   await page.click('.d-problems li button')
@@ -354,9 +394,9 @@ try {
     await landed()
     await sleep(150)
     const s = await state()
-    if (!s.strongDrawn || !s.strongAboveSheet) gwOff.push(k)
+    if (!s.strongDrawn || !s.strongAboveSheet || !s.sourceHeading) gwOff.push(k)
   }
-  check('on a phone every Galaxy Wars problem opens with its own line marked on screen, above the sheet', gwOff.length === 0, JSON.stringify(gwOff))
+  check('on a phone every Galaxy Wars problem opens with its own line marked on screen and the flagged card’s name in view', gwOff.length === 0, JSON.stringify(gwOff))
   await shot('gw-phone-problem')
   const navs = await page.evaluate(() => [...document.querySelectorAll('.d-problem-nav button')].map(b => b.getBoundingClientRect().height))
   check('on a phone the note offers Previous, Next and Back to the list, each a touch target', navs.length === 3 && navs.every(h => h >= 44), JSON.stringify(navs))
@@ -368,6 +408,19 @@ try {
   await sleep(600)
   const phoneBack = await page.evaluate(() => ({ collapsed: document.getElementById('details').classList.contains('collapsed'), focus: document.activeElement?.dataset?.problem ?? document.activeElement?.tagName }))
   check('on a phone Back to the list keeps the sheet open with focus on the row', !phoneBack.collapsed && phoneBack.focus === '0', JSON.stringify(phoneBack))
+  await open('model=excalidraw')
+  // The editor across the screen's width: its outline, with its own problems, is the place.
+  await page.evaluate(() => { const s = window.__spike, i = s.tree.els.findIndex(e => e.title === 'Excalidraw editor'), r = s.world.rect; s.cam.set(r[i * 4] + r[i * 4 + 2] / 2, r[i * 4 + 1] + r[i * 4 + 3] / 2, s.cam.w / r[i * 4 + 2]) })
+  await sleep(800)
+  const exHome = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return s.tree.els[path[path.length - 1] ?? 0].title })
+  await page.evaluate(() => { const d = document.getElementById('details'); if (d.classList.contains('collapsed')) d.querySelector('.d-grip')?.click(); const p = document.querySelector('.d-problems'); p.open = true })
+  await page.evaluate(() => document.querySelector('.d-problems li button').click())
+  await landed()
+  await page.click('.d-problem-nav button:nth-child(3)')
+  await landed()
+  await sleep(600)
+  const exBack = await page.evaluate(() => { const s = window.__spike, path = s.renderer.breadcrumb(); return { here: s.tree.els[path[path.length - 1] ?? 0].title, list: document.querySelector('.d-problems > summary')?.textContent, focus: document.activeElement?.dataset?.problem ?? document.activeElement?.tagName } })
+  check('on a phone Back to the list returns to the outline it was opened from, not a card inside it', exBack.here === exHome && exBack.list !== 'Problems · 0' && /^\d+$/.test(exBack.focus ?? ''), JSON.stringify({ exHome, ...exBack }))
   await page.setViewport({ width: 320, height: 568, hasTouch: true, isMobile: true })
   await open('model=excalidraw')
   const exTotal = await page.evaluate(() => window.__spike.problems.list.length)
@@ -437,6 +490,19 @@ try {
     }
     return { rings: rings.length, moved: out }
   }, gwJson)
+  const replaced = await page.evaluate(async text => {
+    const s = window.__spike, k = s.problems.list.findIndex(p => p.ring && p.ring.length > 3)
+    s.openProblem(k)
+    const p = s.problems.list[k], a = s.tree.els[p.a].id, b = s.tree.els[p.b].id
+    const json = JSON.parse(text), one = json.relations.find(r => r.source.startsWith(a + '.') && r.target.startsWith(b + '.'))
+    // Twenty uses back the other way: the two parts become a pair using each other, no longer this ring.
+    json.relations.push(...Array.from({ length: 20 }, () => ({ ...one, source: one.target, target: one.source })))
+    await s.swapModel(json)
+    const now = s.problemAt >= 0 ? s.problems.list[s.problemAt] : null
+    await s.swapModel(JSON.parse(text))
+    return { was: p.title, now: now?.title ?? null, ring: now?.ring?.length ?? null, note: !!document.querySelector('.d-problem') }
+  }, gwJson)
+  check('a ring an edit turns into another problem is not shown as that problem', replaced.now === null || (replaced.now === replaced.was && replaced.ring > 3), JSON.stringify(replaced))
   check('an identical live update keeps each ring problem open as itself', moved.rings > 0 && moved.moved.length === 0, JSON.stringify(moved))
   await key('Escape')
   await page.evaluate(() => window.__spike.fit(0))
