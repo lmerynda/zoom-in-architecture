@@ -72,7 +72,7 @@ const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([
   job.weights ?? null,
   // A request's path places children by their step: a new order is a new layout.
   job.lane ?? null,
-  // The whole map's shape follows the screen held upright or on its side.
+  // The whole map's shape follows the stage's.
   job.aspect ?? null,
 ])
 
