@@ -12,11 +12,11 @@
     { "id": "mapper.traces", "kind": "component", "title": "Test traces", "description": "Runs a project's own end-to-end tests with an OpenTelemetry agent attached, receives the spans, and marks what ran: endpoints, files, store links, tables.", "files": ["spike/scripts/trace.mjs", "spike/scripts/otlp.mjs", "spike/scripts/observed.mjs"] },
     { "id": "mapper.cli", "kind": "component", "title": "Agent commands", "description": "graph, check, audit, trace, publish (with --watch for live, --trace for what tests ran) and pull: small commands for agents.", "files": ["spike/scripts/zoom.mjs"] },
 
-    { "id": "service", "kind": "app", "title": "Viewer service", "technology": "Node.js · Vite dev server", "description": "Takes uploaded bundles, keeps them, and serves the models and sources the viewer opens; it never reads a mapped project.", "files": ["spike/scripts/store.mjs"] },
+    { "id": "service", "kind": "app", "title": "Viewer service", "technology": "Node.js · Vite dev server", "description": "Takes uploaded bundles, keeps them, and serves the models and sources the viewer opens, with what changed since the upload before; it never reads a mapped project.", "files": ["spike/scripts/store.mjs", "spike/scripts/changes.mjs"] },
 
     { "id": "viewer", "kind": "webapp", "title": "Viewer", "technology": "TypeScript · PixiJS · Vite", "description": "The zoomable map: fly from the whole landscape into any element, with relations, routes and lenses." },
     { "id": "viewer.shell", "kind": "component", "title": "App shell", "description": "Loads a model, runs the frame loop, swaps live updates in, keeps the place in the address, and shows the HUD, details panel (with the map's endpoints), code reader and model tabs.", "files": ["spike/src/main.ts", "spike/src/models.ts", "spike/src/details.ts", "spike/src/endpoints.ts", "spike/src/hud.ts", "spike/src/places.ts", "spike/src/reader.ts"] },
-    { "id": "viewer.model", "kind": "component", "title": "Model", "description": "The element tree with relations rolled up per level, synthetic landscapes, and the diff that lets a new version morph in place.", "files": ["spike/src/model.ts", "spike/src/synthetic.ts", "spike/src/live.ts"] },
+    { "id": "viewer.model", "kind": "component", "title": "Model", "description": "The element tree with relations rolled up per level, synthetic landscapes, the diff that lets a new version morph in place, and what changed since the upload before.", "files": ["spike/src/model.ts", "spike/src/synthetic.ts", "spike/src/live.ts", "spike/src/changes.ts"] },
     { "id": "viewer.layout", "kind": "component", "title": "Layout and routing", "description": "Packs each container's children in worker threads and routes edges through the gutters between cards.", "files": ["spike/src/layout.ts", "spike/src/layoutPool.ts", "spike/src/layout.worker.ts", "spike/src/route.ts", "spike/src/edges.ts"] },
     { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn).", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/icons.ts"] },
     { "id": "viewer.code", "kind": "component", "title": "Code view", "description": "Past a file card, its own source: a minimap first, then coloured, readable lines with the graph's marked and cited lines.", "files": ["spike/src/code.ts", "spike/src/syntax.ts"] },
@@ -42,12 +42,12 @@
     { "from": "spike/scripts/zoom.mjs", "to": "spike/scripts/store.mjs", "title": "uploads bundles, pulls maps (/upload, /maps)",
       "evidence": ["spike/scripts/zoom.mjs:63", "spike/scripts/zoom.mjs:242", "spike/scripts/zoom.mjs:263", "spike/vite.config.ts:55", "spike/vite.config.ts:80", "spike/vite.config.ts:89"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/main.ts", "title": "keeps models/<name>.json",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:59"] },
+      "evidence": ["spike/scripts/store.mjs:26", "spike/src/main.ts:60"] },
     { "from": "spike/scripts/store.mjs", "to": "spike/src/models.ts", "title": "lists models in index.json",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/models.ts:13"] },
+      "evidence": ["spike/scripts/store.mjs:26", "spike/src/models.ts:13"] },
     { "from": "spike/src/code.ts", "to": "spike/scripts/store.mjs", "title": "reads a file's uploaded source (/source)",
       "evidence": ["spike/src/code.ts:227", "spike/vite.config.ts:106"] },
     { "from": "spike/scripts/extract-likec4.mjs", "to": "spike/src/main.ts", "title": "extracts sample models",
-      "evidence": ["spike/scripts/store.mjs:25", "spike/src/main.ts:59"] }
+      "evidence": ["spike/scripts/store.mjs:26", "spike/src/main.ts:60"] }
   ]
 }

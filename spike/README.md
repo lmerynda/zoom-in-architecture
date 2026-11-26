@@ -78,6 +78,7 @@ The viewer (`npm run dev`) is a service that mapped projects upload to. It never
 - **Re-mapping:** the map lives with the project, at `docs/architecture/map.json` by default. `pull <name>` prints the map an import was last published with, and on stderr the commit that upload was built from, so `git log <commit>..HEAD` lists what changed since. `follow <repo> <map> --since <commit>` moves evidence whose cited line moved with the code, by exact text, only where one line matches.
 - **Live:** `publish … --watch` stays running on the project's side and uploads again whenever its code or the map changes.
 - **Provenance:** each model carries the commit, uncommitted changes and time it was built from, and the breadcrumb shows them (`3fb6d9a+ · 2 h ago`), so an old map does not pass for a current one.
+- **Changed since:** the service keeps each upload whole (`imports/<name>/last.json`) and compares the next one with it (`scripts/changes.mjs`): endpoints new or removed (by the process serving them, method and route), crossings between top-level parts new or removed, and dependencies between components new or removed. An upload that changes none of these keeps the earlier base (`previous.json`), so a re-publish or a new trace does not wipe the marks; the list is worked out before anything is replaced, so an upload it cannot compare is refused whole. Beside the breadcrumb, "5 changes" turns on the Changed lens: cards lit where something changed, new arrows drawn green, and the panel lists each change, a new one a jump to its card or arrow. A map with no earlier upload has none of it.
 - **Secrets:** a cited line's value after a key named like a password, secret, token or key is masked before upload (`password: ${DB_PASSWORD:••••}`). The source of files the model shows is uploaded as it is.
 - **Access:** the service listens on this machine only, unless started with `--host`. A shared one sets `ZOOM_TOKEN`; `publish` sends the same variable, and uploads without it are refused. Uploads over `ZOOM_MAX_UPLOAD_MB` (64 by default) are refused too.
 
@@ -149,6 +150,7 @@ node scripts/place-test.mjs                                # checks places: the 
 node scripts/endpoints-test.mjs                            # checks the surface: the endpoint list, search, Serves, an endpoint's effects, features, places
 node scripts/live-test.mjs                                 # edits a model while the map is open, checks the live update
 node scripts/publish-test.mjs                              # publishes a map like an agent, edits the repo, checks the map follows
+node scripts/changes-test.mjs                              # publishes a fixture twice, checks what changed: count, lens, green arrows, list
 node scripts/record.mjs acme-controls code-dive            # frame-exact MP4s into shots/video/ (code-* scenes use this repo's map)
 ```
 

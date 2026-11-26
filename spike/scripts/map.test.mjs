@@ -307,7 +307,7 @@ describe('bundle and store', () => {
     const root = mkdtempSync(join(tmpdir(), 'zoom-store-'))
     try {
       storeBundle(b, root)
-      expect(readdirSync(join(root, 'imports/shop')).sort()).toEqual(['import.json', 'map.json', 'sources'])
+      expect(readdirSync(join(root, 'imports/shop')).sort()).toEqual(['import.json', 'last.json', 'map.json', 'sources'])
       expect(JSON.parse(readFileSync(join(root, 'imports/shop/import.json'), 'utf8'))).toEqual({ title: b.model.title, published: b.published })
       expect(storedPublished('shop', root)).toEqual(b.published)
       expect(String(storedSource('shop', 'web/src/api.ts', root))).toBe(b.sources['web/src/api.ts'])

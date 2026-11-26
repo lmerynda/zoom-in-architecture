@@ -1,5 +1,6 @@
 import { Application } from 'pixi.js'
 import { Camera } from './camera'
+import { changeCount, renderChanges, sinceText } from './changes'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
 import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
@@ -516,7 +517,9 @@ async function main() {
     const focused = details.contains(document.activeElement) ? (document.activeElement as HTMLElement).textContent : null
     const was = outlinedBefore
     outlinedBefore = here
-    renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j), surfaceLead(tree, here, surface, actions))
+    // Under the Changed lens the panel lists what changed since the upload before, wherever you are.
+    if (renderer.lens?.name === 'changed') renderChanges(details, tree, { select: j => controls.goSelect(j), inspect: actions.inspect })
+    else renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j), surfaceLead(tree, here, surface, actions))
     // Or, when that card is not listed here, the outline's heading: focus stays in the panel.
     if (focused != null) {
       const row = [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)
@@ -703,15 +706,37 @@ async function main() {
     $('announce').textContent = `${picked.length} arrows share this line`
   }
 
+  /**
+   * Beside the breadcrumb, how much changed since the upload before, when it can be told: a button
+   * that turns the Changed lens on (and off again). Kept, not redrawn, so focus stays on it.
+   */
+  const changesChip = () => {
+    const n = changeCount(tree.changed)
+    $('changes').hidden = !n
+    if (!n) return
+    const b = $('changes')
+    const on = renderer.lens?.name === 'changed'
+    b.textContent = `${n} change${n === 1 ? '' : 's'}`
+    b.title = on ? 'Back to the structure view' : `Show what changed since the upload before (${sinceText(tree.changed!.since)})`
+    b.setAttribute('aria-pressed', String(on))
+    b.onclick = () => setLens(on ? 'structure' : 'changed')
+  }
   // Lenses: strategy-game overlays colouring every card by one measure.
   const lenses = buildLenses(tree)
   const lensBar = new LensBar(lenses)
   const setLens = (name: LensName) => {
     renderer.lens = lenses.find(l => l.name === name) ?? null
     lensBar.show(renderer.lens)
+    // The Changed lens brings its list into the panel, over a selection or an arrow; leaving it
+    // brings the outline back.
+    outlined = -1
+    if (name === 'changed' && (renderer.selected > 0 || edgeOpen())) select(-1)
+    else if (renderer.selected <= 0 && !edgeOpen()) showOutline()
+    changesChip()
   }
   lensBar.onPick = setLens
   lensBar.show(null)
+  changesChip()
 
   const places = new Places(v => {
     const r = reading && (v.selected === reading.id || v.here === reading.id) ? reading : null
@@ -910,6 +935,11 @@ async function main() {
     edgeReturn = { selected: -1, list: null }
     lenses.splice(0, lenses.length, ...buildLenses(next))
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
+    lensBar.setLenses(lenses)
+    lensBar.show(renderer.lens)
+    outlined = -1
+    // The count of changes is the new model's.
+    changesChip()
     minimap.tree = next; minimap.world = live
     code.reset(next)
     controls.swap({ tree: next, world: live, renderer })
@@ -945,11 +975,15 @@ async function main() {
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
-      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(json, json.buildMs ?? 0) }
+      // A view the new upload no longer has (its last endpoint gone): back to the architecture, as it is now.
+      if (!res.ok || !res.headers.get('content-type')?.includes('json')) { if (view && !coupling) { const q = new URLSearchParams(location.search); q.delete('view'); location.replace(`?${q}`) } return }
+      const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(json, json.buildMs ?? 0)
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.
   import.meta.hot?.on('models:index', () => renderModelTabs($('models'), $('views'), modelName, new URLSearchParams(location.search).get('n'), view))
+
+
 
   // Frame loop: animations run every frame, so the scene always renders.
   const cpu = ring(240), delta = ring(240)

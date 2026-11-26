@@ -1,8 +1,9 @@
 import type { Tree } from './model'
+import { changeLens } from './changes'
 import { importance } from './layout'
 
 /** Map overlays, like strategy-game lenses: each colours every card by one measure. */
-export type LensName = 'structure' | 'size' | 'coupling' | 'churn'
+export type LensName = 'structure' | 'size' | 'coupling' | 'churn' | 'changed'
 
 export interface Lens {
   name: LensName
@@ -55,6 +56,9 @@ export function buildLenses(tree: Tree): Lens[] {
     const churn = sum(i => num(tree.els[i].metadata?.churn) || 0)
     lenses.push({ name: 'churn', label: 'Churn · commits in the last 90 days', raw: churn, heat: normalise(tree, churn), unit: 'commits' })
   }
+  // Only on a map with an earlier upload to compare with.
+  const changed = changeLens(tree)
+  if (changed) lenses.push(changed)
   return lenses
 }
 
