@@ -277,6 +277,7 @@
     @media (pointer: coarse) {
       /* The bar and the crumbs too: every control a finger presses is 44 px tall. */
       #top button, #top a, #arrows button, .reader-head button, .lens-current, .layout-current, #crumbs button { min-height: 44px; }
+      #travel, #help { min-width: 44px; justify-content: center; }
       #top .layout-menu a { display: flex; align-items: center; }
       #welcome .ok { position: sticky; bottom: 0; }
       .d-rels .d-rel, .d-outline .d-rel, .d-steps .d-rel, .d-unseen .d-rel { min-height: 44px; }
@@ -312,7 +313,7 @@
     }
     #arrows span[class^="a-"]:not(.a-head)::before { content: ''; display: inline-block; width: 22px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid #8193bd; }
     #arrows .a-runtime::before { border-top-color: #c4b5fd !important; }
-    #arrows .a-types::before { border-top-style: dashed !important; }
+    #arrows .a-types::before { border-top-style: dotted !important; }
     #arrows .a-unseen::before { border-top-color: #c4b5fd !important; border-top-style: dashed !important; }
     #arrows button { background: rgba(148, 163, 184, 0.1); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 2px 8px; border-radius: 6px; cursor: pointer; }
     body.reading #arrows { display: none; }
@@ -346,13 +347,15 @@
       .reader .reader-head { flex-wrap: nowrap; gap: 4px; padding: 2px 4px; }
       .reader .reader-names { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 4px; row-gap: 0; align-items: center; }
       .reader .reader-back { grid-row: 1 / 3; font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
-      .reader .reader-back::before { content: '←'; font-size: 20px; }
+      /* The icons are decoration ("/ ''" keeps them out of the accessible name): the words name the action. */
+      .reader .reader-back::before { content: '←' / ''; font-size: 20px; }
       .reader .reader-title { grid-column: 2; font-size: 13px; }
       .reader .reader-where { grid-column: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; font-size: 11px; }
       .reader .reader-actions { gap: 2px; }
       .reader .reader-actions button { font-size: 0; min-width: 44px; min-height: 44px; padding: 0; }
-      .reader .reader-copy::before { content: '⧉'; font-size: 19px; }
-      .reader .reader-close::before { content: '✕'; font-size: 16px; }
+      .reader .reader-copy::before { content: '⧉' / ''; font-size: 19px; }
+      .reader .reader-copy.copied::before { content: '✓' / ''; color: #86efac; }
+      .reader .reader-close::before { content: '✕' / ''; font-size: 16px; }
     }
     @media (max-width: 1099px) { body.reading #details { display: none; } }
     .reader-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
@@ -469,7 +472,7 @@
     @media (max-width: 559px) {
       .lensbar { order: 2; margin-left: 0; }
       #travel { order: 2; font-size: 0; gap: 0; padding: 6px 10px; }
-      #travel::before { content: '⌕'; font-size: 18px; line-height: 1; color: var(--text); }
+      #travel::before { content: '⌕' / ''; font-size: 18px; line-height: 1; color: var(--text); }
       #help { font-size: 0; padding: 5px 8px; }
       #help kbd { font-size: 13px; }
       #models { min-width: 0; }

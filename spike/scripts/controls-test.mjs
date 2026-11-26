@@ -295,7 +295,7 @@ try {
   await page.keyboard.press('Escape')
   const menuBack = await page.evaluate(() => document.activeElement === document.querySelector('#stage canvas'))
   check('the map list opens on the open map and Tab out closes it; Colour by closes on Tab out; the card menu gives focus back', onOpen && modelClosed && lensClosed && menuOpen && menuBack, JSON.stringify({ onOpen, modelClosed, lensClosed, menuOpen, menuBack }))
-  check('the open view is aria-current and menus say whether they are open', state.current.join() === 'Architecture' && state.before.join() === 'false,false' && state.lensOpen === 'true' && state.modelOpen === 'true' && state.after.join() === 'false,false', JSON.stringify(state))
+  check('the open view and layout are aria-current and menus say whether they are open', state.current.join() === 'Architecture,As mapped' && state.before.join() === 'false,false' && state.lensOpen === 'true' && state.modelOpen === 'true' && state.after.join() === 'false,false', JSON.stringify(state))
 
   // A phone, and 200% zoom (800 CSS px): the bar wraps and every control in it stays on screen and
   // reachable; the arrow legend folds into one button; cards and labels start below the bar.
@@ -438,19 +438,30 @@ try {
 
   // A phone: every control in the bar and the crumbs is a finger tall, the reader's head is one row
   // at 320 px, and a container held wider than the screen keeps its kind on it.
-  for (const width of [390, 320]) {
-    await page.setViewport({ width, height: width === 320 ? 568 : 844, isMobile: true, hasTouch: true })
+  for (const [width, height] of [[390, 844], [375, 667], [320, 568]]) {
+    await page.setViewport({ width, height, isMobile: true, hasTouch: true })
     await open('model=knights-of-darkness&in=backend.kingdom')
     await landed()
     await sleep(500)
-    const touch = await page.evaluate(() => [...document.querySelectorAll('#top button, #top a, #crumbs button')].filter(e => e.getClientRects().length && !e.closest('[hidden]') && !e.closest('.model-menu')).map(e => ({ t: e.textContent.trim().slice(0, 16), h: Math.round(e.getBoundingClientRect().height) })).filter(x => x.h < 44))
-    check(`at ${width} px every bar and crumb control is 44 px tall`, touch.length === 0, JSON.stringify(touch))
-    const kind = await page.evaluate(() => { const s = window.__spike, v = s.renderer.views[s.id('backend.kingdom')]; return v?.meta?.visible ? { right: Math.round(v.meta.x + v.meta.width), w: s.cam.w } : { hidden: true } })
-    check(`at ${width} px the held container's kind stays on the screen`, kind.hidden || kind.right <= kind.w, JSON.stringify(kind))
+    const touch = await page.evaluate(() => [...document.querySelectorAll('#top button, #top a, #crumbs button')].filter(e => e.getClientRects().length && !e.closest('[hidden]') && !e.closest('.model-menu') && !e.closest('.layout-menu')).map(e => { const r = e.getBoundingClientRect(); return { t: e.textContent.trim().slice(0, 16), w: Math.round(r.width), h: Math.round(r.height) } }).filter(x => x.h < 44 || x.w < 44))
+    check(`at ${width} px every bar and crumb control is at least 44 × 44 px`, touch.length === 0, JSON.stringify(touch))
+    // The place a link opened at keeps its title in view once the bar has settled (the crumbs make it taller).
+    const held = await page.evaluate(() => { const s = window.__spike, v = s.renderer.views[s.id('backend.kingdom')]; return { title: !!v?.title?.visible, meta: v?.meta?.visible ? { text: v.meta.text, right: Math.round(v.meta.x + v.meta.width), w: s.cam.w } : null } })
+    check(`at ${width}×${height} the place a link opened at shows its title`, held.title, JSON.stringify(held))
+    check(`at ${width} px the held container's kind is shown, on the screen`, !!held.meta && /^COMPONENT/.test(held.meta.text) && held.meta.right <= held.meta.w, JSON.stringify(held))
     await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
     await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
-    const head = await page.evaluate(() => { const h = document.querySelector('.reader-head').getBoundingClientRect(), r = s => document.querySelector(s).getBoundingClientRect(); return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: document.querySelector('.reader-where').textContent } })
-    if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, naming file and line', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where), JSON.stringify(head))
+    const head = await page.evaluate(() => {
+      const h = document.querySelector('.reader-head').getBoundingClientRect(), r = s => document.querySelector(s).getBoundingClientRect()
+      // Where the line number is drawn: its digits inside the path's box, not cut off.
+      const where = document.querySelector('.reader-where'), text = where.querySelector('bdi').firstChild, n = text.textContent.length
+      const range = document.createRange()
+      range.setStart(text, n - 2)
+      range.setEnd(text, n)
+      const digits = range.getBoundingClientRect(), box = where.getBoundingClientRect()
+      return { h: Math.round(h.height), back: Math.round(r('.reader-back').height), copy: Math.round(r('.reader-copy').height), close: Math.round(r('.reader-close').height), where: where.textContent, lineShown: digits.left >= box.left - 0.5 && digits.right <= box.right + 0.5 }
+    })
+    if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, its line number in view', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where) && head.lineShown, JSON.stringify(head))
   }
 
   // Under a lens, an edge chip keeps off a container's value as it does off a card's text.
@@ -462,6 +473,30 @@ try {
   const chipOnValue = await page.evaluate(() => { const rd = window.__spike.renderer; return rd.chipRects.filter(([x, y, w, h]) => rd.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + w && y < by + bh && by < y + h)).length })
   check('an edge chip never sits on a lens value', chipOnValue === 0, String(chipOnValue))
   await page.evaluate(() => window.__spike.setLens('structure'))
+
+  // Arrows: the landscape's few arrows never run on top of each other; a selection keeps each
+  // arrow's kind (a runtime call's violet rim under its direction's colour); cards inside an open
+  // container keep a visible edge.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness')
+  await landed()
+  const lanes = await page.evaluate(() => {
+    const L = window.__spike.world.local.get(0), segs = []
+    for (const r of L.routes) for (let k = 1; k + 2 < r.pts.length / 2; k++) {
+      const [x0, y0, x1, y1] = r.pts.slice(k * 2, k * 2 + 4), v = Math.abs(x0 - x1) < 0.5
+      if (v || Math.abs(y0 - y1) < 0.5) segs.push({ r: r.s + '>' + r.t, v, at: v ? x0 : y0, a: Math.min(v ? y0 : x0, v ? y1 : x1), b: Math.max(v ? y0 : x0, v ? y1 : x1) })
+    }
+    return segs.flatMap((p, i) => segs.slice(i + 1).filter(q => q.r !== p.r && q.v === p.v && Math.abs(q.at - p.at) < 0.5 && q.a < p.b - 0.5 && p.a < q.b - 0.5).map(q => [p.r, q.r]))
+  })
+  check('the landscape\'s arrows each keep a lane of their own', lanes.length === 0, JSON.stringify(lanes))
+  await page.evaluate(() => window.__spike.select(window.__spike.id('backend')))
+  await sleep(500)
+  const rims = await page.evaluate(() => {
+    // The focus's strokes, read off the graphics: a violet stroke under the coloured ones.
+    const g = window.__spike.renderer.hotEdgeG, colors = (g.context?.instructions ?? []).filter(i => i.action === 'stroke').map(i => i.data.style.color)
+    return { violet: colors.filter(c => c === 0xc4b5fd).length, all: colors.length }
+  })
+  check('a selection keeps a runtime call\'s kind: a violet rim under its colour', rims.violet > 0, JSON.stringify(rims))
 
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })

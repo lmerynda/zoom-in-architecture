@@ -106,6 +106,9 @@ interface NodeView {
   subFull?: string
   /** The same for the full title. */
   titleEm?: number
+  /** Width per px of the header's kind and counts, for the text it was measured for. */
+  metaEm?: number
+  metaFull?: string
   /** The two-line title last worked out, and the room it was worked out for. */
   wrap?: { src: string; wrap: number; px: number } | null
   wrapKey?: string
@@ -504,7 +507,9 @@ export class Renderer {
     border.width = w; border.height = h
     border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
     // An external system is periphery: its outline is the quietest on the map until it is in play.
-    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.9 : outside ? 0.4 : isContainer ? 0.55 : 0.45) * dim
+    // A card's edge reads at 3:1 against the container it sits in: closed parts inside an open one
+    // are cards, not faint boxes. An external system stays the quietest, an outline over the map.
+    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.95 : outside ? 0.45 : isContainer ? 0.85 : 0.7) * dim
 
     // Only a live update glows, for a moment; selection and its ends are outlined (drawOutlines, borders).
     if (flashA > 0.02) {
@@ -590,12 +595,19 @@ export class Renderer {
       }
       const metaText = `${this.ranking ? `#${this.ranking.rank[i]} · ${this.ranking.weight[i]} RELATIONS · ${this.ranking.partners[i]} OF ${Math.max(0, (this.tree.children[this.tree.parent[i]]?.length ?? 1) - 1)} SIBLINGS · ` : ''}${kindName(this.tree.els[i]).toUpperCase()} · ${this.tree.children[i].length} INSIDE${this.surface?.(i) ? ` · ${this.surface(i).toUpperCase()}` : ''}`
       const meta = (v.meta ??= this.text(metaText, texts))
-      if (meta.text !== metaText) meta.text = metaText
       const mpx = level * 0.62
       // Beside the title, never under it: a header held at the screen edge can reach its right side.
-      meta.scale.set(mpx / FONT_PX)
-      // Its right end stays on the screen: a header wider than a phone keeps its kind in view.
+      // Its right end stays on the screen: a header wider than a phone keeps its kind in view, and
+      // where the counts do not fit beside the title, the kind alone does.
       const metaRight = Math.min(x + w - pad, this.cam.w - SAFE.right)
+      const kindOnly = kindName(this.tree.els[i]).toUpperCase()
+      // The full line's width measured once per text, so choosing never re-lays it out every frame.
+      if (v.metaFull !== metaText) {
+        meta.text = metaText; v.metaEm = em(meta); v.metaFull = metaText
+      }
+      const shownMeta = titleRight + 16 < metaRight - v.metaEm! * mpx ? metaText : kindOnly
+      if (meta.text !== shownMeta) meta.text = shownMeta
+      meta.scale.set(mpx / FONT_PX)
       if (mpx >= MIN_TEXT && w > 160 && roomy && !underBar && titleRight + 16 < metaRight - meta.width) {
         meta.visible = true
         meta.position.set(metaRight - meta.width, y + (hh - mpx * 1.25) / 2)
@@ -833,6 +845,8 @@ export class Renderer {
     // Strokes by kind and weight tier: [kind][tier] (see TIER_W).
     const strokes: number[][][][] = paths.map(() => TIER_W.map(() => []))
     const heads: number[][][] = paths.map(() => TIER_W.map(() => []))
+    /** Runtime calls in focus, by weight tier: drawn as a violet rim under their direction's colour. */
+    const rims: number[][][] = TIER_W.map(() => [])
     const sel = this.selected > 0
 
     const drawn: { e: ShownEdge; kind: Kind; pts: number[]; sOn: boolean; tOn: boolean }[] = []
@@ -889,10 +903,14 @@ export class Renderer {
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
       // project's own tests, a runtime call the trace could have seen and no test made. A call from
       // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
+      // A type-only import is dotted, so it never reads as an unseen call (dashed).
       const dashed = e.typesOnly || (e.runtime && e.traceable && !e.seen)
       this.lines[this.lines.length - 1].dashed = dashed
-      if (dashed) strokes[kind][tier].push(...dashes(clipped))
-      else strokes[kind][tier].push(clipped)
+      const marks = e.typesOnly ? dashes(clipped, 2, 4) : dashed ? dashes(clipped) : [clipped]
+      strokes[kind][tier].push(...marks)
+      // In focus a line takes the colour of its direction; a call at runtime keeps its kind as a
+      // violet rim under that colour, so a selection never erases what kind of arrow it is.
+      if (hot && e.runtime) rims[tier].push(...marks)
       st.edges++
       const n = pts.length
       if (tOn) heads[kind][tier].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -914,6 +932,15 @@ export class Renderer {
       }
     }
 
+    // Rims first, under the focus's own strokes.
+    TIER_W.forEach((tw, tier) => {
+      const ps = rims[tier]
+      for (const p of ps) {
+        hg.moveTo(p[0], p[1])
+        for (let k = 2; k < p.length; k += 2) hg.lineTo(p[k], p[k + 1])
+      }
+      if (ps.length) hg.stroke({ width: tw + 0.5 + 4, color: RUNTIME, alpha: 0.95, join: 'round', cap: 'round' })
+    })
     // Busy screens get quieter lines; a selection pushes everything else into the background.
     // Many edges at rest fade to faint strokes (96 in a busy component); focus draws its own bright.
     // Hovering brightens the hovered card's own edges and leaves the rest as they were; only a

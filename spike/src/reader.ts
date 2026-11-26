@@ -45,7 +45,11 @@ export class Reader {
     close.onclick = () => this.close()
     this.backBtn.onclick = () => { this.close(); this.onBack() }
     this.copy.onclick = () => {
-      void navigator.clipboard?.writeText(`${this.path}:${this.line}`).then(() => { this.copy.textContent = 'Copied'; setTimeout(() => { this.copy.textContent = 'Copy path:line' }, 1200) }, () => {})
+      void navigator.clipboard?.writeText(`${this.path}:${this.line}`).then(() => {
+        this.copy.textContent = 'Copied'
+        this.copy.classList.add('copied')
+        setTimeout(() => { this.copy.textContent = 'Copy path:line'; this.copy.classList.remove('copied') }, 1200)
+      }, () => {})
     }
     actions.append(this.copy, close)
     const names = el('div', 'reader-names')
@@ -79,10 +83,10 @@ export class Reader {
   private lineAt() { return Math.max(1, Math.min(this.total, Math.floor((this.scroller.scrollTop + this.scroller.clientHeight / 3) / LINE_PX) + 1)) }
   private name(n: number) { this.line = n; this.at(`${this.path}:${n}`); this.onLine(n) }
   /**
-   * The file and line, isolated left to right: on a phone the row cuts the path from its start, so
-   * the file's own name and the line stay in view.
+   * The file and line, isolated and set left to right whatever script the path is in: on a phone
+   * the row cuts the path from its start, so the file's own name and the line stay in view.
    */
-  private at(s: string) { const b = document.createElement('bdi'); b.textContent = s; this.where.replaceChildren(b) }
+  private at(s: string) { const b = document.createElement('bdi'); b.dir = 'ltr'; b.textContent = s; this.where.replaceChildren(b) }
 
   /** Opens `path` (shown as `title`, inside `parent`) at `line`, or says why it cannot. */
   open(path: string, title: string, parent: string, line: number, src: Source | null, retry: () => void) {

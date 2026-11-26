@@ -104,7 +104,9 @@ function showIntro(tree: Tree, surface: Surface, feature: (name: string) => void
     chips.append(h, ...features.slice(0, 10).map(f => { const c = document.createElement('button'); c.textContent = f; c.onclick = () => feature(f); return c }))
     if (features.length > 10) chips.append(Object.assign(document.createElement('span'), { textContent: `${features.length - 10} more in Search` }))
   }
-  const ok = document.createElement('button')
+  // The same button across a redraw (the other view's model arriving adds its counts): a tap or a
+  // focus on Got it never lands on a button that was just replaced.
+  const ok = box.querySelector<HTMLButtonElement>(':scope > .ok') ?? document.createElement('button')
   ok.className = 'ok'
   ok.textContent = 'Got it'
   ok.onclick = () => { try { localStorage.setItem(INTRO_SEEN, '1') } catch { /* private mode */ } box.hidden = true }
@@ -247,7 +249,8 @@ async function main() {
         const kids = tree.children[i]
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
         for (const k of kids) { x0 = Math.min(x0, r[k * 4]); y0 = Math.min(y0, r[k * 4 + 1]); x1 = Math.max(x1, r[k * 4] + r[k * 4 + 2]); y1 = Math.max(y1, r[k * 4 + 1] + r[k * 4 + 3]) }
-        y0 = Math.min(y0, r[i * 4 + 1] + (y0 - r[i * 4 + 1]) * 0.5)
+        // From the container's own top: its whole header, title and kind, below the bar (half of it went under).
+        y0 = Math.min(y0, r[i * 4 + 1])
         const z = full, cw = x1 - x0, ch = y1 - y0, m = 12 / z
         const x = cw * z + 24 <= fw ? x0 + cw / 2 - ((l + rr) / 2 - W / 2) / z : x0 - m - (l - W / 2) / z
         const y = ch * z + 8 <= fh ? y0 + ch / 2 - ((tt + bb) / 2 - H / 2) / z : y0 - (tt + 4 - H / 2) / z
@@ -264,21 +267,27 @@ async function main() {
     }
     return best
   }
-  /** Where framing the whole map last put the camera: the reader is still at the whole map while the camera is there. */
-  let wholeAt: [number, number, number] | null = null
-  const atWhole = () => !!wholeAt && !cam.flying && renderer.selected <= 0 && Math.abs(cam.z / wholeAt[2] - 1) < 1e-3 && Math.hypot(cam.x - wholeAt[0], cam.y - wholeAt[1]) * cam.z < 1
+  /**
+   * The card the camera was last framed on and where that put it: while the camera is still there,
+   * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
+   */
+  let framedAt: { i: number; x: number; y: number; z: number } | null = null
+  const atFramed = () => !!framedAt && !cam.flying && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
+  const atWhole = () => atFramed() && framedAt!.i === 0 && renderer.selected <= 0
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
-    if (i === 0) { renderer.wholeZ = f.z; wholeAt = [f.x, f.y, f.z] }
+    if (i === 0) renderer.wholeZ = f.z
+    framedAt = { i, ...f }
     cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
   }
-  /** Frames the whole map at once, no flight: on load, and for a stage that changed under it. */
-  const setWhole = () => {
-    const f = frameFor(0)
+  /** Frames card i at once, no flight: on load, and for a stage that changed under it. */
+  const setFrame = (i: number) => {
+    const f = frameFor(i)
     cam.set(f.x, f.y, f.z)
-    renderer.wholeZ = f.z
-    wholeAt = [f.x, f.y, f.z]
+    if (i === 0) renderer.wholeZ = f.z
+    framedAt = { i, ...f }
   }
+  const setWhole = () => setFrame(0)
   const resize = () => {
     const was = atWhole()
     cam.resize(app.screen.width, app.screen.height)
@@ -338,7 +347,8 @@ async function main() {
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
   const measureHud = () => {
-    renderer.hud = ['stats', 'minimap', 'help', 'details', 'arrows'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
+    // Both legends: the arrows' at the foot, the lens's under the bar.
+    renderer.hud = ['stats', 'minimap', 'help', 'details', 'arrows', 'lens-legend'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
   cam.resize(app.screen.width, app.screen.height)
   setWhole()
@@ -351,8 +361,8 @@ async function main() {
     document.documentElement.style.setProperty('--bar', `${h}px`)
     setSafeTop(h)
     // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
-    // the whole map is framed again for it while you have not moved from it.
-    if (atWhole()) setWhole()
+    // what was framed (the whole map, or the card a link opened at) is framed again for it while you have not moved.
+    if (atFramed()) setFrame(framedAt!.i)
     reshape()
   }).observe($('top'))
 
@@ -833,12 +843,12 @@ async function main() {
       parts.push(item('a-types', 'type-only imports'))
       const b = document.createElement('button')
       b.textContent = showTypes ? 'Hide' : 'Show'
-      b.title = showTypes ? 'Hide type-only imports: compile-time coupling, not use' : 'Show type-only imports, dashed'
+      b.title = showTypes ? 'Hide type-only imports: compile-time coupling, not use' : 'Show type-only imports, dotted'
       b.setAttribute('aria-label', showTypes ? 'Hide type-only imports' : 'Show type-only imports')
       b.onclick = () => {
         showTypes = !showTypes
         try { localStorage.setItem(TYPES_KEY, showTypes ? '1' : '0') } catch { /* private mode */ }
-        void swapModel(raw, 0, showTypes ? 'Type-only imports shown, dashed' : 'Type-only imports hidden')
+        void swapModel(raw, 0, showTypes ? 'Type-only imports shown, dotted' : 'Type-only imports hidden')
       }
       parts.push(b)
     }
@@ -865,7 +875,7 @@ async function main() {
     // Selected first, so the frame leaves room for the panel it opens.
     if (target > 0) select(target)
     const framed = inside > 0 ? inside : target
-    if (framed > 0) { const f = frameFor(framed); cam.set(f.x, f.y, f.z) }
+    if (framed > 0) setFrame(framed)
     if (target > 0 && file && line) void openCode(target, line)
     places.update(controls.view())
     // Arrived from another view by a pick in the panel or search: focus is on what was picked.

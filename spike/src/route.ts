@@ -23,6 +23,8 @@ export interface Route {
 const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0]
 const BEND = 60
 const REUSE = 0.55
+/** Cost factor for a stretch another route uses that shares no end with this one: worth a detour. */
+const AVOID = 2
 
 const uniq = (v: number[]) => {
   const s = [...v].sort((a, b) => a - b)
@@ -86,7 +88,7 @@ export class ChannelGrid {
    * Cheapest path from any side of card `a` to a goal. `goal(node, dir)` returns the extra cost
    * to finish from a node reached moving in `dir`, or Infinity.
    */
-  private search(a: Rect, goal: (node: number, dir: number) => number, used?: Set<number>) {
+  private search(a: Rect, goal: (node: number, dir: number) => number, used?: Set<number>, avoid?: Set<number>) {
     const N = this.nx * this.ny
     const dist = new Float64Array(N * 4).fill(Infinity)
     const prev = new Int32Array(N * 4).fill(-1)
@@ -141,7 +143,9 @@ export class ChannelGrid {
         if (!(bits & (1 << d)) || d === ((dir + 2) & 3)) continue
         const n2 = (j + DY[d]) * this.nx + (i + DX[d])
         let len = Math.abs(this.xs[n2 % this.nx] - this.xs[i]) + Math.abs(this.ys[(n2 / this.nx) | 0] - this.ys[j])
-        if (used?.has(Math.min(node, n2) * 4 * N + Math.max(node, n2))) len *= REUSE
+        const seg = Math.min(node, n2) * 4 * N + Math.max(node, n2)
+        if (used?.has(seg)) len *= REUSE
+        else if (avoid?.has(seg)) len *= AVOID
         const c2 = c + len + (d === dir ? 0 : BEND)
         const s2 = n2 * 4 + d
         if (c2 < dist[s2]) { dist[s2] = c2; prev[s2] = st; start[s2] = start[st]; push(s2, c2) }
@@ -170,15 +174,19 @@ export class ChannelGrid {
     }
   }
 
-  /** Route between two cards of this grid. Pass one `used` set for all routes in a container. */
-  route(a: Rect, b: Rect, used?: Set<number>): Route | null {
+  /**
+   * Route between two cards of this grid. Pass one `used` set for all routes in a container, which
+   * they join as trunks; or, where routes should stay apart, the stretches of routes it shares an
+   * end with as `used` and the rest as `avoid`.
+   */
+  route(a: Rect, b: Rect, used?: Set<number>, avoid?: Set<number>): Route | null {
     const goals = new Map<number, Side>()
     for (let side = 0 as Side; side < 4; side = (side + 1) as Side) if (!(side === 0 && b.header)) goals.set(this.approach(b, side), side)
     const r = this.search(a, (node, dir) => {
       const side = goals.get(node)
       if (side == null) return Infinity
       return this.m + (dir === ((side + 2) & 3) ? 0 : BEND)
-    }, used)
+    }, used, avoid)
     if (!r) return null
     this.mark(r.nodes, used)
     const last = r.nodes[r.nodes.length - 1]
