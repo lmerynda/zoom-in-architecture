@@ -275,6 +275,8 @@ async function main() {
     }
     return best
   }
+  // A live update moving into place (swapModel, stepMorph): declared here, as a resize reads it.
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number] } | null = null
   /**
    * The card the camera was last framed on and where that put it: while the camera is still there,
    * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
@@ -307,6 +309,8 @@ async function main() {
     if (was) setWhole()
     // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
     else renderer.wholeZ = frameFor(0).z
+    // A resize is not the reader taking the camera from a live update's morph.
+    if (morph) morph.last = [cam.x, cam.y, cam.z]
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
@@ -972,7 +976,6 @@ async function main() {
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number] | null } | null = null
   let liveVersion = 0
   /** A live update arrived while the reader was at the whole map: frame it whole again after its morph. */
   let refitAfterMorph = false
@@ -1032,7 +1035,7 @@ async function main() {
     // At the whole map when it is installed (not when it was asked for: the reader may have moved
     // while it was laid out), a new version is framed whole again once it has moved into place.
     refitAfterMorph = atWhole()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: null }
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z] }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
@@ -1055,7 +1058,7 @@ async function main() {
     // flight): from then on the camera is theirs, and no refit follows.
     // A wheel or a flight leaves the camera unsettled; a drag moves it from where the morph put it.
     const l = morph.last
-    if (!cam.settled || (l && (cam.x !== l[0] || cam.y !== l[1] || cam.z !== l[2]))) morph.handsOff = true
+    if (!cam.settled || cam.x !== l[0] || cam.y !== l[1] || cam.z !== l[2]) morph.handsOff = true
     if (!morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
       const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
