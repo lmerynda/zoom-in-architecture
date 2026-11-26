@@ -76,8 +76,10 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
     const of = (n: number) => at.get(n) ?? at.set(n, new Set()).get(n)!
     const routes = [...job.edges].sort((a, b) => b.count - a.count).flatMap(e => {
       const mine = few ? new Set([...of(e.s), ...of(e.t)]) : used
-      const r = grid.route(rect(e.s), rect(e.t), mine, few ? used : undefined)
-      if (few) for (const k of mine) { of(e.s).add(k); of(e.t).add(k); used.add(k) }
+      // Only the stretches this route takes go to its ends' records, not all it was offered.
+      const took = new Set<number>()
+      const r = grid.route(rect(e.s), rect(e.t), mine, few ? used : undefined, took)
+      if (few) for (const k of took) { of(e.s).add(k); of(e.t).add(k); used.add(k) }
       return r ? [{ s: e.s, t: e.t, ...r }] : []
     })
     if (few) separate(routes)
@@ -89,14 +91,14 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
  * In a level of few arrows, arrows that run along the same gutter line (often the only way between
  * two columns) are drawn side by side, a lane apart, rather than on top of each other, so each can
  * be followed from end to end: Player's arrow to the client never reads as one to the server that
- * leaves the client along the same line. Each inner stretch moves over by a lane for every arrow
- * already on it; the stretches at either end stay on their ports.
+ * leaves the client along the same line. Each stretch moves over by a lane for every arrow already
+ * on it; a stretch at either end leaves its card square on, so its port moves along the card's side.
  */
 export function separate(routes: { s: number; t: number; pts: number[] }[]) {
   const placed: { v: boolean; at: number; a: number; b: number }[] = []
   for (const r of routes) {
     const p = r.pts, n = p.length / 2
-    for (let k = 1; k + 2 < n; k++) {
+    for (let k = 0; k + 1 < n; k++) {
       const x0 = p[k * 2], y0 = p[k * 2 + 1], x1 = p[k * 2 + 2], y1 = p[k * 2 + 3]
       const v = Math.abs(x0 - x1) < 0.5
       if (!v && Math.abs(y0 - y1) >= 0.5) continue

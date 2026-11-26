@@ -478,7 +478,7 @@ try {
   await landed()
   const lanes = await page.evaluate(() => {
     const L = window.__spike.world.local.get(0), segs = []
-    for (const r of L.routes) for (let k = 1; k + 2 < r.pts.length / 2; k++) {
+    for (const r of L.routes) for (let k = 0; k + 1 < r.pts.length / 2; k++) {
       const [x0, y0, x1, y1] = r.pts.slice(k * 2, k * 2 + 4), v = Math.abs(x0 - x1) < 0.5
       if (v || Math.abs(y0 - y1) < 0.5) segs.push({ r: r.s + '>' + r.t, v, at: v ? x0 : y0, a: Math.min(v ? y0 : x0, v ? y1 : x1), b: Math.max(v ? y0 : x0, v ? y1 : x1) })
     }

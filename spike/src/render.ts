@@ -515,11 +515,12 @@ export class Renderer {
     border.visible = true
     border.position.set(x, y)
     border.width = w; border.height = h
-    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.15)
-    // An external system is periphery: its outline is the quietest on the map until it is in play.
+    border.tint = sel ? 0xffffff : ends ? endColor : flashA > 0.05 ? fl!.color : hot ? 0xe2e8f0 : heat >= 0 ? heat : mix(color, 0xffffff, 0.35)
     // A card's edge reads at 3:1 against the container it sits in: closed parts inside an open one
     // are cards, not faint boxes. An external system stays the quietest, an outline over the map.
-    border.alpha = alpha * (sel || ends ? 1 : hot ? 0.95 : outside ? 0.45 : isContainer ? 0.85 : 0.7) * dim
+    // The edge comes in faster than the card it bounds as a level opens (it is what tells a card from
+    // the box it sits in), and is lightened enough to read at 3:1 against that box.
+    border.alpha = Math.min(1, alpha * 1.6) * (sel || ends ? 1 : hot ? 0.95 : outside ? 0.45 : isContainer ? 0.9 : 0.8) * dim
 
     // Only a live update glows, for a moment; selection and its ends are outlined (drawOutlines, borders).
     if (flashA > 0.02) {
@@ -926,11 +927,14 @@ export class Renderer {
       // A type-only import is dotted, so it never reads as an unseen call (dashed).
       const dashed = e.typesOnly || (e.runtime && e.traceable && !e.seen)
       this.lines[this.lines.length - 1].dashed = dashed
-      const marks = e.typesOnly ? dashes(clipped, 2, 4) : dashed ? dashes(clipped) : [clipped]
+      // Round caps grow with the stroke, so the gaps grow with it too: a heavy line keeps its pattern.
+      const cap = TIER_W[tier] + 1
+      const marks = e.typesOnly ? dashes(clipped, 0.5, cap + 4) : dashed ? dashes(clipped, 7, cap + 4) : [clipped]
       strokes[kind][tier].push(...marks)
       // In focus a line takes the colour of its direction; a call at runtime keeps its kind as a
       // violet rim under that colour, so a selection never erases what kind of arrow it is.
-      if (hot && e.runtime) rims[tier].push(...marks)
+      // Only what the highlighted arrow carries counts: the relations crossing the focus.
+      if (hot && e.focusRuntime) rims[tier].push(...marks)
       st.edges++
       const n = pts.length
       if (tOn) heads[kind][tier].push(pts[n - 4], pts[n - 3], pts[n - 2], pts[n - 1])
@@ -1124,7 +1128,9 @@ export class Renderer {
       y = Math.min(Math.max(y, SAFE.top), H - ch - SAFE.bottom)
       // Never on a card's text: slide along the screen edge to the nearest clear spot, or wait.
       // A lens value counts as text: an open container's value sits in its corner, on no card's text.
-      const onText = (cx: number, cy: number) => this.badges.some(([bx, by, bw, bh]) => cx < bx + bw && bx < cx + cw && cy < by + bh && by < cy + ch) || this.shown.some(n => {
+      // A panel over the map (a legend, the minimap) counts too: clamped back onto the screen, a chip may
+      // have landed under one; it slides on to a clear spot, or waits.
+      const onText = (cx: number, cy: number) => this.hud.some(([hx, hy, hw, hh]) => hw && cx < hx + hw && hx < cx + cw && cy < hy + hh && hy < cy + ch) || this.badges.some(([bx, by, bw, bh]) => cx < bx + bw && bx < cx + cw && cy < by + bh && by < cy + ch) || this.shown.some(n => {
         if (this.tree.children[n].length && this.open(n) > 0) return false
         const [nx, ny, nw, nh] = this.screenRect(n)
         return nw > 44 && cx < nx + nw && nx < cx + cw && cy < ny + nh && ny < cy + ch

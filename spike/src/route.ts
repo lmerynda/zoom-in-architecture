@@ -177,9 +177,9 @@ export class ChannelGrid {
   /**
    * Route between two cards of this grid. Pass one `used` set for all routes in a container, which
    * they join as trunks; or, where routes should stay apart, the stretches of routes it shares an
-   * end with as `used` and the rest as `avoid`.
+   * end with as `used` and the rest as `avoid`; `took` collects the stretches this route takes.
    */
-  route(a: Rect, b: Rect, used?: Set<number>, avoid?: Set<number>): Route | null {
+  route(a: Rect, b: Rect, used?: Set<number>, avoid?: Set<number>, took?: Set<number>): Route | null {
     const goals = new Map<number, Side>()
     for (let side = 0 as Side; side < 4; side = (side + 1) as Side) if (!(side === 0 && b.header)) goals.set(this.approach(b, side), side)
     const r = this.search(a, (node, dir) => {
@@ -189,6 +189,7 @@ export class ChannelGrid {
     }, used, avoid)
     if (!r) return null
     this.mark(r.nodes, used)
+    this.mark(r.nodes, took)
     const last = r.nodes[r.nodes.length - 1]
     const to = goals.get(last)!
     return { pts: this.polyline(r.nodes, this.port(a, r.from), [this.port(b, to)]), from: r.from, to }
