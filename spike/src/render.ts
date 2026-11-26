@@ -610,7 +610,8 @@ export class Renderer {
       // Its right end stays on the screen: a header wider than a phone keeps its kind in view, and
       // where the counts do not fit beside the title, the kind alone does.
       const metaRight = Math.min(x + w - pad, this.cam.w - SAFE.right)
-      const kindOnly = kindName(this.tree.els[i]).toUpperCase()
+      // The fallback keeps the rank, which is the first fact laid out by coupling.
+      const kindOnly = `${this.ranking ? `#${this.ranking.rank[i]} · ` : ''}${kindName(this.tree.els[i]).toUpperCase()}`
       // The full line's width measured once per text, so choosing never re-lays it out every frame.
       if (v.metaFull !== metaText) {
         meta.text = metaText; v.metaEm = em(meta); v.metaFull = metaText
@@ -677,7 +678,9 @@ export class Renderer {
       // Worked out again only when the room changes, not every frame.
       // Where the title is held (sticky, under the bar) decides how much room the preview leaves it.
       const held = (want: number) => Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - want * 6))
-      const key = `${Math.round(room)}|${Math.round(top * 4)}|${Math.round(px * 4)}|${Math.round(previewTop - held(top))}`
+      // Held under the bar the title moves against the code with every pixel of a pan: then the room
+      // is worked out again for each; at rest it is the same every frame.
+      const key = `${Math.round(room)}|${Math.round(top * 4)}|${Math.round(px * 4)}|${Math.round(previewTop - y)}|${Math.round(Math.min(0, y + pad * 0.8 - SAFE.top - 8))}`
       if (v.wrapKey !== key) {
         v.wrapKey = key
         v.wrap = null
@@ -709,6 +712,13 @@ export class Renderer {
     const shownTitle = fitText(full, v.titleEm, room - lead * tpx, tpx)
     if (!two && title.text !== shownTitle) title.text = shownTitle
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
+    // A title held under the bar that would now sit on the card's code scrolls away with the card's
+    // top instead, as it does once the code reaches the bar: the code is what is read there.
+    const codeAt = el.metadata?.path && w >= CODE_W && el.metadata.role !== 'type' ? box().y : Infinity
+    if (by + tpx * (two ? 2.55 : 1.3) > codeAt - 1) {
+      this.codeSlots.push({ i, ...box(), alpha: la })
+      return
+    }
     const shown = two ?? title
     shown.visible = true
     shown.scale.set(tpx / FONT_PX)
