@@ -18,7 +18,8 @@ export function placeUrl(search: string, w: PlaceWords): string {
   if (w.in && w.in !== w.at) q.set('in', w.in)
   if (w.at) q.set('at', w.at)
   if (w.file) q.set('file', w.file)
-  if (w.line && w.line > 1) q.set('line', String(w.line))
+  // Line 1 too: a file being read at its top is still being read.
+  if (w.line && w.line >= 1) q.set('line', String(w.line))
   if (w.lens && w.lens !== 'structure') q.set('lens', w.lens)
   if (w.req) q.set('req', w.req)
   return `?${q.toString().replace(/%2F/g, '/')}`

@@ -506,6 +506,17 @@ try {
   await page.click('.layout-current')
   const readingLink = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
   check('the By coupling link keeps the file being read and its line', /file=[^&]*MarketController\.java/.test(readingLink) && /line=\d+/.test(readingLink), readingLink)
+  // Its top too (line 1); and once the reader is closed, the link no longer reopens it.
+  await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=1')
+  await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
+  await page.click('.layout-current')
+  const topLink = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
+  await page.keyboard.press('Escape')
+  const stillOpen = await page.evaluate(() => !document.querySelector('.reader').hidden)
+  await page.evaluate(() => document.querySelector('.reader-close').click())
+  await page.click('.layout-current')
+  const closedLink = await page.evaluate(() => [...document.querySelectorAll('.layout-menu a')].find(a => a.textContent === 'By coupling').href)
+  check('Esc closes the Layout menu only; the link keeps a file read at its first line, and drops one just closed', stillOpen && /line=1(&|$)/.test(topLink) && !/file=/.test(closedLink), JSON.stringify({ stillOpen, topLink, closedLink }))
   const tabs = []
   for (const q of ['model=knights-of-darkness', 'model=knights-of-darkness&layout=coupling', 'model=knights-of-darkness&view=requests']) {
     await open(q)

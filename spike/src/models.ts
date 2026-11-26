@@ -87,7 +87,14 @@ function layoutMenu(arch: string, coupling: boolean): HTMLElement {
   }
   button.onclick = e => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) menu.querySelector<HTMLElement>('a.on')?.focus() }
   bar.addEventListener('focusout', e => { if (!bar.contains(e.relatedTarget as Node | null)) menu.hidden = true })
-  bar.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { menu.hidden = true; button.focus(); e.stopPropagation() } })
+  // Esc closes the open menu and nothing else (not the reader under it, not the selection): it is
+  // taken before the page's own Esc handlers, as the map menu's is.
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || menu.hidden || !bar.isConnected) return
+    menu.hidden = true
+    button.focus()
+    e.stopImmediatePropagation()
+  }, true)
   addEventListener('click', e => { if (!bar.contains(e.target as Node)) menu.hidden = true })
   bar.append(button, menu)
   return bar

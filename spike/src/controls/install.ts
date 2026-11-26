@@ -148,7 +148,7 @@ export function installControls(c: Ctx) {
    */
   let rankOf: { tree: Tree; rank: Int32Array; weight: Float64Array } | null = null
   const byImportance = (step: 1 | -1) => {
-    if (!c.coupling) return toast.show('. and , step through a level by rank where it is laid out by coupling (Architecture, Layout: By coupling)')
+    if (!c.coupling) return toast.show('. and , step through a level by rank where a map is laid out by coupling')
     if (rankOf?.tree !== tree) rankOf = { tree, weight: importance(tree), rank: ranks(tree, rankKey(tree)) }
     const { rank, weight } = rankOf
     const sel = renderer.selected

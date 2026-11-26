@@ -59,10 +59,11 @@ async function loadModel(): Promise<ModelJson> {
   const res = await fetch(`${import.meta.env.BASE_URL}models/${modelFile}.json`)
   // A dev server answers an unknown file with its page: no JSON is no map, as a 404 is.
   if (!res.ok || !res.headers.get('content-type')?.includes('json')) throw new Error(`model ${modelFile}: ${res.ok ? 404 : res.status}`)
-  return named(await res.json())
+  const json = await res.json()
+  return view === 'requests' ? named(json) : json
 }
 
-/** The map by its own name in every view: the Requests model's title says "· requests", the view says it already. */
+/** The Requests model by the map's own name: its title adds "· requests", which the view says already. */
 const named = (m: ModelJson): ModelJson => (m.title ? { ...m, title: m.title.replace(/ · requests$/, '') } : m)
 
 const ring = (n: number) => ({ a: new Float64Array(n), k: 0, full: false })
@@ -946,12 +947,13 @@ async function main() {
       return { at: null, file: file ?? ep?.handler?.path ?? null, req }
     }
     // Within this view (Architecture's other layout) the code being read comes along too.
-    const here = new URLSearchParams(location.search), reading = here.get('file')
+    // The reader as it is now, not the address, which a close a moment ago has not caught up with.
+    const reading = reader.reading
     for (const a of document.querySelectorAll<HTMLAnchorElement>('#views a, .layout-menu a')) {
       const base = (a.dataset.base ??= a.getAttribute('href') ?? '')
       const toRequests = new URLSearchParams(base).get('view') === 'requests'
       a.href = toRequests === (view === 'requests')
-        ? placeUrl(base, { at: v.selected, in: v.here, lens, req: view === 'requests' ? null : req, file: reading, line: Number(here.get('line')) || null })
+        ? placeUrl(base, { at: v.selected, in: v.here, lens, req: view === 'requests' ? null : req, file: reading?.path ?? null, line: reading?.line ?? null })
         : placeUrl(base, toRequests ? intoRequests() : fromRequests())
     }
   }
@@ -1055,7 +1057,7 @@ async function main() {
     // One swap at a time, in order.
     pending = pending.then(async () => {
       const res = await fetch(`${import.meta.env.BASE_URL}models/${name}.json?v=${Date.now()}`)
-      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(named(json), json.buildMs ?? 0) }
+      if (res.ok) { const json = await res.json(); published = json.published; lastCrumb = null; await swapModel(view === 'requests' ? named(json) : json, json.buildMs ?? 0) }
     }).catch(e => console.error(e))
   })
   // A newly published map gets its tab without a reload.

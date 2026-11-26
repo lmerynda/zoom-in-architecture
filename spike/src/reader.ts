@@ -81,12 +81,14 @@ export class Reader {
   private expect = 0
   private line = 1
   private lineAt() { return Math.max(1, Math.min(this.total, Math.floor((this.scroller.scrollTop + this.scroller.clientHeight / 3) / LINE_PX) + 1)) }
-  private name(n: number) { this.line = n; this.at(this.path, n); this.onLine(n) }
+  private name(n: number) { this.line = n; this.setWhere(this.path, n); this.onLine(n) }
+  /** The file and line open now, or null when the reader is closed. */
+  get reading(): { path: string; line: number } | null { return this.isOpen ? { path: this.path, line: this.line } : null }
   /**
    * The file and line: the path isolated and set left to right whatever script it is in, cut from
    * its start on a phone so the file's own name stays in view, and the line beside it, never cut.
    */
-  private at(path: string, line?: number) {
+  private setWhere(path: string, line?: number) {
     const p = el('span', 'rw-path'), b = document.createElement('bdi')
     b.dir = 'ltr'
     b.textContent = path
@@ -104,7 +106,7 @@ export class Reader {
     this.rail.replaceChildren()
     if (!src) {
       this.total = 0
-      this.at(path)
+      this.setWhere(path)
       const again = el('button', '', 'Try again')
       again.onclick = retry
       const box = el('div', 'reader-none')
