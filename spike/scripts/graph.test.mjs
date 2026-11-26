@@ -97,11 +97,10 @@ describe('buildGraph', () => {
   })
 
   it('marks no line where a pattern only names a call (a scanner’s own rules)', () => {
-    expect(hintsOf(String.raw`  ['schedule', /@Scheduled.*|setIntervals*(.*/],`)).toEqual([])
-    expect(hintsOf(String.raw`const re = /fetchs*(.*/`)).toEqual([])
+    expect(hintsOf(String.raw`  ['schedule', /@Scheduled\b.*|\bsetInterval\s*\(.*/],`)).toEqual([])
+    expect(hintsOf(String.raw`const re = /\bfetch\s*\(.*/`)).toEqual([])
     // The calls themselves still are.
-    expect(hintsOf("@Scheduled(fixedRate = 5000)
-fetch('/api/orders')").map(h => h.kind)).toEqual(['schedule', 'call'])
+    expect(hintsOf(['@Scheduled(fixedRate = 5000)', "fetch('/api/orders')"].join('\n')).map(h => h.kind)).toEqual(['schedule', 'call'])
   })
 
   it('marks the lines where one process talks to another', () => {
