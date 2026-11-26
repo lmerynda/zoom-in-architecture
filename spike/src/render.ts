@@ -659,10 +659,13 @@ export class Renderer {
     // against its height, both scaling with the zoom), so the code never jumps as the card grows.
     const lower = el.metadata?.path && el.metadata.role === 'step' && (v.titleEm + lead) * 0.15 * h * TITLE_SHRINK > inner ? LONG_TITLE : 0
     const box = () => codeBox(x, y, w, h, lower)
+    // Whether the card shows its code at all (a lens, or a type on a small card, shows none): the one
+    // rule for the preview, the title's room above it, and giving the title way to it.
+    const shows = !!el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) && !(el.metadata?.role === 'type' && w < this.cam.w * 0.5)
     // Reading a file: it fills the screen and its top has scrolled under the top bar, and the
     // breadcrumb names it. A title held on screen there would sit on the code, so the card's text
     // scrolls away with its top.
-    if (el.metadata?.path && w >= CODE_W && (box().y < SAFE.top || (y < SAFE.top && w > this.cam.w * 0.6))) {
+    if (shows && (box().y < SAFE.top || (y < SAFE.top && w > this.cam.w * 0.6))) {
       this.codeSlots.push({ i, ...box(), alpha: la })
       return
     }
@@ -674,7 +677,7 @@ export class Renderer {
     const bx = Math.max(x + pad, Math.min(SAFE.left + 8, x + w - pad - inner * 0.5))
     const room = Math.min(tInner, x + w - pad - rankRoom - bx)
     if ((v.titleEm + lead) * px > room + 1 && h > level * 5) {
-      const previewTop = el.metadata?.path && w >= CODE_W && el.metadata?.role !== 'type' ? box().y : Infinity
+      const previewTop = shows ? box().y : Infinity
       const top = Math.min(level, (1.8 * (room - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55)
       // Worked out again only when the room changes, not every frame.
       // Where the title is held (sticky, under the bar) decides how much room the preview leaves it.
@@ -715,8 +718,6 @@ export class Renderer {
     const by = Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - tpx * 6))
     // A title held under the bar that would now sit on the card's code scrolls away with the card's
     // top instead, as it does once the code reaches the bar: the code is what is read there.
-    // Only where the card does show its code (a lens, or a type on a small card, shows none).
-    const shows = !!el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) && !(el.metadata?.role === 'type' && w < this.cam.w * 0.5)
     const codeAt = shows ? box().y : Infinity
     if (by + tpx * (two ? 2.55 : 1.3) > codeAt - 1) {
       this.codeSlots.push({ i, ...box(), alpha: la })
@@ -752,7 +753,7 @@ export class Renderer {
     const subText = [place, kind, this.surface?.(i) ?? '', seenText(el, !!this.tree.traced), el.technology, ...el.tags.map(t => '#' + t)].filter(Boolean).join(' · ')
     const spx = Math.min(tpx * 0.62, 14)
     // On a small file card the size line would meet the code preview's top: the preview says it.
-    const codeTop = el.metadata?.path && w >= CODE_W ? box().y : Infinity
+    const codeTop = shows ? box().y : Infinity
     if (spx >= MIN_TEXT && subText && cy + spx * 1.3 <= codeTop) {
       const sub = (v.sub ??= this.text(subText, texts))
       if (v.subFull !== subText || v.subEm == null) { sub.text = subText; v.subEm = em(sub); v.subFull = subText }
