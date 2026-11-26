@@ -103,11 +103,16 @@ export class Reader {
    * its start on a phone so the file's own name stays in view, and the line beside it, never cut.
    */
   private setWhere(path: string, line?: number) {
-    const p = el('span', 'rw-path'), b = document.createElement('bdi')
+    // The folders, cut from their start on a phone; the file's own name and the line beside them, whole.
+    const cut = path.lastIndexOf('/') + 1
+    const dir = el('span', 'rw-path'), b = document.createElement('bdi'), file = document.createElement('bdi')
     b.dir = 'ltr'
-    b.textContent = path
-    p.append(b)
-    this.where.replaceChildren(p, ...(line ? [el('span', 'rw-line', `:${line}`)] : []))
+    b.textContent = path.slice(0, cut)
+    dir.append(b)
+    file.dir = 'ltr'
+    file.className = 'rw-file'
+    file.textContent = path.slice(cut)
+    this.where.replaceChildren(dir, file, ...(line ? [el('span', 'rw-line', `:${line}`)] : []))
   }
 
   /** Opens `path` (shown as `title`, inside `parent`) at `line`, or says why it cannot. */

@@ -460,6 +460,13 @@ try {
     if (width === 320) check('at 320 px the reader\'s head is one row of 44 px controls, its line number in view', head.h <= 56 && head.back >= 44 && head.copy >= 44 && head.close >= 44 && /MarketController\.java:\d+$/.test(head.where) && head.lineShown, JSON.stringify(head))
   }
 
+  // A one-word crumb is a finger wide too (Excalidraw's "AI").
+  await page.setViewport({ width: 320, height: 568, isMobile: true, hasTouch: true })
+  await open('model=excalidraw&in=app.ai')
+  await landed()
+  const shortCrumb = await page.evaluate(() => [...document.querySelectorAll('#crumbs > button')].map(b => ({ t: b.textContent, w: Math.round(b.getBoundingClientRect().width) })))
+  check('at 320 px a one-word crumb is 44 px wide', shortCrumb.length > 1 && shortCrumb.every(c => c.w >= 44 || !c.w), JSON.stringify(shortCrumb))
+
   // Under a lens, an edge chip keeps off a container's value as it does off a card's text.
   await page.setViewport({ width: 1600, height: 1000 })
   await open('model=knights-of-darkness&in=backend')
