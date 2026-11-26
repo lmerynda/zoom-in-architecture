@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { searchMap } from './controls/logic'
-import { buildApi, clientParts, endpointOf, featureFacts, filterApi, groupApi, handlerParams, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
+import { buildApi, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
 import type { ElementJson, ModelJson } from './model'
 import { placeUrl } from './places'
 
@@ -69,6 +69,26 @@ describe('handlerParams and takenTypes', () => {
     expect([...takenTypes(params, ['AuthRequestDto', 'AuthResponseDto'])]).toEqual([['AuthRequestDto', 'the request body']])
     expect([...takenTypes('@PathVariable UUID id, UserData user, @RequestParam Página p', ['UserData', 'Página', 'UUID'])]).toEqual([['UserData', 'a parameter of the handler'], ['Página', 'a query parameter'], ['UUID', 'in the path']])
     expect(takenTypes('', ['X']).size).toBe(0)
+  })
+})
+
+describe('isPage and declLine', () => {
+  it('calls a page what is in a pages folder or a template, not a piece of one', () => {
+    expect(isPage('browser/src/pages/Market.tsx')).toBe(true)
+    expect(isPage('browser/src/pages/MonumentPanel.tsx')).toBe(false)
+    expect(isPage('browser/src/game/plans.ts')).toBe(false)
+    expect(isPage('src/main/resources/templates/owners/createOrUpdateOwnerForm.html')).toBe(true)
+    expect(isPage('')).toBe(false)
+  })
+  it('finds where a method is declared, not where it is called', () => {
+    const src = ['class C {', '  void a() { this.initFindForm(); }', '  @GetMapping("/owners/find")', '  public String initFindForm(Model m) {', '  }'].join('\n')
+    expect(declLine(src, 'initFindForm')).toBe(4)
+    expect(declLine(src, 'nope')).toBe(0)
+    expect(declLine('', 'x')).toBe(0)
+  })
+  it('takes a caller from another part in an older map, whose links carry no kind', () => {
+    const api = buildApi({ name: 'o', elements: [el('web', null), el('api', null), el('api.e', 'api', { title: 'GET /users' }), el('api.e.s1', 'api.e', { title: '1 · list()', metadata: { path: 'u.py' } }), el('api.x', 'api')], relations: [{ source: 'web', target: 'api.e.s1', title: 'users' }, { source: 'api.x', target: 'api.e.s1', title: 'same part' }] })
+    expect(api.callers.get('api.e')?.map(c => c.from)).toEqual(['web'])
   })
 })
 
@@ -144,7 +164,7 @@ describe('markedEntries', () => {
 
 describe('featureFacts', () => {
   const arch = [
-    el('client', null, { kind: 'webapp' }), el('client.market', 'client', { title: 'Market', features: ['Market'], metadata: { path: 'web/Market.tsx' } }),
+    el('client', null, { kind: 'webapp' }), el('client.market', 'client', { title: 'Market', features: ['Market'], metadata: { path: 'web/pages/Market.tsx' } }),
     el('server', null, { kind: 'app' }), el('server.offers', 'server', { title: 'Market', features: ['Market'] }),
     el('server.offers.c', 'server.offers', { title: 'MarketController', metadata: { path: ctrl } }),
     el('db', null, { kind: 'database', features: ['Market'] }),
@@ -169,10 +189,14 @@ describe('featureFacts', () => {
     expect(f.endpoints.map(e => e.title)).toEqual(['GET /owners', 'GET /owners/find'])
     expect(f.pages).toEqual(['app.owner.t'])
     expect(f.parts).toEqual(['app.owner', 'app.owner.h'])
-    expect(featureFacts(shared, api, 'Add owner').endpoints.map(e => e.title)).toEqual(['GET /owners', 'GET /owners/find', 'POST /owners/new'])
+    expect(f.shared.map(e => e.title)).toEqual(['POST /owners/new'])
+    // Words that name none of them: none is claimed, all are said as shared.
+    const add = featureFacts(shared, api, 'Add owner')
+    expect(add.endpoints).toEqual([])
+    expect(add.shared.length).toBe(3)
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
-    expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], tables: '' })
+    expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], shared: [], tables: '' })
     expect(featureFacts(arch, null, 'Market').endpoints).toEqual([])
   })
 })

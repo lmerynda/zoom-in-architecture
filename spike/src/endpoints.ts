@@ -112,7 +112,9 @@ export function buildApi(model: ModelJson): Api {
   const callers = new Map<string, { from: string; top: string; title: string }[]>()
   for (const r of model.relations) {
     const ep = owner.get(r.target), src = byId.get(r.source)
-    if (!ep || !src || within(r.source, ep) || (r.kind ?? (r.evidence ? 'runtime' : 'code')) !== 'runtime') continue
+    // A call at runtime; or, in maps built before callers carried a kind, any link from another part.
+    const runtime = (r.kind ?? (r.evidence ? 'runtime' : 'code')) === 'runtime'
+    if (!ep || !src || within(r.source, ep) || !(runtime || (!r.kind && top(src).id !== top(byId.get(ep)!).id))) continue
     const list = callers.get(ep) ?? []
     if (!list.some(c => c.from === r.source)) list.push({ from: r.source, top: top(src).id, title: r.title })
     callers.set(ep, list)
@@ -243,9 +245,17 @@ export function mergeTables(texts: string[]): string {
 export const wordRe = (name: string, after = '') => new RegExp(`(?<![\\p{L}\\p{N}_$])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_$])${after}`, 'u')
 
 /** A file in a folder of pages: what a person looks at, by the project's own split. */
-export const PAGE_DIR = /(^|\/)(pages|screens|views|templates)\//i
-/** A file a person looks at: in a folder of pages, or a server-side template. (A component file alone is not a page.) */
-export const PAGE_FILE = new RegExp(`${PAGE_DIR.source}|\\.(html?|cshtml|razor|erb|jinja2?|hbs)$`, 'i')
+const PAGE_DIR = /(^|\/)(pages|screens|views|templates)\//i
+/** A server-side template: a page as the server renders it. */
+const TEMPLATE = /\.(html?|cshtml|razor|erb|jinja2?|hbs)$/i
+/** A piece of a page by its name (MonumentPanel, OfferCard), though it sits in the pages folder. */
+const PIECE = /(Panel|Modal|Dialog|Card|Button|Item|Row|Widget|Section|Tab|Header|Footer|Layout|Hook|Utils?|Helpers?)\.\w+$/
+
+/**
+ * A file a person looks at: a server-side template, or a file in a folder of pages whose name is not
+ * a piece of one. (A component elsewhere is not a page.)
+ */
+export const isPage = (path: string) => TEMPLATE.test(path) || (PAGE_DIR.test(path) && !PIECE.test(path))
 
 /** Words of a name, lower case, plurals folded, small words dropped: "Find owners" → find, owner. */
 const nameWords = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/)
@@ -253,29 +263,24 @@ const nameWords = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowe
 
 /**
  * A feature where the product's parts meet its surface: the cards that carry it, the pages among
- * them (page files, and the cards of a client: a part that calls endpoints and serves none), the
- * endpoints whose handler is in a card that carries it, and the tables those endpoints touched in
- * tests. A handler that carries several features (one controller for finding and adding owners)
- * gives the feature only the endpoints its words name, when some do.
+ * them (see isPage), the endpoints whose handler is in a card that carries it, and the tables those
+ * endpoints touched in tests. A handler that carries several features (one controller for finding,
+ * adding and showing owners) gives the feature the endpoints whose route and handler name every
+ * word of it; the ones its words cannot tell apart are `shared`, said as such, not claimed.
  */
 export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string) {
   const byId = new Map(els.map(e => [e.id, e]))
-  const top = (id: string) => { let a = byId.get(id); while (a?.parent && byId.has(a.parent)) a = byId.get(a.parent); return a?.id ?? id }
   const carriers = els.filter(e => e.features?.includes(name))
   const featuresOf = (id: string) => { const out = new Set<string>(); for (let a = byId.get(id); a; a = a.parent ? byId.get(a.parent) : undefined) for (const f of a.features ?? []) out.add(f); return out }
-  const clients = api ? clientParts(api) : new Set<string>()
-  const pages = carriers.filter(e => PAGE_FILE.test(e.metadata?.path ?? '') || clients.has(top(e.id))).map(e => e.id)
+  const pages = carriers.filter(e => isPage(e.metadata?.path ?? '')).map(e => e.id)
   const files = new Map(els.filter(e => e.metadata?.path).map(e => [e.metadata!.path, e.id]))
   const carried = (api?.endpoints ?? []).filter(ep => { const f = ep.handler && files.get(ep.handler.path); return !!f && featuresOf(f).has(name) })
   const words = nameWords(name)
-  const named = (ep: Endpoint, all: boolean) => { const have = new Set(nameWords(`${ep.route} ${ep.handler?.name ?? ''}`)); return all ? words.every(w => have.has(w)) : words.some(w => have.has(w)) }
-  const endpoints = carried.filter(ep => {
-    if (featuresOf(files.get(ep.handler!.path)!).size < 2) return true
-    // Shared with other features: the endpoints that name every word of it, else any; else all of them.
-    const peers = carried.filter(x => x.handler!.path === ep.handler!.path)
-    return peers.some(x => named(x, true)) ? named(ep, true) : peers.some(x => named(x, false)) ? named(ep, false) : true
-  })
-  return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, tables: mergeTables(endpoints.map(ep => ep.tables)) }
+  const named = (ep: Endpoint) => { const have = new Set(nameWords(`${ep.route} ${ep.handler?.name ?? ''}`)); return words.every(w => have.has(w)) }
+  const alone = (ep: Endpoint) => featuresOf(files.get(ep.handler!.path)!).size < 2
+  const endpoints = carried.filter(ep => alone(ep) || named(ep))
+  const shared = carried.filter(ep => !endpoints.includes(ep))
+  return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, shared, tables: mergeTables(endpoints.map(ep => ep.tables)) }
 }
 
 /**
@@ -295,6 +300,14 @@ export function handlerParams(src: string, line: number, method: string): string
     else if (text[k] === ')' && --depth === 0) return text.slice(open + 1, k)
   }
   return null
+}
+
+/** The line (1-based) a method of that name is first declared on, called with a parameter list; 0 when none is. */
+export function declLine(src: string, method: string): number {
+  if (!method) return 0
+  const lines = src.split('\n'), re = wordRe(method, '\\s*\\(')
+  const k = lines.findIndex(l => re.test(l) && !/^\s*(return|await|\.|\/\/|\*)|[=.]\s*$/.test(l) && !new RegExp(`[.=]\\s*${method}\\s*\\(`).test(l))
+  return k + 1
 }
 
 /**

@@ -60,5 +60,9 @@ div.d-rel { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap:
 .d-impl .d-more::after { content: ' ▸'; color: var(--dim); }
 .d-impl .d-more[aria-expanded="true"]::after { content: ' ▾'; }
 
+/* On a phone the list needs more of the screen than a card's panel: the sheet rises while it holds the list. */
+@media (max-width: 1099px) { #details:has(.d-api):not(.collapsed) { max-height: 80vh; } }
+.d-shared .d-ep b { font-weight: 500; }
+
 /* The welcome's way to the API. */
 #welcome .chips button.api { background: #fbbf24; border-color: #fbbf24; color: #0b0f17; font-weight: 600; }

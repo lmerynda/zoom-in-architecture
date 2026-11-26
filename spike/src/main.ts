@@ -2,7 +2,7 @@ import { Application } from 'pixi.js'
 import { Camera } from './camera'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
-import { endpointsUnder, relationsAcross, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
+import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
 import { buildApi, clientParts, endpointOf, featureFacts, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, type World } from './layout'
@@ -415,7 +415,8 @@ async function main() {
     // A file this view does not show (a scheduled job, from Requests) opens in Architecture.
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line); else if (view === 'requests') cross(null, { at: null, file: path, line }) },
     source: path => {
-      if (!sources.has(path)) sources.set(path, fetch(`${import.meta.env.BASE_URL}source/${encodeURIComponent(modelName)}?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.text() : null), () => null))
+      if (!sources.has(path)) sources.set(path, fetch(`${import.meta.env.BASE_URL}source/${encodeURIComponent(modelName)}?path=${encodeURIComponent(path)}`).then(r => (r.ok ? r.text() : null), () => null).then(t => { if (t == null) sources.delete(path); return t }))
+      // A failed read is not kept: the next selection asks again.
       return sources.get(path)!
     },
     read: j => void openCode(j, startOf(j)),
@@ -598,6 +599,8 @@ async function main() {
     const chip = inPanel && active!.closest('.d-filters') ? active!.textContent?.split(' · ')[0] : null
     hold({ kind: 'api', filter: f })
     renderApi(details, surface, f, { endpoint: id => openEndpoint(id, f), list: showApi, filter: showApi, close: () => { pickEdge(null); focusHeading() } })
+    // On a phone the sheet opens now, not after this task, so focus can land in it.
+    addGrip()
     if (edgeReturn.selected > 0) { const back = edgeReturn.selected; backButton(tree.els[back].title, () => pickEdge(null)) }
     $('announce').textContent = details.querySelector('h2')?.textContent ?? ''
     const again = chip && [...details.querySelectorAll<HTMLElement>('.d-filters button')].find(b => b.textContent?.split(' · ')[0] === chip)
@@ -761,6 +764,8 @@ async function main() {
   }
   arrowLegend()
 
+  /** In the Requests view, the endpoint card i is or is in; -1 outside any. */
+  const requestOf = (i: number) => { for (let a = i; a > 0; a = tree.parent[a]) if (endpointOf(tree.els[a])) return a; return -1 }
   // A link names a place: open there. The place (`in`) fills the view and the selection (`at`) is
   // selected in it; with only a selection, it is framed among its neighbours. `file` finds a file's
   // card (the Requests view has its own ids), and `line` opens it there.
@@ -770,7 +775,10 @@ async function main() {
     if (lens && lenses.some(l => l.name === lens)) setLens(lens as LensName)
     const at = tree.byId.get(q.get('at') ?? '') ?? -1, inside = tree.byId.get(q.get('in') ?? '') ?? -1
     const file = q.get('file'), line = Number(q.get('line')) || 0
-    const target = at > 0 ? at : file ? cardOf(file, inside) : -1
+    // Back from another view with the Requests card left (`req`): that card, when it shows the file or stands for it (an endpoint, its response).
+    const left = view === 'requests' ? tree.byId.get(q.get('req') ?? '') ?? -1 : -1
+    const leftOk = left > 0 && !!file && (tree.els[left].metadata?.path === file || (!tree.els[left].metadata?.path && requestOf(left) > 0 && tree.children[requestOf(left)].some(k => stepRole(tree.els[k]) === 'step' && tree.els[k].metadata?.path === file)))
+    const target = at > 0 ? at : leftOk ? left : file ? cardOf(file, left > 0 ? left : inside) : -1
     // Selected first, so the frame leaves room for the panel it opens.
     if (target > 0) select(target)
     const framed = inside > 0 ? inside : target
@@ -782,8 +790,6 @@ async function main() {
     try { crossed = sessionStorage.getItem(CROSSED) === '1'; sessionStorage.removeItem(CROSSED) } catch { /* storage blocked */ }
     if (crossed && target > 0 && !(file && line)) focusHeading()
   }
-  /** In the Requests view, the endpoint card i is or is in; -1 outside any. */
-  const requestOf = (i: number) => { for (let a = i; a > 0; a = tree.parent[a]) if (endpointOf(tree.els[a])) return a; return -1 }
   /**
    * The view switch keeps your subject: Architecture and Connections share ids. The Requests view
    * has its own, so the subject crosses by its file, and the Requests card you were on rides along
@@ -801,7 +807,9 @@ async function main() {
     // Into Requests, from a part or file of this view.
     const intoRequests = (): PlaceWords => {
       const api = surface.api
-      if (!api || subject <= 0) return { at: null, file }
+      // Before the Requests model is here, the card left rides along unread, for Requests to resolve.
+      if (!api) return { at: null, file, req }
+      if (subject <= 0) return { at: null, file }
       // The endpoint the carried card is in.
       let ep = null as (typeof api.endpoints)[number] | null
       for (let a: string | null | undefined = req; a && !ep; a = api.parent.get(a)) ep = api.endpoints.find(x => x.id === a) ?? null

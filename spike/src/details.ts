@@ -1,4 +1,4 @@
-import { clientParts, endpointOf, featureFacts, filterApi, groupApi, handlerParams, PAGE_DIR, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
+import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
 import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
 
@@ -825,7 +825,7 @@ export function surfaceLead(tree: Tree, i: number, surface: Surface, act: PanelA
   // A client's pages: its files in a pages (screens, views, templates) folder.
   const pages: { i: number; title: string }[] = []
   if (top && surface.api && clientParts(surface.api).has(e.id)) {
-    const walk = (n: number) => { const p = tree.els[n].metadata?.path; if (p && PAGE_DIR.test(p)) pages.push({ i: n, title: tree.els[n].title }); for (const k of tree.children[n]) walk(k) }
+    const walk = (n: number) => { const p = tree.els[n].metadata?.path; if (p && isPage(p)) pages.push({ i: n, title: tree.els[n].title }); for (const k of tree.children[n]) walk(k) }
     walk(i)
   }
   return top || ids?.length ? surfaceBox(surface, act, { app: top ? e.id : undefined, ids, label: e.title, calls: top ? [e.id] : undefined, pages }) : []
@@ -875,29 +875,35 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
     return li
   }
 
-  // Who handles it.
+  // Who handles it: opened where the handler is declared (found in its source when the map does not say).
   const first = kids.find(k => role(k) === 'step' && stepNumber(tree.els[k]) === 1) ?? kids.find(k => tree.els[k].metadata?.path)
-  if (ep?.handler && first != null) {
+  const handler = ep?.handler
+  if (handler && first != null) {
     const p = el('p', 'd-handler')
-    const b = el('button', 'cite', ep.handler.name)
-    b.title = `${ep.handler.path}:${ep.handler.line}: read the handler`
-    b.onclick = () => act.read(first)
+    const b = el('button', 'cite', handler.name)
+    b.title = `${handler.path}${handler.line ? `:${handler.line}` : ''}: read the handler`
+    b.onclick = () => {
+      if (handler.line) return act.read(first)
+      void act.source(handler.path).then(src => act.openPath(handler.path, (src && declLine(src, handler.name.split('.').pop()!)) || 1, first))
+    }
     p.append('Handled by ', b)
     out.push(p)
   }
 
   // What it takes: the path's parameters, and the types in the handler's parameter list, read from
-  // its source; the other types it names (built for the reply, say) are listed apart, not as taken.
+  // its source (a type it returns can be taken too: an offer sent and sent back); the other types
+  // it names are listed apart, not as taken.
   const returns = ep?.returns ?? ''
-  const named = kids.filter(k => role(k) === 'type' && !wordRe(tree.els[k].title).test(returns))
+  const types = kids.filter(k => role(k) === 'type')
   const params = routeParams(ep?.route ?? mr.route)
   {
     const s = section('takes', 'Takes')
     const fill = (taken: Map<string, string> | null, failed = false) => {
       const ul = el('ul')
       for (const p of params) ul.append(rowBtn(p, 'in the path', null))
-      const rest = named.filter(k => !taken?.has(tree.els[k].title))
-      for (const k of named) if (taken?.has(tree.els[k].title)) ul.append(rowBtn(tree.els[k].title, taken.get(tree.els[k].title)!, () => act.go(k)))
+      for (const k of types) if (taken?.has(tree.els[k].title)) ul.append(rowBtn(tree.els[k].title, taken.get(tree.els[k].title)!, () => act.go(k)))
+      // Not taken: what it names besides; before its parameters are read, the types it does not return.
+      const rest = types.filter(k => (taken ? !taken.has(tree.els[k].title) : true) && !wordRe(tree.els[k].title).test(returns))
       s.querySelector('h3')!.textContent = taken ? `Takes · ${ul.childElementCount}` : 'Takes'
       const parts: HTMLElement[] = [ul.childElementCount ? ul : el('div', 'd-none', taken ? 'nothing: no path parameters, and no type of the map in its parameters' : 'no path parameters')]
       if (rest.length) {
@@ -908,10 +914,9 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
       s.replaceChildren(s.querySelector('h3')!, ...parts)
     }
     fill(null)
-    const first = ep?.handler
-    if (first && named.length) void act.source(first.path).then(src => {
-      const list = src ? handlerParams(src, first.line, first.name.split('.').pop()!) : null
-      if (s.isConnected) fill(list == null ? null : takenTypes(list, named.map(k => tree.els[k].title)), list == null)
+    if (handler && types.length) void act.source(handler.path).then(src => {
+      const list = src ? handlerParams(src, handler.line, handler.name.split('.').pop()!) : null
+      if (s.isConnected) fill(list == null ? null : takenTypes(list, types.map(k => tree.els[k].title)), list == null)
     })
   }
 
@@ -1031,15 +1036,19 @@ export function renderFeature(panel: HTMLElement, name: string, facts: ReturnTyp
     parts.push(s)
   }
   list('d-pages', 'Pages', facts.pages)
-  if (facts.endpoints.length) {
-    const s = el('section', 'd-rels d-serves')
-    s.append(el('h3', '', `Endpoints · ${facts.endpoints.length}`))
+  const endpoints = (cls: string, title: string, eps: Endpoint[], note = '') => {
+    if (!eps.length) return
+    const s = el('section', `d-rels d-serves ${cls}`)
+    s.append(el('h3', '', `${title} · ${eps.length}`), ...(note ? [el('p', 'd-note', note)] : []))
     const ul = el('ul')
-    for (const ep of facts.endpoints) ul.append(endpointRow(ep, () => act.endpoint(ep.id)))
+    for (const ep of eps) ul.append(endpointRow(ep, () => act.endpoint(ep.id)))
     arrowKeys(ul)
     s.append(ul)
     parts.push(s)
   }
+  endpoints('', 'Endpoints', facts.endpoints)
+  // A handler shared with other features: its endpoints are said apart, not claimed for this one.
+  endpoints('d-shared', 'Its handlers also serve', facts.shared, 'These handlers carry other features too, and these routes do not name this one: which of them belong to it the map does not say.')
   if (facts.tables) {
     const rows = tableRows(facts.tables)
     const s = el('section', 'd-tables')

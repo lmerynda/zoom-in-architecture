@@ -258,6 +258,12 @@ try {
   await page.waitForFunction(() => /Also names/.test(document.querySelector('#details .d-effect.takes')?.textContent ?? ''), { timeout: 10000 }).catch(() => {})
   const auth = await page.evaluate(() => { const s = document.querySelector('#details .d-effect.takes'); return { taken: [...s.querySelectorAll('ul')[0].querySelectorAll('.d-rel')].map(b => b.innerText.replace(/\s+/g, ' ')), also: s.querySelectorAll('ul')[1]?.innerText ?? '' } })
   check('authenticate takes AuthRequestDto as its body and only names AuthResponseDto', auth.taken.some(t => t.startsWith('AuthRequestDto the request body')) && !auth.taken.some(t => t.startsWith('AuthResponseDto')) && auth.also.includes('AuthResponseDto'), JSON.stringify(auth))
+  // A type it returns can be what it is sent too: create takes the offer it answers with.
+  const createId = await page.evaluate(() => window.__spike.tree.els.find(e => e.title === 'POST /market/create').id)
+  await open(`${map}&view=requests&at=${createId}`)
+  await page.waitForFunction(() => /^Takes · /.test(document.querySelector('#details .d-effect.takes h3')?.textContent ?? ''), { timeout: 10000 }).catch(() => {})
+  const create = await page.evaluate(() => [...document.querySelector('#details .d-effect.takes ul').querySelectorAll('.d-rel')].map(b => b.innerText.replace(/\s+/g, ' ')))
+  check('create takes MarketOfferDto as its body, though it also returns one', create.some(t => t.startsWith('MarketOfferDto the request body')), JSON.stringify(create))
   await open(`${map}&view=requests&at=backend.market.e1`)
   check('a table written and read counts as both', /In tests: writes 4 tables, reads 3/.test((await panel()).text), (await panel()).text.slice(0, 900))
 
@@ -277,7 +283,7 @@ try {
 
   // A client's pages are on its surface.
   await open(`${map}&at=browser`)
-  check('the game client lists its pages', await page.evaluate(() => [...document.querySelectorAll('#details .d-surface .d-more')].some(b => b.textContent === 'Pages · 15')))
+  check('the game client lists its pages (MonumentPanel is a piece of one)', await page.evaluate(() => [...document.querySelectorAll('#details .d-surface .d-more')].some(b => b.textContent === 'Pages · 14')))
 
   // A search's whole match list holds what the search matched.
   await page.evaluate(() => document.querySelector('#stage canvas').focus())
@@ -314,8 +320,43 @@ try {
   check('Serves names no line the map does not know', !/line 1\b/.test(await page.evaluate(() => document.querySelector('#details .d-serves').innerText)))
   await page.evaluate(() => window.__spike.controls.feature('Find owners'))
   await sleep(500)
-  const fo = await page.evaluate(() => ({ pages: [...document.querySelectorAll('#details .d-pages li')].map(l => l.textContent), eps: [...document.querySelectorAll('#details .d-serves .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  const fo = await page.evaluate(() => ({ pages: [...document.querySelectorAll('#details .d-pages li')].map(l => l.textContent), eps: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
   check('a feature on a shared controller gets the endpoints it names, and its templates as pages', fo.pages.length === 2 && !fo.eps.some(e => e.startsWith('POST /owners/new')) && fo.eps.some(e => e.startsWith('GET /owners/find')), JSON.stringify(fo))
+  await page.evaluate(() => window.__spike.controls.feature('Owner information'))
+  await sleep(400)
+  const oi = await page.evaluate(() => ({ claimed: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: document.querySelectorAll('#details .d-shared .d-ep').length }))
+  check('a feature its words cannot place claims none of a shared controller\'s routes, and says they are shared', !oi.claimed.includes('POST /owners/new') && oi.shared > 0, JSON.stringify(oi))
+  // An older map's handler with no line opens where it is declared.
+  await open('model=petclinic&view=requests&at=petclinic.owners.ownerid.e2')
+  await clickText('#details .d-handler .cite', 'OwnerController')
+  await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 }).catch(() => {})
+  await sleep(300)
+  const where = await page.evaluate(() => document.querySelector('.reader-where')?.textContent ?? '')
+  check('an older map\'s handler opens at its declaration, not line 1', /:(\d+)$/.test(where) && Number(where.split(':').pop()) > 1, where)
+  await page.keyboard.press('Escape')
+  await open('model=knights-of-darkness')
+  await page.evaluate(() => window.__spike.controls.feature('Building plans'))
+  await sleep(400)
+  check('a helper module is no page', await page.evaluate(() => ![...document.querySelectorAll('#details .d-pages li')].some(l => l.textContent === 'plans')))
+  await open('model=fastapi-template&at=web')
+  check('an older map\'s client says what it calls', await page.evaluate(() => [...document.querySelectorAll('#details .d-surface button')].some(b => /^Calls \d+ endpoints?$/.test(b.textContent))))
+  // A switch back before the Requests model arrives still returns to the card left.
+  await open(`${map}&view=requests&at=backend.market.e1.response`)
+  await sleep(500)
+  const toA = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').href)
+  await page.setRequestInterception(true)
+  const hold = r => { if (r.url().includes('knights-of-darkness.requests.json')) setTimeout(() => r.continue(), 4000); else r.continue() }
+  page.on('request', hold)
+  await page.goto(toA, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await sleep(600)
+  const toR = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Requests').href)
+  page.off('request', hold)
+  await page.setRequestInterception(false)
+  await page.goto(toR, { waitUntil: 'load' })
+  await ready()
+  check('a quick switch back returns to the response left', (await selected()) === 'backend.market.e1.response', JSON.stringify({ sel: await selected(), toR }))
+
   await open('model=petclinic&view=requests')
   await page.evaluate(() => document.querySelector('#stage canvas').focus())
   await page.keyboard.press('/')
@@ -338,9 +379,12 @@ try {
   await page.waitForFunction(() => window.__spike?.ready && document.querySelector('#welcome button.api'), { timeout: 60000 })
   await page.click('#welcome button.api')
   await sleep(500)
-  const phone = await page.evaluate(() => { const h = document.querySelector('#details h2').getBoundingClientRect(), f = document.querySelector('#details .d-filters').getBoundingClientRect(); const top = (x, y) => document.elementFromPoint(x, y)?.closest('#details') != null; return { welcome: document.getElementById('welcome').hidden, h2: top(h.left + 10, h.top + h.height / 2), filters: top(f.left + 10, f.top + f.height / 2) } })
+  const phone = await page.evaluate(() => {
+    const top = el => { const r = el.getBoundingClientRect(); return r.bottom <= innerHeight && document.elementFromPoint(r.left + 10, r.top + r.height / 2)?.closest('#details') != null }
+    return { welcome: document.getElementById('welcome').hidden, h2: top(document.querySelector('#details h2')), filters: top(document.querySelector('#details .d-filters')), row: top(document.querySelector('#details .d-ep')), focus: document.activeElement === document.querySelector('#details h2') }
+  })
   await shot('08-phone-list')
-  check('on a phone See the API shows the list clear of the welcome', phone.welcome && phone.h2 && phone.filters, JSON.stringify(phone))
+  check('on a phone See the API shows the list clear of the welcome, its first route in view, focus on its heading', phone.welcome && phone.h2 && phone.filters && phone.row && phone.focus, JSON.stringify(phone))
   await page.setViewport({ width: 1600, height: 1000 })
 } catch (e) {
   failed++
