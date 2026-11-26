@@ -13,7 +13,7 @@ import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from 
 import { Tree, type ModelJson } from './model'
 import { placeUrl, Places } from './places'
 import { Reader } from './reader'
-import { OPEN_A, Renderer, safeTop, setSafeTop } from './render'
+import { OPEN_A, OPEN_B, Renderer, safeTop, setSafeTop } from './render'
 import { synthetic } from './synthetic'
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
@@ -81,7 +81,7 @@ function showIntro(tree: Tree, feature: (name: string) => void) {
   const p = document.createElement('p'), b = document.createElement('b')
   b.textContent = tree.els[0].title
   const n = (k: number, w: string) => `${k} ${w}${k === 1 ? '' : 's'}`
-  p.append(b, ` is mapped here: ${[n(parts, 'part'), ...(files ? [n(files, 'file')] : []), ...(features.length ? [n(features.length, 'feature')] : [])].join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). Scroll into a card to open it, double-click a file to read it, ? for every control.`)
+  p.append(b, ` is mapped here: ${[n(parts, 'part'), ...(files ? [n(files, 'file')] : []), ...(features.length ? [n(features.length, 'feature')] : [])].join(', ')}. Cards are its parts, arrows show what uses what (thicker carries more). ${matchMedia('(pointer: coarse)').matches ? 'Tap a card to see what it uses, double-tap to go in, pinch to zoom; Help lists every gesture.' : 'Scroll into a card to open it, double-click a file to read it, ? for every control.'}`)
   const chips = document.createElement('div')
   chips.className = 'chips'
   if (features.length) {
@@ -144,7 +144,9 @@ async function main() {
   let raw = model
   let tree = new Tree(model, { types: showTypes })
   let published = model.published
-  let jobs = layoutJobs(tree, coupling)
+  // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
+  const rootAspect = innerWidth < 700 && innerHeight > innerWidth * 1.2 ? Math.max(0.45, innerWidth / Math.max(1, innerHeight - 220)) : undefined
+  let jobs = layoutJobs(tree, coupling, rootAspect)
   const tLayout = performance.now()
   let local = await runLayout(jobs)
   const layoutMs = performance.now() - tLayout
@@ -188,9 +190,8 @@ async function main() {
     const top = box('top'), panel = box('details'), mini = box('minimap')
     const t = (top?.bottom ?? 0) + 8
     // A panel over the map (narrow: the bottom sheet) takes its share; a column beside it is off the map already.
-    // The outline bar opens while the pointer or focus is on it: it frames as the bar it is at rest,
-    // or a card searched to while hovering it would be framed above the centre that names the place.
-    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('outline') ? { top: H - 46 } : panel) : null
+    // A folded sheet frames as the bar it is.
+    const sheet = panel && panel.top > H / 2 ? ($('details').classList.contains('collapsed') ? { top: H - 46 } : panel) : null
     const right = panel && !sheet && panel.left < W ? panel.left - 12 : W, bottom = sheet ? sheet.top - 12 : H - 28
     const over = mini && mini.left < W ? mini : null
     const frames: [number, number, number, number][] = [[0, t, right, bottom]]
@@ -202,6 +203,25 @@ async function main() {
     // to filling its frame, so its children are drawn with their names.
     const opens = i > 0 && tree.children[i].length ? (OPEN_A + 12) / (CARD_W * world.content[i * 3 + 2]) : 0
     let best = { z: 0, x: 0, y: 0 }
+    // A container too crowded to open even filling the screen (a phone, a level of many cards) is
+    // framed at the zoom where its cards are open and named, from its top-left corner: a pan away
+    // from the rest, rather than a closed card that no tap opens.
+    const full = opens ? (OPEN_B + 6) / (CARD_W * world.content[i * 3 + 2]) : 0
+    {
+      const [l, tt, rr, bb] = frames[0], fw = Math.max(40, rr - l), fh = Math.max(40, bb - tt)
+      if (full && opens > Math.min(fw / w, fh / h)) {
+        // The cards, not the container's padding: centred on an axis where they fit, from their
+        // first row and column where they do not. The container's own header stays in view above.
+        const kids = tree.children[i]
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+        for (const k of kids) { x0 = Math.min(x0, r[k * 4]); y0 = Math.min(y0, r[k * 4 + 1]); x1 = Math.max(x1, r[k * 4] + r[k * 4 + 2]); y1 = Math.max(y1, r[k * 4 + 1] + r[k * 4 + 3]) }
+        y0 = Math.min(y0, r[i * 4 + 1] + (y0 - r[i * 4 + 1]) * 0.5)
+        const z = full, cw = x1 - x0, ch = y1 - y0, m = 12 / z
+        const x = cw * z + 24 <= fw ? x0 + cw / 2 - ((l + rr) / 2 - W / 2) / z : x0 - m - (l - W / 2) / z
+        const y = ch * z + 8 <= fh ? y0 + ch / 2 - ((tt + bb) / 2 - H / 2) / z : y0 - (tt + 4 - H / 2) / z
+        return { z, x, y }
+      }
+    }
     for (const [l, tt, rr, bb] of frames) {
       const fw = Math.max(40, rr - l), fh = Math.max(40, bb - tt)
       const whole = Math.min(fw / w, fh / h)
@@ -240,8 +260,41 @@ async function main() {
     setSafeTop(h)
   }).observe($('top'))
 
+  // Whether the last input was a key (focus rings show) or a pointer (they need not).
+  addEventListener('keydown', e => { if (e.key === 'Tab' || e.key.startsWith('Arrow') || e.key === 'Enter' || e.key === ' ') document.body.classList.add('kbd') }, true)
+  addEventListener('pointerdown', () => document.body.classList.remove('kbd'), true)
+
   // Selection: click a card to focus its relations; the panel lists them, each a jump.
   const details = $('details')
+  /**
+   * Narrow, the panel is a bottom sheet with a grip: a button naming what the sheet holds that folds
+   * it to a bar and opens it again. The outline starts folded, so the map keeps the screen; a
+   * selection starts open. Folded, everything below the grip is hidden from pointer, Tab and screen
+   * reader alike, so a tap on the bar never lands on a row that slid under the finger.
+   */
+  let focusInPanel = false
+  details.addEventListener('focusin', () => { focusInPanel = true })
+  details.addEventListener('focusout', ev => { if (!details.contains(ev.relatedTarget as Node | null)) focusInPanel = false })
+  const setSheet = (open: boolean) => {
+    details.classList.toggle('collapsed', !open)
+    const g = details.querySelector<HTMLButtonElement>(':scope > .d-grip')
+    if (g) { g.setAttribute('aria-expanded', String(open)); g.querySelector('i')!.textContent = open ? 'Hide' : 'Show' }
+  }
+  const addGrip = () => {
+    if (details.hidden || details.firstElementChild?.classList.contains('d-grip')) return
+    const kind = details.querySelector('.d-kind')?.textContent ?? '', title = details.querySelector('h2')?.textContent ?? ''
+    const g = document.createElement('button')
+    g.className = 'd-grip'
+    g.append(Object.assign(document.createElement('b'), { textContent: title }), Object.assign(document.createElement('span'), { textContent: kind }), document.createElement('i'))
+    g.setAttribute('aria-controls', 'details')
+    g.onclick = () => { setSheet(details.classList.contains('collapsed')); measureHud() }
+    const wasFocused = focusInPanel && !details.contains(document.activeElement)
+    details.prepend(g)
+    setSheet(!details.classList.contains('outline'))
+    // A redraw of a folded sheet would drop focus to the page: it goes to the new grip.
+    if (wasFocused && details.classList.contains('collapsed')) g.focus({ preventScroll: true })
+  }
+  new MutationObserver(addGrip).observe(details, { childList: true })
   let controls: ReturnType<typeof installControls>
   /**
    * How far the wheel may zoom in at a screen point: a file until its code reads comfortably (or,
@@ -534,7 +587,7 @@ async function main() {
     raw = json
     const swapStart = performance.now()
     const next = new Tree(json, { types: showTypes })
-    const nextJobs = layoutJobs(next, coupling)
+    const nextJobs = layoutJobs(next, coupling, rootAspect)
     stableOrder(tree, jobs, next, nextJobs)
     const { reused, rerun } = reuseLayouts(tree, jobs, local, next, nextJobs)
     const fresh = rerun.length ? await runLayout(rerun) : new Map()

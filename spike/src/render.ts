@@ -14,7 +14,7 @@ const FONT_PX = 32
  * narrower than OPEN_A could not carry its name, so until then the container stays a closed card.
  */
 export const OPEN_A = 105
-const OPEN_B = 165
+export const OPEN_B = 165
 /** Below this on-screen width a card is a plain coloured pip. */
 const PIP = 30
 const DESC_WRAP = 500
@@ -120,7 +120,9 @@ export interface FrameStats {
 
 /** Edge colour classes, drawn as separate strokes. */
 /** Edge stroke classes, drawn as separate strokes: code uses by weight, the focus's out and in, runtime calls. */
-const enum Kind { Thin, Mid, Thick, Out, In, Runtime }
+const enum Kind { Thin, Mid, Thick, Out, In, Runtime, Step }
+/** A selected request's step-to-step line: the colour of the panel's "The request, in order". */
+const STEP = 0x6ee7b7
 
 export class Renderer {
   readonly stage = new Container()
@@ -777,7 +779,7 @@ export class Renderer {
     const W = this.cam.w, H = this.cam.h
     const chipTargets = new Map<number, { x: number; y: number; count: number; kind: Kind }>()
     const labelSpots: LabelSpot[] = []
-    const paths: number[][][] = [[], [], [], [], [], []]
+    const paths: number[][][] = [[], [], [], [], [], [], []]
     // Strokes by kind and weight tier: [kind][tier] (see TIER_W).
     const strokes: number[][][][] = paths.map(() => TIER_W.map(() => []))
     const heads: number[][][] = paths.map(() => TIER_W.map(() => []))
@@ -790,7 +792,9 @@ export class Renderer {
       const sr = this.screenRect(e.s), tr = this.screenRect(e.t)
       if (Math.max(sr[2], tr[2]) < 6) continue
       // Only relations crossing the focus boundary light up, decided per folded relation.
-      const kind = e.out ? Kind.Out : e.in ? Kind.In : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
+      const els = this.tree.els, par = this.tree.parent
+      const step = sel && par[e.s] === this.selected && par[e.t] === this.selected && els[e.s].metadata?.role === 'step' && els[e.t].metadata?.role === 'step'
+      const kind = e.out ? Kind.Out : e.in ? Kind.In : step ? Kind.Step : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
       const world = this.router.route(e.s, e.t)
       const pts = world ? this.toScreen(world) : straight(sr, tr)
       drawn.push({ e, kind, pts, sOn, tOn })
@@ -865,7 +869,7 @@ export class Renderer {
     const base = sel ? 0.1 : Math.max(0.14, Math.min(0.75, 0.85 - drawn.length / 130))
     // Thin lines draw first, so a heavy one sharing their gutter stays on top and reads as heavy.
     const style: [Graphics, number, number, number][] = [
-      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)],
+      [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)], [hg, 1, STEP, 0.95],
     ]
     TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
       const ps = strokes[kind][tier]
@@ -881,7 +885,7 @@ export class Renderer {
     // the card beside it. Quiet lines are dotted together, highlighted ones in their own colour.
     const dots: [Graphics, number[][], number, number, number][] = [
       [g, [...paths[Kind.Thin], ...paths[Kind.Mid], ...paths[Kind.Thick]], EDGE, Math.min(1, base * 1.6), 3], [g, paths[Kind.Runtime], RUNTIME, Math.min(1, base + 0.4), 3],
-      [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6],
+      [hg, paths[Kind.Out], OUT, 1, 3.6], [hg, paths[Kind.In], IN, 1, 3.6], [hg, paths[Kind.Step], STEP, 1, 3.6],
     ]
     for (const [gg, ps, color, alpha, r] of dots) {
       const j = junctions(ps)

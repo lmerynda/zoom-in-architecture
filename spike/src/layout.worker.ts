@@ -27,7 +27,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
     layoutOptions: { 'elk.algorithm': 'box' },
     children: packed.map(job => ({
       id: `c${job.id}`,
-      layoutOptions: OPTIONS,
+      layoutOptions: job.aspect ? { ...OPTIONS, 'elk.aspectRatio': String(job.aspect) } : OPTIONS,
       children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: cardH(job.spans[k]) })),
     })),
   }

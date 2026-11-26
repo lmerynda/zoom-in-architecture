@@ -123,7 +123,9 @@ export class Palette {
 
   private element = (i: number): Item => {
     const e = this.tree.els[i]
-    return { label: e.title, sub: e.metadata?.path ?? pathOf(this.tree, i), kind: e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
+    const step = e.metadata?.role === 'step' ? this.tree.els[this.tree.parent[i]] : null
+    const sub = step ? `step ${e.metadata?.step} of ${step.title}` : e.metadata?.path ?? pathOf(this.tree, i)
+    return { label: e.title, sub, kind: e.metadata?.method ? 'endpoint' : step ? 'step' : e.metadata?.path ? 'file' : e.kind, run: () => this.act.go(i) }
   }
   private featureItem = (name: string, n: number): Item => ({ label: name, sub: `carried by ${n} card${n === 1 ? '' : 's'}`, kind: 'feature', run: () => this.act.feature(name) })
 
@@ -301,7 +303,11 @@ export class Help {
   private back: HTMLElement | null = null
 
   constructor(connections: boolean) {
+    // A touch screen gets its own gestures first; the mouse and keys still apply with a keyboard attached.
+    const touch: [string, [string, string][]] = ['Touch', [['Tap', 'Select: amber arrows it uses, cyan what uses it'], ['Double-tap', 'Go into a card; on a file, read its code'], ['Drag', 'Pan'], ['Pinch', 'Zoom'], ['Tap the bar at the foot', 'Show or hide the panel'], ['Search', 'Find any part by name']]]
+    const coarse = matchMedia('(pointer: coarse)').matches
     const groups: [string, [string, string][]][] = [
+      ...(coarse ? [touch] : []),
       ['Mouse', [['Wheel', 'Zoom at the pointer'], ['Drag', 'Pan'], ['Click', 'Select: amber arrows it uses, cyan what uses it'], ['Double-click', 'Go into a card; on a file, read its code'], ['Right-click', 'Go in, read code, copy path'], ['Click a cited line', 'Open its code at that line']]],
       ['Keys', [['Ctrl+K or /', 'Search the map'], ['Backspace or Alt+←', 'Back to the previous place'], ['Alt+→', 'Forward'], ['Alt+↑', 'Up to the parent'], [']  /  [', 'Step through what it uses / what uses it'], ['Enter', 'Go to the card stepped to, or into the selection'], ...(connections ? [['.  /  ,', 'Next / previous by connections in this level'] as [string, string]] : []), ['Arrows, + / −', 'Move and zoom'], ['Esc', 'Close the top layer, then clear the selection'], ['?', 'This page']]],
     ]
@@ -309,6 +315,9 @@ export class Help {
       ['Card', 'A part of the product; a card inside a card is a part of it'],
       ['Arrow', 'One part uses another; thicker carries more relations'],
       ['Amber / cyan', 'With a selection: what it uses / what uses it'],
+      ['Violet arrow', 'A call at runtime: HTTP, a store, a queue'],
+      ['Dashed arrow', 'A call no test made, or an import of types only'],
+      ['Seen in tests', 'The project’s own end-to-end tests made this call'],
       ['Grey outline', 'An external system, outside the mapped code'],
     ]
     this.root.setAttribute('role', 'dialog')
@@ -326,7 +335,10 @@ export class Help {
     h.id = 'help-title'
     const close = el('button', 'help-close', 'Close')
     close.onclick = () => this.toggle(false)
-    this.box.append(h, grid, close)
+    // The title and Close stay at the top as the page scrolls: focus lands on a button in view.
+    const head = el('div', 'help-head')
+    head.append(h, close)
+    this.box.append(head, grid)
     this.root.append(this.box)
     this.root.onclick = e => { if (e.target === this.root) this.toggle(false) }
     this.root.addEventListener('keydown', e => {

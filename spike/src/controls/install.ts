@@ -182,7 +182,7 @@ export function installControls(c: Ctx) {
   // and the address name what was found, not what was selected before (Back brings that back); a
   // leaf is selected, to read about.
   const palette = new Palette(tree, commands, {
-    go: i => { if (tree.children[i].length) { leave(); c.select(-1); c.fit(i); remember(i) } else goSelect(i) },
+    go: i => { if (tree.children[i].length && !tree.els[i].metadata?.method) { leave(); c.select(-1); c.fit(i); remember(i) } else goSelect(i) },
     feature,
     recent: () => recent.map(id => tree.byId.get(id) ?? -1),
   })
@@ -214,10 +214,30 @@ export function installControls(c: Ctx) {
   }, { passive: false })
   let stopSaid = 0
   let drag: { x: number; y: number; t: number; vx: number; vy: number; moved: number } | null = null
+  /**
+   * Two fingers pinch: the map zooms by the change in their distance around their midpoint and
+   * pans with it. A pinch never ends in a tap: lifting the fingers selects nothing.
+   */
+  const touches = new Map<number, { x: number; y: number }>()
+  let pinch: { d: number; x: number; y: number } | null = null, pinched = false
+  const at = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top } }
+  const pinchNow = () => { const [a, b] = [...touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }
+  const lift = (e: PointerEvent) => {
+    if (!touches.delete(e.pointerId)) return
+    if (touches.size < 2) pinch = null
+    if (!touches.size) setTimeout(() => { pinched = false })
+  }
+  window.addEventListener('pointerup', lift, true)
+  window.addEventListener('pointercancel', lift, true)
   canvas.addEventListener('pointerdown', e => {
     // Any press ends a flight where it is: the reader has taken over.
     cam.stop()
     canvas.focus({ preventScroll: true })
+    if (e.pointerType === 'touch') {
+      touches.set(e.pointerId, at(e))
+      if (touches.size === 2) { pinch = pinchNow(); pinched = true; drag = null; tooltip.close(); return }
+      if (touches.size > 2) return
+    }
     if (e.button === 3) { e.preventDefault(); return back() }
     if (e.button === 4) { e.preventDefault(); return forward() }
     if (e.button !== 0) return
@@ -226,6 +246,15 @@ export function installControls(c: Ctx) {
   })
   canvas.addEventListener('pointermove', e => {
     renderer.pointer = [e.offsetX, e.offsetY]
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, at(e))
+    if (pinch && touches.size === 2) {
+      const p = pinchNow()
+      moved()
+      cam.panBy(p.x - pinch.x, p.y - pinch.y)
+      if (pinch.d > 8 && p.d > 8) cam.zoomAt(p.x, p.y, p.d / pinch.d, c.zoomLimit(p.x, p.y), c.zoomFloor())
+      pinch = p
+      return
+    }
     if (!drag) return
     const t = performance.now(), dt = Math.max(1, t - drag.t)
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y
@@ -238,6 +267,7 @@ export function installControls(c: Ctx) {
   })
   window.addEventListener('pointerup', e => {
     if (e.button !== 0 || !drag) return
+    if (pinched) { drag = null; return }
     if (drag.moved < 5) {
       clearTarget()
       tooltip.close()

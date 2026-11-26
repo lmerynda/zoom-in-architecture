@@ -70,6 +70,8 @@ export interface LayoutJob {
    * (a type it names, a branch). Placed in reading order (lanePlace).
    */
   lane?: number[]
+  /** Width over height the level aims for; the content box's by default. A phone held upright lays the whole map out tall. */
+  aspect?: number
 }
 
 /**
@@ -177,7 +179,7 @@ export function centreOut(job: LayoutJob): { pos: number[]; w: number; h: number
   for (let c = parity || 2; c <= cells + 2; c += 2) {
     const r0 = Math.max(first, Math.ceil(cells / c))
     const r = r0 % 2 === parity ? r0 : r0 + 1
-    const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / (r * cellH + GUTTER))
+    const scale = Math.min((job.aspect ?? CONTENT_ASPECT) / (c * cellW + GUTTER), 1 / (r * cellH + GUTTER))
     if (scale > bestScale + 1e-12) { bestScale = scale; cols = c; rows = r }
   }
   const taken = new Uint8Array(cols * rows)
@@ -249,7 +251,7 @@ export interface World {
   local: Map<number, LocalLayout>
 }
 
-export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
+export function layoutJobs(tree: Tree, coupling = false, rootAspect?: number): LayoutJob[] {
   const edges = tree.siblingEdges()
   // The Connections view sizes by connection, not by code: the most connected child of a level of
   // four or more is the big card at its centre.
@@ -269,7 +271,7 @@ export function layoutJobs(tree: Tree, coupling = false): LayoutJob[] {
     // A request's path (its cards carry a role): numbered steps in order, the rest beside them.
     const roles = c.map(k => tree.els[k].metadata?.role)
     const lane = roles.some(r => r === 'step') ? c.map((k, j) => (roles[j] === 'step' ? Number(tree.els[k].metadata?.step) - 1 : roles[j] === 'response' && /^\d+ · /.test(tree.els[k].title) ? c.length : -1)) : undefined
-    jobs.push({ id: i, children: c, spans: c.map(k => (lane ? 1 : span[k])), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight && !lane ? { weights: c.map(k => weight[k]) } : {}), ...(lane ? { lane } : {}) })
+    jobs.push({ id: i, children: c, spans: c.map(k => (lane ? 1 : span[k])), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight && !lane ? { weights: c.map(k => weight[k]) } : {}), ...(lane ? { lane } : {}), ...(i === 0 && rootAspect ? { aspect: rootAspect } : {}) })
   }
   return jobs
 }

@@ -155,11 +155,14 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       b.append(el('i', '', cls === 'out' ? '→' : '←'), el('b', '', tree.els[r.other].title))
       if (r.names.length) b.append(el('span', '', r.names.length > 3 ? `${r.names.slice(0, 3).join(', ')} +${r.names.length - 3}` : r.names.join(', ')))
       b.title = `${title === 'Uses' ? 'Uses' : 'Used by'} ${tree.els[r.other].title}: go there`
-      if (r.seen) b.append(seenTag(r.seen))
+      const across = relationsAcross(tree, i, r.other), n = across.length
+      // A partly tested arrow says so: how many of the calls the trace could see it saw.
+      const tally = traceTally(tree, across)
+      if (tally.unseen) b.append(partTag(tally))
+      else if (r.seen) b.append(seenTag(r.seen))
       b.onclick = () => act.go(r.other)
       li.append(b)
       // The arrow's own evidence, by keyboard as well as by clicking the arrow on the map.
-      const n = relationsAcross(tree, i, r.other).length
       const why = el('button', 'd-inspect', `${n} relation${n === 1 ? '' : 's'}`)
       why.setAttribute('aria-label', `Inspect the ${n} relation${n === 1 ? '' : 's'} between ${e.title} and ${tree.els[r.other].title}`)
       why.title = 'Every relation between the two, both directions, and the lines that make it'
@@ -277,7 +280,8 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
     head.append(actions)
   }
   const kids = tree.children[here]
-  const count = (i: number) => { const r = relationsOf(i); return { uses: new Set(r.out.map(x => x.other)).size, usedBy: new Set(r.inn.map(x => x.other)).size } }
+  // The same counts the panel heads its Uses and Used by lists with, once the card is selected.
+  const count = (i: number) => { const r = relationsOf(i); return { uses: relationRows(tree, i, r.out).length, usedBy: relationRows(tree, i, r.inn).length } }
   const rows = kids.map(k => ({ k, ...count(k) })).sort((a, b) => b.uses + b.usedBy - a.uses - a.usedBy || tree.els[a.k].title.localeCompare(tree.els[b.k].title))
   const box = el('section', 'd-outline')
   box.append(el('h3', '', `Inside · ${kids.length}`))
@@ -346,15 +350,38 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${count(k) === 1 ? KIND_ONE[k] : KIND_WORD[k]}`).join(' · ')
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
+  // Lines every relation cites (the config that wires all of a server's stores) are said once, above the list.
+  const shared = new Set<string>()
+  if (rels.length > 2) {
+    const [first, ...rest] = rels.map(k => new Set((tree.relEvidence[k] ?? []).map(ev => ev.at)))
+    for (const at of first) if (rest.every(r => r.has(at))) shared.add(at)
+  }
+  const sharedBox: HTMLElement[] = []
+  if (shared.size) {
+    const box = el('div', 'd-why d-shared')
+    box.append(el('span', 'd-kindtag', `Cited by all ${rels.length}:`))
+    const evs = (tree.relEvidence[rels[0]] ?? []).filter(ev => shared.has(ev.at))
+    for (const ev of evs) {
+      const file = ev.at.replace(/:\d+(-\d+)?$/, '')
+      if (ev.code == null || !files.has(file)) { box.append(el('span', 'd-names', ev.at)); continue }
+      const b2 = el('button', 'cite', ev.at.split('/').pop()!)
+      b2.title = `${ev.at}: ${ev.code.trim()}`
+      b2.onclick = () => act.openPath(file, ev.line, s)
+      box.append(b2)
+    }
+    sharedBox.push(box)
+  }
+  const tally = traceTally(tree, rels)
+  const traceLine = tally.unseen ? [partLine(tally)] : []
   const section = (from: number, to: number) => {
     const mine = rels.filter(k => inside(from, tree.rels[k * 2]) && inside(to, tree.rels[k * 2 + 1]))
     if (!mine.length) return []
     const box = el('section', 'd-rels d-edge')
     box.append(el('h3', '', `${tree.els[from].title} → ${tree.els[to].title} · ${mine.length}`))
     const ul = el('ul')
-    // Runtime calls first, then uses, then type-only imports; by file name within each.
-    const order = { runtime: 0, code: 1, types: 2 }
-    mine.sort((a, b) => order[tree.relKind[a]] - order[tree.relKind[b]] || tree.els[tree.rels[a * 2]].title.localeCompare(tree.els[tree.rels[b * 2]].title))
+    // Calls no test made first (the exceptions), then runtime calls, uses, type-only imports; by file name within each.
+    const order = { runtime: 0, code: 1, types: 2 }, unseen = (k: number) => (tree.relTraceable[k] && !tree.relSeen[k] ? 0 : 1)
+    mine.sort((a, b) => unseen(a) - unseen(b) || order[tree.relKind[a]] - order[tree.relKind[b]] || tree.els[tree.rels[a * 2]].title.localeCompare(tree.els[tree.rels[b * 2]].title))
     for (const k of mine) {
       const a = tree.rels[k * 2], b = tree.rels[k * 2 + 1], kind = tree.relKind[k]
       const li = el('li', `k-${kind}`)
@@ -383,6 +410,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
         why.append(b2)
       }
       for (const ev of tree.relEvidence[k] ?? []) {
+        if (shared.has(ev.at)) continue
         const file = ev.at.replace(/:\d+(-\d+)?$/, '')
         if (ev.code == null || !files.has(file)) { why.append(el('span', 'd-names', ev.at)); continue }
         const b2 = el('button', 'cite', ev.at.split('/').pop()!)
@@ -396,7 +424,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
     box.append(ul)
     return [box]
   }
-  panel.replaceChildren(head, el('p', 'd-rank', summary || 'nothing on this map'), ...section(s, t), ...section(t, s), el('p', 'd-hint', 'Esc puts the arrow down.'))
+  panel.replaceChildren(head, el('p', 'd-rank', summary || 'nothing on this map'), ...traceLine, ...sharedBox, ...section(s, t), ...section(t, s), el('p', 'd-hint', 'Esc puts the arrow down.'))
   panel.hidden = false
 }
 
@@ -405,6 +433,25 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
  * trace recorded for the link (spans of its code, or its endpoint's requests), not a count of this
  * one call, and the row needs its room for what the call reaches.
  */
+/** Of some relations, how many the trace could judge, and how many of those the tests made. */
+export function traceTally(tree: Tree, rels: number[]): { seen: number; unseen: number } {
+  let seen = 0, unseen = 0
+  for (const k of rels) if (tree.relSeen[k]) seen++; else if (tree.relTraceable[k]) unseen++
+  return { seen, unseen }
+}
+
+/** A partly tested arrow's tag: "14/15 seen", amber, with the exceptions in its tooltip. */
+function partTag(t: { seen: number; unseen: number }): HTMLElement {
+  const tag = el('em', 'd-seen-tag none', `${t.seen}/${t.seen + t.unseen} seen`)
+  tag.title = `The project's own tests made ${t.seen} of the ${t.seen + t.unseen} calls here the trace could see; ${t.unseen} not seen. Inspect lists them first.`
+  return tag
+}
+
+/** The same, as a line under an arrow panel's title. */
+function partLine(t: { seen: number; unseen: number }): HTMLElement {
+  return el('p', 'd-missed', `${t.seen} of ${t.seen + t.unseen} calls seen in tests · ${t.unseen} not seen, listed first`)
+}
+
 export function seenTag(n: number): HTMLElement {
   const tag = el('em', 'd-seen-tag', 'seen in tests')
   tag.title = `Seen in the project's own end-to-end tests: ${count(n)} recorded in the trace for this link`
