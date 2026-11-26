@@ -91,3 +91,40 @@ Five branches, each stacked on the one before (they share the arrow legend, the 
 5. `council/search-keeps-place` (E27, E28). Search to a part puts the old selection down, so the panel, the address and a reload name the part found, Back bringing the old selection back; the reader's back goes to the card it names.
 
 Left, in order: A2-A7 (per-table effects on store arrows, counts with units and attribution, "14/15 seen" on mixed aggregates, untested endpoints visible, tables against Uses, the run behind the marks), then the focus review's endpoint inventory. Also left: B14 (a sheet you can shrink), D22-D26, E29-E31 and the visual system (F). Raised in review and not yet done: the endpoint found by search opens as a place rather than selected (a design call); every Uses row carries a second tab stop even for one relation.
+
+## Status, 2026-11-25: scored rounds and landing
+
+After the five branches, a sixth, `council/score-polish`, ran four scored rounds. Fable 5.2 and Astra 6.2 (Codex) each scored UX and UI out of 10 against the running viewer, then re-scored after each round of fixes. The target was at least 8.5 from both seats on both axes, with at least one 9.
+
+| Round | Fable UX | Fable UI | Astra UX | Astra UI |
+|---|---|---|---|---|
+| 1 (after the five branches) | 7.4 | 7.6 | 6.7 | 7.5 |
+| 2 | 8.3 | 8.1 | 8.1 | 8.5 |
+| 3 | 8.5 | 8.3 | 8.5 | 8.8 |
+| 4 (final) | 8.7 | 8.5 | 8.7 | 8.9 |
+
+Both seats reached 8.5 on both axes. No seat gave a 9; Astra's UI at 8.9 came closest. After round 4, only the fixes both seats agreed on were applied: the rotated phone is fitted once its relayout settles, and phone breadcrumbs keep the current place. Two defects Astra found were also fixed: the open sheet's Hide button showed no focus ring, and an arrow heading said ↔ for relations that run one way.
+
+This round closed A2-A7: per-table operations on store arrows, counts with their units, "14/15 seen" with the exceptions first, untested endpoints shown in amber and listed under the app's coverage, tables as a list, and the test run in plain view. It also closed B14 (a phone sheet that folds to a grip) and parts of D, E and F.
+
+The publisher now records each table's operation and gives each step its own count (`scripts/observed.mjs`). Stored maps pick that up the next time a project publishes with `--trace`.
+
+Open, from the final round, ranked by the gain the seats expected:
+- **Endpoint inventory.** Both seats.
+  - An app should list its endpoints in both views: Endpoints · 67, with method filters and Unseen · 4.
+  - Searching an endpoint's route in Architecture should offer it from Requests.
+- **The address reproduces the view.** Fable. Write `in=` and `at=` together, and on load frame `in` and select `at`.
+- **Switching views keeps the request.** Astra. A step reached from Withdraw returns to Withdraw, not Buy.
+- **A mapped relation and measured traffic are told apart on store arrows.** Astra. Show "1 mapped runtime relation", the endpoint's requests and the tables touched, with the hop's own count marked as not measured.
+- **Search groups a shared file's occurrences.** Astra. For example, KingdomRepository · 32, expandable, before the result cap applies.
+- **Fill sparse containers.** Fable. Children should cover about 80% of a container's body.
+- **Fit the 1920 overview to the stage.** Fable. Then nested titles in the overview reach about 10 px.
+- **Long repository step names get two lines.** Astra. The code preview moves down a line to make room.
+- **Supporting types get a shorter row and their own glyph.** Astra.
+- **Touch targets of 44 px** in the bar and crumbs (36 and 28 px now). Fable. The reader head at 320 px should take one row.
+- **Small items:**
+  - the held container's kind is clipped at the screen edge on phones;
+  - a chip can sit on a container's lens value;
+  - a landscape phone does not fit the map to the full width.
+
+Still open from the first backlog: D22-D26, E29-E31 and the rest of F. The endpoint inventory above also covers the focus review's first item.
