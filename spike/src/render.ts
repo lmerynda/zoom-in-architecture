@@ -630,10 +630,10 @@ export class Renderer {
     const tInner = inner - rankRoom
     const px = titlePx(Math.min(h * 0.15, 24), tInner, v.titleEm + lead)
     if (px < 6) return
-    // A file whose name its card cannot hold on one line (a long repository step) shows its code a
-    // title line lower, so the name has two. Decided by the card's shape, not the zoom, so the code
-    // stays anchored to the card as it grows.
-    const lower = el.metadata?.path && el.metadata.role !== 'type' && (v.titleEm + lead) * 0.15 * h * TITLE_SHRINK > tInner ? LONG_TITLE : 0
+    // A request's step whose name its card cannot hold on one line (a long repository) shows its
+    // code a title line lower, so the name has two. Decided by the card's shape alone (its width
+    // against its height, both scaling with the zoom), so the code never jumps as the card grows.
+    const lower = el.metadata?.path && el.metadata.role === 'step' && (v.titleEm + lead) * 0.15 * h * TITLE_SHRINK > inner ? LONG_TITLE : 0
     const box = () => codeBox(x, y, w, h, lower)
     // Reading a file: it fills the screen and its top has scrolled under the top bar, and the
     // breadcrumb names it. A title held on screen there would sit on the code, so the card's text
@@ -653,7 +653,9 @@ export class Renderer {
       const previewTop = el.metadata?.path && w >= CODE_W && el.metadata?.role !== 'type' ? box().y : Infinity
       const top = Math.min(level, (1.8 * (room - lead * level)) / v.titleEm, (previewTop - (y + pad * 0.8) - 2) / 2.55)
       // Worked out again only when the room changes, not every frame.
-      const key = `${Math.round(room)}|${Math.round(top * 4)}|${Math.round(px * 4)}`
+      // Where the title is held (sticky, under the bar) decides how much room the preview leaves it.
+      const held = (want: number) => Math.max(y + pad * 0.8, Math.min(SAFE.top + 8, y + h - pad - want * 6))
+      const key = `${Math.round(room)}|${Math.round(top * 4)}|${Math.round(px * 4)}|${Math.round(previewTop - held(top))}`
       if (v.wrapKey !== key) {
         v.wrapKey = key
         v.wrap = null
@@ -664,6 +666,8 @@ export class Renderer {
         search: for (let want = top; want >= Math.max(TITLE_MIN, px * 0.75); want *= 0.92) {
           // Rounded down to the 8 px step, so a line never runs past the room it was given.
           const wrap = Math.floor(((room - lead * want) * FONT_PX) / want / 8) * 8
+          // Both lines end above the code, wherever the title is held.
+          if (held(want) + want * 2.55 > previewTop - 2) continue
           for (const src of choices) {
             const t = (v.title2 ??= this.text(src, texts, wrap))
             if (t.text !== src) t.text = src
@@ -1178,7 +1182,7 @@ export function seenText(el: { metadata?: Record<string, string> }, traced: bool
  */
 export function breaks(s: string): string[] {
   const words = s.split(' '), long = words.reduce((a, b) => (b.length > a.length ? b : a), '')
-  const at = long.length >= 14 ? [...long.matchAll(/[\p{Ll}\p{N}](?=\p{Lu})/gu)].map(m => m.index! + 1).filter(p => p >= 4 && long.length - p >= 4).sort((a, b) => Math.abs(a - long.length / 2) - Math.abs(b - long.length / 2)) : []
+  const at = long.length >= 14 ? [...long.matchAll(/[\p{Ll}\p{N}](?=\p{Lu})/gu)].map(m => m.index! + m[0].length).filter(p => p >= 4 && long.length - p >= 4).sort((a, b) => Math.abs(a - long.length / 2) - Math.abs(b - long.length / 2)) : []
   const k = words.indexOf(long)
   const split = at.map(p => [...words.slice(0, k), long.slice(0, p), long.slice(p), ...words.slice(k + 1)].join(' '))
   return words.length > 1 ? [s, ...split] : split

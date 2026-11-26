@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutJobs, placeWorld, type LocalLayout } from './layout'
+import { CARD_H, layoutJobs, placeWorld, TYPE_H, type LocalLayout } from './layout'
 import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 
@@ -73,6 +73,20 @@ describe('stableOrder', () => {
     stableOrder(a, layoutJobs(a), b, jobs)
     const job = jobs.find(j => b.els[j.id].id === 'b')!
     expect(job.children.map(c => b.els[c].id)).toEqual(['b.z', 'b.new'])
+  })
+
+  it('moves every per-child array with its child: a step keeps its height, a type its own', () => {
+    const step = (id: string, n: number) => ({ ...el(id, 'e'), metadata: { role: 'step', step: String(n) } })
+    const type = (id: string) => ({ ...el(id, 'e'), metadata: { role: 'type' } })
+    const a = new Tree({ name: 'm', elements: [el('e', null), step('e.s1', 1), type('e.t1')], relations: [] })
+    // The new version declares the type first; the old order is kept, and each card's height with it.
+    const b = new Tree({ name: 'm', elements: [el('e', null), type('e.t1'), step('e.s1', 1)], relations: [] })
+    const jobs = layoutJobs(b)
+    stableOrder(a, layoutJobs(a), b, jobs)
+    const job = jobs.find(j => b.els[j.id].id === 'e')!
+    expect(job.children.map(c => b.els[c].id)).toEqual(['e.s1', 'e.t1'])
+    expect(job.heights).toEqual([CARD_H, TYPE_H])
+    expect(job.lane).toEqual([0, -1])
   })
 })
 

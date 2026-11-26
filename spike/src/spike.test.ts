@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
-import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, spans, STRETCH, toLocal, toWorldX, toWorldY, type LocalLayout } from './layout'
+import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, lanePlace, layoutJobs, openScale, TYPE_H, placeWorld, rankKey, ranks, siblingPartners, spans, STRETCH, toLocal, toWorldX, toWorldY, type LocalLayout } from './layout'
 import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
@@ -706,6 +706,22 @@ describe('dashes', () => {
   })
 })
 
+describe('lanePlace', () => {
+  it('puts the types a request names on short rows of their own, after its branches', () => {
+    // Four steps, two branches (full height), two types (short).
+    const children = [1, 2, 3, 4, 5, 6, 7, 8]
+    const lane = [0, 1, 2, 3, -1, -1, -1, -1]
+    const heights = [CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, TYPE_H, TYPE_H]
+    const { pos } = lanePlace({ id: 0, children, spans: children.map(() => 1), heights, headed: children.map(() => false), edges: [], lane })
+    const row = (k: number) => pos[k * 2 + 1]
+    expect(row(4)).toBe(row(5))
+    expect(row(6)).toBe(row(7))
+    expect(row(6)).toBeGreaterThan(row(4))
+    // The branches' row is a full card tall; the types' row starts right after it.
+    expect(row(6) - row(4)).toBe(CARD_H + GUTTER)
+  })
+})
+
 describe('breaks', () => {
   it('breaks a title at its word gaps, or its longest CamelCase word at each hump, nearest the middle first', () => {
     expect(breaks('3 · KingdomReadRepository')).toEqual(['3 · KingdomReadRepository', '3 · KingdomRead Repository', '3 · Kingdom ReadRepository'])
@@ -714,5 +730,7 @@ describe('breaks', () => {
     expect(breaks('lowercaseonlyverylongword')).toEqual([])
     expect(breaks('')).toEqual([])
     expect(breaks('ÄnderungsÜbersicht2Plan')).toEqual(['Änderungs Übersicht2Plan', 'ÄnderungsÜbersicht2 Plan'])
+    // A letter outside the BMP is two UTF-16 units: the break goes after both.
+    expect(breaks('Long𐐨Repository')).toEqual(['Long𐐨 Repository'])
   })
 })

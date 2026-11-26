@@ -83,22 +83,23 @@ export interface LayoutJob {
 
 /**
  * A request's path in reading order: the numbered cards left to right, wrapping to the next row,
- * then the cards beside the sequence on rows of their own: branches first, then the types it
- * names, whose cards are shorter, so their rows are too. The row width is the one whose cards come
+ * then the cards beside the sequence on rows of their own: branches first, then, on rows of their
+ * own, the types it names, whose cards are shorter, so their rows are too. The row width is the one whose cards come
  * out largest in the parent's content box.
  */
 export function lanePlace(job: LayoutJob & { lane: number[] }): { pos: number[]; w: number; h: number } {
   const cellW = CARD_W + GUTTER
   const seq = job.children.map((_, k) => k).filter(k => job.lane[k] >= 0).sort((a, b) => job.lane[a] - job.lane[b])
-  const aside = job.children.map((_, k) => k).filter(k => job.lane[k] < 0).sort((a, b) => job.heights[b] - job.heights[a] || a - b)
+  const aside = job.children.map((_, k) => k).filter(k => job.lane[k] < 0)
+  const branches = aside.filter(k => job.heights[k] >= CARD_H), types = aside.filter(k => job.heights[k] < CARD_H)
+  const n = Math.max(seq.length, branches.length, types.length, 1)
   // Rows of `cols` cards, each as tall as its tallest card.
   const rowsOf = (cols: number) => {
     const rows: number[][] = []
-    for (const list of [seq, aside]) for (let j = 0; j < list.length; j += cols) rows.push(list.slice(j, j + cols))
+    for (const list of [seq, branches, types]) for (let j = 0; j < list.length; j += cols) rows.push(list.slice(j, j + cols))
     return rows
   }
   const height = (rows: number[][]) => rows.reduce((t, r) => t + Math.max(...r.map(k => job.heights[k])) + GUTTER, GUTTER)
-  const n = Math.max(seq.length, aside.length, 1)
   let cols = 1, bestScale = 0
   for (let c = 1; c <= n; c++) {
     const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / height(rowsOf(c)))

@@ -88,7 +88,15 @@ export function stableOrder(prevTree: Tree, prevJobs: LayoutJob[], next: Tree, n
     const order = prevOrder.get(next.els[job.id].id)
     if (!order) continue
     const rank = (c: number) => order.get(next.els[c].id) ?? Infinity
-    job.children = [...job.children].sort((a, b) => rank(a) - rank(b))
+    // Every array indexed by child moves with its child: a step keeps its height, a part its span.
+    const perm = job.children.map((_, k) => k).sort((a, b) => rank(job.children[a]) - rank(job.children[b]))
+    const by = <T>(xs: T[]) => perm.map(k => xs[k])
+    job.children = by(job.children)
+    job.spans = by(job.spans)
+    job.heights = by(job.heights)
+    job.headed = by(job.headed)
+    if (job.weights) job.weights = by(job.weights)
+    if (job.lane) job.lane = by(job.lane)
   }
 }
 
