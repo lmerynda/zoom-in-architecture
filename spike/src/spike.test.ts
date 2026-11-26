@@ -5,7 +5,7 @@ import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './mo
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { clipToScreen, dashes, fitText, humps, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
+import { breaks, clipToScreen, dashes, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -132,7 +132,7 @@ describe('coupling layout', () => {
   // Nine children: 1 is the hub, 2 and 3 talk to it a lot, 9 talks to nothing.
   const children = [1, 2, 3, 4, 5, 6, 7, 8, 9]
   const job = {
-    id: 0, children, spans: children.map(c => (c === 1 ? 2 : 1)), headed: children.map(() => false),
+    id: 0, children, spans: children.map(c => (c === 1 ? 2 : 1)), heights: children.map(c => cardH(c === 1 ? 2 : 1)), headed: children.map(() => false),
     edges: [{ s: 1, t: 2, count: 20 }, { s: 1, t: 3, count: 15 }, { s: 4, t: 5, count: 8 }, { s: 1, t: 6, count: 2 }, { s: 7, t: 8, count: 1 }],
     weights: [37, 20, 15, 8, 8, 2, 1, 1, 0],
   }
@@ -168,7 +168,7 @@ describe('coupling layout', () => {
     // and seven single cards, for an odd grid.
     for (const spansOf of [(c: number) => (c === 1 ? 2 : 1), () => 1]) {
       const kids = spansOf(1) === 2 ? children : children.slice(0, 7)
-      const j = { ...job, children: kids, spans: kids.map(spansOf), headed: kids.map(() => false), weights: kids.map((_, k) => 50 - 5 * k), edges: job.edges.filter(e => kids.includes(e.s) && kids.includes(e.t)) }
+      const j = { ...job, children: kids, spans: kids.map(spansOf), heights: kids.map(k => cardH(spansOf(k))), headed: kids.map(() => false), weights: kids.map((_, k) => 50 - 5 * k), edges: job.edges.filter(e => kids.includes(e.s) && kids.includes(e.t)) }
       const L = centreOut(j)
       const mid = (k: number) => [L.pos[k * 2] + cardW(j.spans[k]) / 2, L.pos[k * 2 + 1] + cardH(j.spans[k]) / 2]
       expect(mid(0)[0]).toBeCloseTo(L.w / 2)
@@ -270,7 +270,7 @@ describe('spans', () => {
   it('places a two-cell card as two cells and the gutter between them', () => {
     const local = new Map<number, LocalLayout>()
     const top = tree.children[0]
-    local.set(0, { id: 0, w: 2000, h: 600, children: top, pos: top.flatMap((_, k) => [400 * k, 0]), spans: top.map(c => span[c]), routes: [] })
+    local.set(0, { id: 0, w: 2000, h: 600, children: top, pos: top.flatMap((_, k) => [400 * k, 0]), spans: top.map(c => span[c]), heights: top.map(c => cardH(span[c])), routes: [] })
     const w = placeWorld(tree, local)
     expect([w.rect[id('app') * 4 + 2], w.rect[id('app') * 4 + 3]]).toEqual([cardW(2), cardH(2)])
     expect([w.rect[id('user') * 4 + 2], w.rect[id('user') * 4 + 3]]).toEqual([CARD_W, CARD_H])
@@ -285,7 +285,7 @@ describe('placeWorld', () => {
     for (let i = 0; i < tree.size; i++) {
       const c = tree.children[i]
       if (!c.length) continue
-      local.set(i, { id: i, w: 300 * c.length, h: 200, children: c, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), spans: c.map(() => 1), routes: [] })
+      local.set(i, { id: i, w: 300 * c.length, h: 200, children: c, pos: c.flatMap((_, k) => [24 + 300 * k, 24]), spans: c.map(() => 1), heights: c.map(() => CARD_H), routes: [] })
     }
     const w = placeWorld(tree, local)
     for (let i = 1; i < tree.size; i++) {
@@ -315,10 +315,10 @@ describe('filling a container', () => {
     const tree = new Tree(few(n, files))
     const local = new Map<number, LocalLayout>()
     const app = tree.byId.get('app')!
-    local.set(0, { id: 0, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: [app], pos: [GUTTER, GUTTER], spans: [1], routes: [] })
+    local.set(0, { id: 0, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: [app], pos: [GUTTER, GUTTER], spans: [1], heights: [CARD_H], routes: [] })
     const c = tree.children[app]
-    local.set(app, { id: app, w: c.length * (CARD_W + GUTTER) + GUTTER, h: CARD_H + 2 * GUTTER, children: c, pos: c.flatMap((_, k) => [GUTTER + k * (CARD_W + GUTTER), GUTTER]), spans: c.map(() => 1), routes: [] })
-    for (const k of c) if (tree.children[k].length) local.set(k, { id: k, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: tree.children[k], pos: [GUTTER, GUTTER], spans: [1], routes: [] })
+    local.set(app, { id: app, w: c.length * (CARD_W + GUTTER) + GUTTER, h: CARD_H + 2 * GUTTER, children: c, pos: c.flatMap((_, k) => [GUTTER + k * (CARD_W + GUTTER), GUTTER]), spans: c.map(() => 1), heights: c.map(() => CARD_H), routes: [] })
+    for (const k of c) if (tree.children[k].length) local.set(k, { id: k, w: CARD_W + 2 * GUTTER, h: CARD_H + 2 * GUTTER, children: tree.children[k], pos: [GUTTER, GUTTER], spans: [1], heights: [CARD_H], routes: [] })
     return { tree, w: placeWorld(tree, local), app, c }
   }
   const cover = (n: number) => {
@@ -706,13 +706,13 @@ describe('dashes', () => {
   })
 })
 
-describe('humps', () => {
-  it('breaks a long CamelCase word at the hump nearest its middle, and leaves the rest', () => {
-    expect(humps('4 · KingdomJpaRepository')).toBe('4 · KingdomJpa Repository')
-    expect(humps('MarketTransactionTimeRangeAveragesJpaRepository')).toBe('MarketTransactionTime RangeAveragesJpaRepository')
-    expect(humps('short Words only')).toBe('short Words only')
-    expect(humps('lowercaseonlyverylongword')).toBe('lowercaseonlyverylongword')
-    expect(humps('')).toBe('')
-    expect(humps('Größenänderung2Plan')).toBe('Größenänderung2 Plan')
+describe('breaks', () => {
+  it('breaks a title at its word gaps, or its longest CamelCase word at each hump, nearest the middle first', () => {
+    expect(breaks('3 · KingdomReadRepository')).toEqual(['3 · KingdomReadRepository', '3 · KingdomRead Repository', '3 · Kingdom ReadRepository'])
+    expect(breaks('MarketTransactionTimeRangeAveragesJpaRepository')[0]).toBe('MarketTransactionTime RangeAveragesJpaRepository')
+    expect(breaks('short Words only')).toEqual(['short Words only'])
+    expect(breaks('lowercaseonlyverylongword')).toEqual([])
+    expect(breaks('')).toEqual([])
+    expect(breaks('ÄnderungsÜbersicht2Plan')).toEqual(['Änderungs Übersicht2Plan', 'ÄnderungsÜbersicht2 Plan'])
   })
 })

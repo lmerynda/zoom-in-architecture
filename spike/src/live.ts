@@ -66,6 +66,7 @@ export function diffModels(prev: Tree, next: Tree): ModelDiff {
 const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([
   job.children.map(c => t.els[c].id),
   job.spans,
+  job.heights,
   job.headed,
   job.edges.map(e => [t.els[e.s].id, t.els[e.t].id, e.count]).sort(),
   // The Connections view places children by importance: a change there is a change of layout.

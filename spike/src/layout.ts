@@ -16,6 +16,11 @@ export const GUTTER = 56
 /** Local size of a card spanning `span` cells per side, gutters between the cells included. */
 export const cardW = (span: number) => CARD_W * span + GUTTER * (span - 1)
 export const cardH = (span: number) => CARD_H * span + GUTTER * (span - 1)
+/**
+ * Height of a type beside a request's path (a request or response object it names): a shorter row
+ * than a step's, since it does not run and its code is a declaration, not the path.
+ */
+export const TYPE_H = 84
 
 /** A child spans 2 cells when it holds at least this many files, and this many times its siblings' median. */
 export const BIG_FILES = 10
@@ -59,6 +64,8 @@ export interface LayoutJob {
   children: number[]
   /** Cells per side of each child, in `children` order. */
   spans: number[]
+  /** Each child's card height in local units: its span's, or TYPE_H for a type beside a request's path. */
+  heights: number[]
   /** Whether each child is a container, whose header routes must not cross. */
   headed: boolean[]
   /** Sibling edges, one per unordered pair, with how many relations they carry. */
@@ -76,27 +83,35 @@ export interface LayoutJob {
 
 /**
  * A request's path in reading order: the numbered cards left to right, wrapping to the next row,
- * then the cards beside the sequence (types, branches) on rows of their own. The row width is the
- * one whose cards come out largest in the parent's content box.
+ * then the cards beside the sequence on rows of their own: branches first, then the types it
+ * names, whose cards are shorter, so their rows are too. The row width is the one whose cards come
+ * out largest in the parent's content box.
  */
 export function lanePlace(job: LayoutJob & { lane: number[] }): { pos: number[]; w: number; h: number } {
-  const cellW = CARD_W + GUTTER, cellH = CARD_H + GUTTER
+  const cellW = CARD_W + GUTTER
   const seq = job.children.map((_, k) => k).filter(k => job.lane[k] >= 0).sort((a, b) => job.lane[a] - job.lane[b])
-  const aside = job.children.map((_, k) => k).filter(k => job.lane[k] < 0)
+  const aside = job.children.map((_, k) => k).filter(k => job.lane[k] < 0).sort((a, b) => job.heights[b] - job.heights[a] || a - b)
+  // Rows of `cols` cards, each as tall as its tallest card.
+  const rowsOf = (cols: number) => {
+    const rows: number[][] = []
+    for (const list of [seq, aside]) for (let j = 0; j < list.length; j += cols) rows.push(list.slice(j, j + cols))
+    return rows
+  }
+  const height = (rows: number[][]) => rows.reduce((t, r) => t + Math.max(...r.map(k => job.heights[k])) + GUTTER, GUTTER)
   const n = Math.max(seq.length, aside.length, 1)
   let cols = 1, bestScale = 0
   for (let c = 1; c <= n; c++) {
-    const rows = Math.ceil(seq.length / c) + Math.ceil(aside.length / c)
-    const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / (rows * cellH + GUTTER))
+    const scale = Math.min(CONTENT_ASPECT / (c * cellW + GUTTER), 1 / height(rowsOf(c)))
     if (scale > bestScale + 1e-12) { bestScale = scale; cols = c }
   }
   const pos = new Array<number>(job.children.length * 2)
-  const put = (list: number[], row0: number) => list.forEach((k, j) => { pos[k * 2] = GUTTER + (j % cols) * cellW; pos[k * 2 + 1] = GUTTER + (row0 + Math.floor(j / cols)) * cellH })
-  const seqRows = Math.ceil(seq.length / cols)
-  put(seq, 0)
-  put(aside, seqRows)
-  const rows = seqRows + Math.ceil(aside.length / cols)
-  return { pos, w: cols * cellW + GUTTER, h: rows * cellH + GUTTER }
+  const rows = rowsOf(cols)
+  let y = GUTTER
+  for (const row of rows) {
+    row.forEach((k, j) => { pos[k * 2] = GUTTER + j * cellW; pos[k * 2 + 1] = y })
+    y += Math.max(...row.map(k => job.heights[k])) + GUTTER
+  }
+  return { pos, w: cols * cellW + GUTTER, h: y }
 }
 
 /**
@@ -240,6 +255,8 @@ export interface LocalLayout {
   pos: number[]
   /** Cells per side of each child, in `children` order. */
   spans: number[]
+  /** Card height of each child, in `children` order (LayoutJob.heights). */
+  heights: number[]
   routes: SiblingRoute[]
 }
 
@@ -300,7 +317,8 @@ export function layoutJobs(tree: Tree, coupling = false, rootAspect?: number): L
     // A request's path (its cards carry a role): numbered steps in order, the rest beside them.
     const roles = c.map(k => tree.els[k].metadata?.role)
     const lane = roles.some(r => r === 'step') ? c.map((k, j) => (roles[j] === 'step' ? Number(tree.els[k].metadata?.step) - 1 : roles[j] === 'response' && /^\d+ · /.test(tree.els[k].title) ? c.length : -1)) : undefined
-    jobs.push({ id: i, children: c, spans: c.map(k => (lane ? 1 : span[k])), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight && !lane ? { weights: c.map(k => weight[k]) } : {}), ...(lane ? { lane } : {}), ...(i === 0 && rootAspect ? { aspect: rootAspect } : {}) })
+    const sp = c.map(k => (lane ? 1 : span[k]))
+    jobs.push({ id: i, children: c, spans: sp, heights: c.map((k, j) => (lane && roles[j] === 'type' ? TYPE_H : cardH(sp[j]))), headed: c.map(k => tree.children[k].length > 0), edges: [...pairs.values()], ...(weight && !lane ? { weights: c.map(k => weight[k]) } : {}), ...(lane ? { lane } : {}), ...(i === 0 && rootAspect ? { aspect: rootAspect } : {}) })
   }
   return jobs
 }
@@ -356,7 +374,7 @@ export function placeWorld(tree: Tree, local: Map<number, LocalLayout>): World {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     L.children.forEach((_, k) => {
       x0 = Math.min(x0, L.pos[k * 2]); y0 = Math.min(y0, L.pos[k * 2 + 1])
-      x1 = Math.max(x1, L.pos[k * 2] + cardW(L.spans[k])); y1 = Math.max(y1, L.pos[k * 2 + 1] + cardH(L.spans[k]))
+      x1 = Math.max(x1, L.pos[k * 2] + cardW(L.spans[k])); y1 = Math.max(y1, L.pos[k * 2 + 1] + L.heights[k])
     })
     if (i === 0) content.set([x0, y0, 1, x0, y0, x1, y1, 1, 1, 1], 0)
     else {
@@ -376,7 +394,7 @@ export function placeWorld(tree: Tree, local: Map<number, LocalLayout>): World {
     }
     const sx = content[i * PLACE + SX], sy = content[i * PLACE + SY]
     L.children.forEach((c, k) => {
-      rect.set([toWorldX(world, i, L.pos[k * 2]), toWorldY(world, i, L.pos[k * 2 + 1]), cardW(L.spans[k]) * sx, cardH(L.spans[k]) * sy], c * 4)
+      rect.set([toWorldX(world, i, L.pos[k * 2]), toWorldY(world, i, L.pos[k * 2 + 1]), cardW(L.spans[k]) * sx, L.heights[k] * sy], c * 4)
     })
   }
   return world

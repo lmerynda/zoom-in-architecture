@@ -413,6 +413,29 @@ try {
     if (width === 1920) check('at 1920 every card inside the server is titled at 10 px or more', whole.titles.every(px => px >= 10), JSON.stringify(whole))
   }
 
+  // A request's path: a step's long name takes two lines, its code starting below them; the types
+  // it names stand on a shorter row, with their own glyph.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await open('model=knights-of-darkness&view=requests')
+  await page.evaluate(() => window.__spike.fit(window.__spike.id('backend.kingdom.e1')))
+  await landed()
+  await sleep(600)
+  const path = await page.evaluate(() => {
+    const s = window.__spike, t = s.tree, r = s.world.rect, z = s.cam.z, rd = s.renderer
+    const kids = t.children[s.id('backend.kingdom.e1')]
+    const steps = kids.filter(k => t.els[k].metadata?.role === 'step' && /Repository$/.test(t.els[k].title) && t.els[k].title.length <= 28).map(k => {
+      const v = rd.views[k], two = !!v?.title2?.visible, label = two ? v.title2 : v?.title
+      const slot = rd.codeSlots.find(c => c.i === k)
+      return { title: t.els[k].title, two, cut: !two && /…$/.test(v?.title?.text ?? ''), under: !!slot && label.y + label.height <= slot.y + 1 }
+    })
+    const h = k => r[k * 4 + 3] * z
+    const types = kids.filter(k => t.els[k].metadata?.role === 'type')
+    const step = kids.find(k => t.els[k].metadata?.role === 'step')
+    return { steps, typeH: types.map(h).map(Math.round), stepH: Math.round(h(step)), glyphs: types.map(k => rd.glyphs[k]) }
+  })
+  check('a step\'s long name is whole on two lines, its code below them', path.steps.length >= 3 && path.steps.every(p => p.two && !p.cut && p.under), JSON.stringify(path.steps))
+  check('the types a request names stand on a shorter row, with their own glyph', path.typeH.length > 0 && path.typeH.every(x => x < path.stepH * 0.75) && path.glyphs.every(g => g === 'type'), JSON.stringify(path))
+
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })
   await open('model=knights-of-darkness')

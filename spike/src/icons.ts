@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js'
 import type { ElementJson } from './model'
 
-export const GLYPHS = ['person', 'database', 'queue', 'browser', 'mobile', 'app', 'system', 'library', 'component', 'external', 'code'] as const
+export const GLYPHS = ['person', 'database', 'queue', 'browser', 'mobile', 'app', 'system', 'library', 'component', 'external', 'code', 'type'] as const
 export type Glyph = (typeof GLYPHS)[number]
 
 /**
@@ -9,7 +9,9 @@ export type Glyph = (typeof GLYPHS)[number]
  * set it for people and stores); otherwise the kind's name is matched, so sample vocabularies
  * (service, container, softwaresystem, existingsystem) find their icon too.
  */
-export function glyphOf(el: Pick<ElementJson, 'kind' | 'shape'>): Glyph | null {
+export function glyphOf(el: Pick<ElementJson, 'kind' | 'shape' | 'metadata'>): Glyph | null {
+  // A type a request names (its request or response object) is data, not a step: braces, not a page.
+  if (el.metadata?.role === 'type') return 'type'
   const byShape: Record<string, Glyph> = { person: 'person', storage: 'database', cylinder: 'database', queue: 'queue', browser: 'browser', mobile: 'mobile' }
   if (byShape[el.shape]) return byShape[el.shape]
   const k = el.kind.toLowerCase()
@@ -68,6 +70,10 @@ export function drawGlyph(name: Glyph): Graphics {
       g.circle(32, 32, 23).stroke(line)
       g.ellipse(32, 32, 10, 23).stroke(line)
       g.moveTo(9, 32).lineTo(55, 32).stroke(line)
+      break
+    case 'type':
+      g.moveTo(25, 8).bezierCurveTo(15, 8, 18, 18, 18, 24).bezierCurveTo(18, 30, 16, 32, 9, 32).bezierCurveTo(16, 32, 18, 34, 18, 40).bezierCurveTo(18, 46, 15, 56, 25, 56).stroke(line)
+      g.moveTo(39, 8).bezierCurveTo(49, 8, 46, 18, 46, 24).bezierCurveTo(46, 30, 48, 32, 55, 32).bezierCurveTo(48, 32, 46, 34, 46, 40).bezierCurveTo(46, 46, 49, 56, 39, 56).stroke(line)
       break
     case 'code':
       g.moveTo(40, 6).lineTo(14, 6).lineTo(14, 58).lineTo(50, 58).lineTo(50, 16).closePath().stroke(line)

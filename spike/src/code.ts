@@ -66,9 +66,12 @@ const CODE_TOP = 0.4
 /** The text padding of a card, as a fraction of its width (as the renderer lays it out). */
 const CARD_PAD = 0.07
 
-/** Where a file card of rect x, y, w, h shows its code: the same in screen px or world units. */
-export function codeBox(x: number, y: number, w: number, h: number) {
-  const pad = CARD_PAD * w, top = y + h * CODE_TOP
+/**
+ * Where a file card of rect x, y, w, h shows its code: the same in screen px or world units.
+ * `lower` moves its top down, as a share of the card's height, under a title on two lines.
+ */
+export function codeBox(x: number, y: number, w: number, h: number, lower = 0) {
+  const pad = CARD_PAD * w, top = y + h * (CODE_TOP + lower)
   return { x: x + pad, y: top, w: w - 2 * pad, h: y + h - pad * 0.6 - top }
 }
 

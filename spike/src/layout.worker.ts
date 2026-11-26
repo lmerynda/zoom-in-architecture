@@ -1,5 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
-import { cardH, cardW, centreOut, CONTENT_ASPECT, GUTTER, lanePlace, type LayoutJob, type LocalLayout } from './layout'
+import { cardW, centreOut, CONTENT_ASPECT, GUTTER, lanePlace, type LayoutJob, type LocalLayout } from './layout'
 import { ChannelGrid } from './route'
 
 const elk = new ELK()
@@ -36,7 +36,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
     children: runs.map(({ job, a }, n) => ({
       id: `c${job.id}~${n}`,
       layoutOptions: { ...OPTIONS, 'elk.aspectRatio': String(a) },
-      children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: cardH(job.spans[k]) })),
+      children: job.children.map((c, k) => ({ id: String(c), width: cardW(job.spans[k]), height: job.heights[k] })),
     })),
   }
   const g = runs.length ? await elk.layout(root) : { children: [] }
@@ -61,7 +61,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       w = c.width!; h = c.height!
     }
     const index = new Map(job.children.map((ch, k) => [ch, k]))
-    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: cardH(job.spans[k]), header: job.headed[k] } }
+    const rect = (ch: number) => { const k = index.get(ch)!; return { x: pos[k * 2], y: pos[k * 2 + 1], w: cardW(job.spans[k]), h: job.heights[k], header: job.headed[k] } }
     const grid = new ChannelGrid(job.children.map(rect), GUTTER / 2)
     // Heavy edges first, so lighter ones join their trunks.
     const used = new Set<number>()
@@ -69,7 +69,7 @@ async function layoutAll(jobs: LayoutJob[]): Promise<LocalLayout[]> {
       const r = grid.route(rect(e.s), rect(e.t), used)
       return r ? [{ s: e.s, t: e.t, ...r }] : []
     })
-    return { id: job.id, w, h, children: job.children, pos, spans: job.spans, routes }
+    return { id: job.id, w, h, children: job.children, pos, spans: job.spans, heights: job.heights, routes }
   })
 }
 
