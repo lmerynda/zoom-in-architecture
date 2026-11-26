@@ -116,8 +116,8 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
        - the production config line that sets the client's base URL, when there is one (such as `VITE_API` in `.env.production`). When the client calls its own origin, there is no such line to cite.
      - **A generated API client** (OpenAPI or gRPC stubs) is where the calls happen. Links start at its file, citing its call lines, and the graph draws the screens → client relations.
      - **A hand-written HTTP helper:** when feature clients call a helper that does the real `fetch`, the link starts at the feature client and cites its lines; the helper is not a link end. The exception is a helper in a different app or library node from the caller. Then the link starts at the helper, where the network work happens, and the graph draws the caller → helper relation.
-     - **Title:** what the calls do, or their shared path ("kingdom actions, /kingdom/*"), not a list of every endpoint.
-   - **Stores:** from each file that reads or writes the store at run time (the repository, the DbContext, the files that call the ORM session) to the database node. Evidence is its `store` line plus the datasource line in the config.
+     - **Title:** what the calls do, or their shared path ("kingdom actions, /kingdom/*"), not a list of every endpoint. `via` says `HTTP` (or `WebSocket`, `gRPC`, …).
+   - **Stores:** from each file that reads or writes the store at run time (the repository, the DbContext, the files that call the ORM session) to the database node. Evidence is its `store` line plus the datasource line in the config. `via` is the access layer (`JPA`, `SQL`, `ORM`), and the title names what it keeps ("accounts"), not the layer again.
      - A table or entity declaration is schema, not traffic: no link. Migrations do link, because they change the store.
      - Browser storage (`localStorage`, IndexedDB) is the browser's own, not the database, so leave those lines uncited.
      - A database chosen per profile (H2 locally, PostgreSQL in production) is one database node. Its `technology` names the engines. Its evidence cites each profile's datasource line, or for a profile with no URL (an embedded default), the lines that select it: the dependency that brings it in, the setting that picks it, or both.
@@ -234,9 +234,9 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
   ],
   "links": [
     { "from": "customer", "to": "web", "title": "shops in a browser" },
-    { "from": "web/src/checkout/api.ts", "to": "api/src/main/java/shop/orders/OrderController.java", "title": "POST /orders",
+    { "from": "web/src/checkout/api.ts", "to": "api/src/main/java/shop/orders/OrderController.java", "title": "POST /orders", "via": "HTTP",
       "evidence": ["web/src/checkout/api.ts:14", "api/src/main/java/shop/orders/OrderController.java:22"] },
-    { "from": "api/src/main/java/shop/orders/OrderRepository.java", "to": "db", "title": "JPA",
+    { "from": "api/src/main/java/shop/orders/OrderRepository.java", "to": "db", "title": "orders", "via": "JPA",
       "evidence": ["api/src/main/java/shop/orders/OrderRepository.java:8", "api/src/main/resources/application.properties:3"] }
   ]
 }
@@ -251,6 +251,10 @@ The commands are `node <zoom>/spike/scripts/zoom.mjs …`, where `<zoom>` is the
   - Ctrl K finds them, and the details panel shows them;
   - `check` refuses a feature that names neither a declared node nor an application file. It warns about a feature node deeper than three levels, and about a top-level app that carries no feature.
 - **link ends:** a node id, or the repo path of an application file.
+- **via:** how the link travels, said first on its arrow ("HTTP ×10", "JPA · orders"): one of `HTTP`, `WebSocket`, `SSE`, `gRPC`, `GraphQL`, `TCP`, `UDP`, `IPC`, `JPA`, `JDBC`, `SQL`, `ORM`, `Redis`, `MongoDB`, `AMQP`, `Kafka`, `NATS`, `SMTP`, `File`, `Process`, spelled so.
+  - Every link between code parts names one; a link with an actor names none (a person is not a protocol).
+  - Name the layer the code uses, not the engine behind it: a Spring Data JPA repository (`JpaRepository`, or a `CrudRepository` whose entities are JPA's) is `JPA`, a `MongoRepository` is `MongoDB`, raw statements are `SQL`, an ORM session (EF Core, SQLAlchemy, Prisma, GORM) is `ORM`. The engine (PostgreSQL) is the store node's `technology`.
+  - `check` refuses any other value and warns about a link that names none, suggesting what its cited lines read like. The title then says what travels ("orders", "kingdom actions, /kingdom/*"), not the transport again.
 - **evidence:** `path:line` or `path:start-end` in the repo, in any file, including config.
   - Required unless one end is an actor.
   - In application code it should be a line the graph marked.

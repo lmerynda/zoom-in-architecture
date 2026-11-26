@@ -373,7 +373,8 @@ try {
     }
   })
   check('Connections cards wear their rank as a badge', badges.badges.length === badges.closed && [...badges.badges, ...badges.headers.map(h => h.split(' ')[0])].includes('#1'), JSON.stringify(badges))
-  check('the Connections landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
+  // A map link says how it travels first: HTTP, JPA.
+  check('the Connections landscape labels its arrows in narrow gutters, transport first', ['shops in a browser', 'HTTP · GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
@@ -389,6 +390,16 @@ try {
     const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
+  // The landscape's store arrow says how it travels, then what it keeps.
+  const reqLabels = await page.evaluate(() => {
+    const s = window.__spike
+    s.select(-1); s.unhover(); s.manual(true); s.fit(0)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    const labels = s.renderer.labels.filter(l => l.text.visible).map(l => l.text.text)
+    s.manual(false)
+    return labels
+  })
+  check('the Requests landscape’s store arrow says how it travels, then what it keeps', reqLabels.includes('JPA · orders'), JSON.stringify(reqLabels))
   const traced = await page.evaluate(async () => {
     const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li, #details .d-table-rows li')].map(p => p.textContent).join(' | ')
     s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()

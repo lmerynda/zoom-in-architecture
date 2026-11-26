@@ -24,7 +24,7 @@ A map shows a codebase's architecture: the processes that run, the components in
   - The agent first works out what the product is for and lists its headline features, in the product's own words, from its README, docs, screens and routes.
   - The skill describes what the viewer can show, and the agent chooses the levels that suit the repo. There is no fixed depth. The defaults: the product's apps on top and development tooling in a group of its own; inside an app, the repo's own split, by feature or by layer (controllers, models, views); the individual files at the bottom, with the graph's arrows between them.
   - Each feature in the map names the nodes that carry it, or the files, when a layered app spreads a feature across layers. The viewer finds those nodes when you type a feature's name into Ctrl K, and shows the features as chips in the details panel. Only cards that carry a feature are drawn at double size, so a large pile of tooling or plumbing never outweighs the product.
-  - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence. Publishing copies the cited lines into the model, and the details panel shows them under the link.
+  - It adds links the graph cannot see, such as HTTP calls between the client and the server or the database, each with `file:line` evidence and a `via` that says how it travels (HTTP, JPA, WebSocket, …; `check` knows the list). Publishing copies the cited lines into the model, and the details panel shows them under the link. An arrow says its transport first when every relation on it shares one: "HTTP ×10", "JPA · accounts".
   - It checks the map with `npm run zoom -- check <repo> <map.json>` and publishes it with `npm run zoom -- publish <repo> <map.json>`, which uploads it to the running viewer (below).
 - **The Connections view, for every model:** the same map, the same zoom into cards and code, but each level laid out by connection instead of map order. Cards rank by breadth, then volume: the share of their siblings they reach, plus half their relations on a log scale against the busiest sibling. A shared-types library imported hundreds of times by a few parts does not outrank the part that talks to all of its peers, and a heavy part missing one sibling is not ranked below a light one that touches them all. The most connected child sits in the middle (on a 2 × 2 card when the level has four or more; half a cell off the exact middle when the ring around it would otherwise leave a side empty); the rest fill rings outward in rank order, each taking the cell of its ring nearest the siblings it is coupled with, so distance from the centre follows rank and a level reads from its centre of gravity out to what barely depends on anything. Cards stay on the grid, so edges keep their gutters. Each card wears its rank as a badge in its corner ("#1"; an open card puts it in its header) and shows the relations crossing it and how many of its siblings it reaches ("187 relations · 9 of 9 siblings"): a hub that many use and a part that talks to everything both rank high, and the last number tells them apart, and `.` / `,` select the next or previous card of the level by importance, starting at #1. It came from a force-directed experiment ([docs/research/2026-11-10-force-layout-experiment.md](../docs/research/2026-11-10-force-layout-experiment.md)): free placement showed coupling well at component level but turned files into a hairball and dropped the zoom.
 - **The Requests view, from code:** publishing also writes `<name>.requests.json` for any app with endpoints, and an Architecture / Requests switch appears beside the lenses: like a lens, it is a way of looking at the open model.
@@ -51,11 +51,13 @@ A map shows a codebase's architecture: the processes that run, the components in
 `check` refuses:
 - a map that leaves an application file out, or lists a file that isn't one;
 - a link without evidence, or with evidence that isn't in the repo;
+- a link whose `via` is not one it knows;
 - bad node ids and kinds;
 - a feature that names neither a node the map declares nor an application file.
 
 It warns when:
 - evidence doesn't land on a line the graph marked (it quotes that line), or sits in a file at neither end of the link;
+- a link between code parts names no `via` (it suggests what the cited lines read like);
 - the map lists no features;
 - a feature sits more than three levels down;
 - a top-level app carries no feature, which usually means it is tooling;

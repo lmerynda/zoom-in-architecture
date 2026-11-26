@@ -25,9 +25,9 @@
   ],
   "links": [
     { "from": "customer", "to": "web", "title": "shops in a browser" },
-    { "from": "web/src/api.ts", "to": "server/src/main/java/com/shop/orders/OrderController.java", "title": "GET /api/orders",
+    { "from": "web/src/api.ts", "to": "server/src/main/java/com/shop/orders/OrderController.java", "title": "GET /api/orders", "via": "HTTP",
       "evidence": ["web/src/api.ts:1", "server/src/main/java/com/shop/orders/OrderController.java:11"] },
-    { "from": "server/src/main/java/com/shop/orders/OrderRepository.java", "to": "db", "title": "JPA",
+    { "from": "server/src/main/java/com/shop/orders/OrderRepository.java", "to": "db", "title": "orders", "via": "JPA",
       "evidence": ["server/src/main/java/com/shop/orders/OrderRepository.java:5"] }
   ]
 }

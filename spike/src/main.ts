@@ -918,7 +918,7 @@ async function main() {
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1 }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
-    const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
+    const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged + diff.viaChanged > 0
     if (said || changed) controls.toast.show(said ?? `Map updated · ${describeDiff(diff, next)}`)
     arrowLegend()
     console.info(`live update: ${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)

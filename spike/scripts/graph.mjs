@@ -278,7 +278,7 @@ const HINTS = [
 const CONFIG = /(^|\/)(application[\w-]*\.(properties|ya?ml)|appsettings[\w.-]*\.json|\.env[\w.-]*|docker-compose[\w.-]*\.ya?ml|compose\.ya?ml|Dockerfile[\w.-]*|nginx[\w.-]*\.conf|Procfile|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|launchSettings\.json|Makefile|alembic\.ini|[\w.-]+\.service)$|(^|\/)\.github\/workflows\/[^/]+\.ya?ml$|(^|\/)(k8s|helm|deploy|infra|charts)\/.*\.(ya?ml|json|tf)$|\.tf$/
 
 /** Route, call, schedule, store, queue, socket, message, process and file lines of a file, with their line numbers. */
-function hintsOf(src) {
+export function hintsOf(src) {
   const out = []
   const lines = src.split('\n')
   lines.forEach((line, i) => {

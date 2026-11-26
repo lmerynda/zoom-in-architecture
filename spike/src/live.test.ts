@@ -39,8 +39,15 @@ describe('diffModels', () => {
     const a = new Tree({ ...v1, relations: [{ source: 'a.x', target: 'b.z', title: 'calls', evidence: ev(3) }, { source: 'a.y', target: 'b.z', title: '' }] })
     const b = new Tree({ ...v2, relations: [{ source: 'a.x', target: 'b.z', title: 'calls', evidence: ev(4) }, { source: 'b.new', target: 'a.x', title: '' }] })
     const d = diffModels(a, b)
-    expect([d.arrowsAdded, d.arrowsRemoved, d.evidenceChanged]).toEqual([1, 1, 1])
+    expect([d.arrowsAdded, d.arrowsRemoved, d.evidenceChanged, d.viaChanged]).toEqual([1, 1, 1, 0])
     expect(describeDiff(d, b)).toBe('added b.new · changed Y renamed, b · removed gone · +1 arrow · −1 arrow · 1 citation moved')
+  })
+
+  it('says when only how an arrow travels changed', () => {
+    const rel = (via: string) => ({ ...v1, relations: [{ source: 'a.x', target: 'b.z', title: 'calls', kind: 'runtime' as const, via, evidence: [] }] })
+    const d = diffModels(new Tree(rel('HTTP')), new Tree(rel('WebSocket')))
+    expect([d.arrowsAdded, d.arrowsRemoved, d.evidenceChanged, d.viaChanged]).toEqual([0, 0, 0, 1])
+    expect(describeDiff(d, new Tree(rel('WebSocket')))).toBe('1 arrow travels another way')
   })
 })
 

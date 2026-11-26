@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildGraph } from './graph.mjs'
-import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, redact, revision, toName } from './map.mjs'
+import { buildGraph, hintsOf } from './graph.mjs'
+import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, redact, revision, toName, VIA, viaOf } from './map.mjs'
 import { maxUpload, refusals, storeBundle, storedMap, storedPublished, storedSource, unauthorised, writeAtomic } from './store.mjs'
 
 const graph = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -81,13 +81,69 @@ describe('buildModel', () => {
     ])
   })
 
+  it('carries how a link travels, refuses an unknown via and warns when a link between code parts says none', () => {
+    const rel = t => r.model.relations.find(x => x.title === t)
+    expect(rel('GET /api/orders').via).toBe('HTTP')
+    expect(rel('orders').via).toBe('JPA')
+    // A person using an app is not a protocol: no via, no warning.
+    expect(rel('shops in a browser').via).toBeUndefined()
+    expect(r.warnings.filter(w => w.includes('via'))).toEqual([])
+    const bad = build(edit(m => { m.links[1].via = 'http'; m.links[2].via = 'carrier pigeon' }))
+    expect(bad.errors).toEqual([
+      'link web/src/api.ts → server/src/main/java/com/shop/orders/OrderController.java has via "http"; spell it HTTP',
+      `link server/src/main/java/com/shop/orders/OrderRepository.java → db has via "carrier pigeon"; use one of ${VIA.join(', ')}`,
+    ])
+    // A live re-import publishes past a missing end, but never with a via the viewer does not know.
+    const loose = build(edit(m => { m.links.push({ from: 'web/src/gone.ts', to: 'db', via: 'htp', evidence: ['web/src/api.ts:1'] }) }), { loose: true })
+    expect(loose.errors).toEqual(['link web/src/gone.ts → db has via "htp"; use one of ' + VIA.join(', ')])
+    // None said: the warning suggests what the cited lines read like, when they agree.
+    const none = build(edit(m => { delete m.links[1].via; delete m.links[2].via }))
+    expect(none.errors).toEqual([])
+    expect(none.warnings.map(w => w.replace(/: one of .*?(?= \(|$)/, ': …'))).toEqual([
+      'link web/src/api.ts → server/src/main/java/com/shop/orders/OrderController.java says no via, how it travels: … (its evidence reads like HTTP)',
+      'link server/src/main/java/com/shop/orders/OrderRepository.java → db says no via, how it travels: … (its evidence reads like JPA)',
+    ])
+  })
+
+  it('reads the via a marked line suggests, through the scanner’s own marks, and says nothing when the line does not tell', () => {
+    // Each line as the scanner marks it, then what it reads like.
+    const v = line => { const [h] = hintsOf(line); return h ? `${h.kind} ${viaOf(h)}` : 'unmarked' }
+    expect(v("export const load = async () => (await fetch('/api/orders')).json()")).toBe('call HTTP')
+    expect(v("const settings = await fetch('/settings/smtp')")).toBe('call HTTP')
+    expect(v("fetch('/graphql', { method: 'POST' })")).toBe('call GraphQL')
+    expect(v('@router.websocket("/chat")')).toBe('route WebSocket')
+    expect(v('@GetMapping("/api/orders")')).toBe('route HTTP')
+    expect(v('server = smtplib.SMTP(host)')).toBe('call SMTP')
+    expect(v('public interface OrderRepository extends JpaRepository<Order, Long> {}')).toBe('store JPA')
+    // Spring Data's Crud repository sits over JPA, MongoDB or others alike.
+    expect(v('interface Orders extends CrudRepository<Order, Long> {}')).toBe('store null')
+    expect(v('interface Orders extends MongoRepository<Order, String> {}')).toBe('store MongoDB')
+    expect(v('private final JdbcTemplate jdbc;')).toBe('store JDBC')
+    expect(v('orders = session.exec(select(Order)).all()')).toBe('store ORM')
+    expect(v('db, err := sql.Open("postgres", url)')).toBe('store SQL')
+    expect(v('client := redis.NewClient(&opts)')).toBe('store Redis')
+    expect(v("localStorage.setItem('cart', x)")).toBe('store null')
+    expect(v('const events = new EventSource(url)')).toBe('socket SSE')
+    expect(v('s := grpc.NewServer()')).toBe('socket gRPC')
+    expect(v('conn, err := net.Dial("udp", addr)')).toBe('socket UDP')
+    expect(v('ln, err := net.Listen("tcp", ":9000")')).toBe('socket TCP')
+    expect(v("const socket = new WebSocket('wss://game.example/ws')")).toBe('socket WebSocket')
+    expect(v('producer = KafkaProducer(bootstrap_servers=servers)')).toBe('queue Kafka')
+    expect(v("app = Celery('tasks', broker='redis://localhost')")).toBe('queue Redis')
+    expect(v("app = Celery('tasks', broker='amqp://guest@localhost')")).toBe('queue AMQP')
+    // Queuing a task says nothing of the broker.
+    expect(v('send_email.delay(order.id)')).toBe('queue null')
+    expect(v("window.parent.postMessage('ready', '*')")).toBe('message IPC')
+    expect(v('@Scheduled(fixedRate = 5000)')).toBe('schedule null')
+  })
+
   it('warns about evidence in a file at neither end of the link', () => {
     // A real route line, but in the Api, which this link does not touch.
     const r2 = build(edit(m => { m.links[1].evidence = ['web/src/api.ts:1', 'src/Api/Controllers/OrdersController.cs:2'] }))
     expect(r2.errors).toEqual([])
     expect(r2.warnings).toEqual(['link web/src/api.ts → server/src/main/java/com/shop/orders/OrderController.java: evidence "src/Api/Controllers/OrdersController.cs:2" is in src/Api/Controllers/OrdersController.cs, which is at neither end of the link'])
     // Under a node end, and in config, evidence is fine.
-    const r3 = build(edit(m => { m.links.push({ from: 'server.orders', to: 'db', evidence: ['server/src/main/java/com/shop/orders/OrderRepository.java:5', 'server/src/main/resources/application.properties:1'] }) }))
+    const r3 = build(edit(m => { m.links.push({ from: 'server.orders', to: 'db', via: 'JPA', evidence: ['server/src/main/java/com/shop/orders/OrderRepository.java:5', 'server/src/main/resources/application.properties:1'] }) }))
     expect(r3.warnings).toEqual([])
   })
 

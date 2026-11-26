@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Camera, flight } from './camera'
 import { CARD_H, CARD_W, cardH, cardW, centreOut, contentBox, GUTTER, importance, layoutJobs, placeWorld, rankKey, ranks, siblingPartners, spans, type LocalLayout } from './layout'
-import { aggregateEdges, plainDoc, ranInTests, Tree, type ModelJson } from './model'
+import { aggregateEdges, arrowLabel, plainDoc, ranInTests, Tree, type ModelJson } from './model'
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
@@ -69,7 +69,7 @@ describe('Tree', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
     const e = aggregateEdges(t, i => t.childUnder(0, i))
-    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false, seen: false, traceable: false }])
+    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, typesOnly: false, seen: false, traceable: false, via: '', focusVia: '' }])
   })
 
   it('judges a runtime call against the trace only when a file inside a part where code ran makes it', () => {
@@ -91,6 +91,39 @@ describe('Tree', () => {
     expect(new Tree({ ...model, elements: els, relations }).relTraceable).toEqual([false, false, false, false, false])
     const e = aggregateEdges(t, i => t.childUnder(0, i))
     expect(e.map(x => ({ seen: x.seen, traceable: x.traceable }))).toEqual([{ seen: true, traceable: true }])
+  })
+
+  it('says how an arrow travels first, when every relation on it says the same', () => {
+    const rt = (source: string, target: string, via?: string) => ({ source, target, title: 'calls', kind: 'runtime' as const, evidence: [], ...(via ? { via } : {}) })
+    const t = new Tree({ ...model, relations: [rt('a.a1', 'b', 'HTTP'), rt('a.a2.x', 'b.b1', 'HTTP'), rt('b.b1', 'a.a1', 'HTTP')] })
+    expect(t.relVia).toEqual(['HTTP', 'HTTP', 'HTTP'])
+    expect(aggregateEdges(t, i => t.childUnder(0, i)).map(e => e.via)).toEqual(['HTTP'])
+    // Mixed ways, or a code use folded in, say no transport: the count alone.
+    const mixed = new Tree({ ...model, relations: [rt('a.a1', 'b', 'HTTP'), rt('a.a2.x', 'b.b1', 'JPA')] })
+    expect(aggregateEdges(mixed, i => mixed.childUnder(0, i)).map(e => e.via)).toEqual([''])
+    const withCode = new Tree({ ...model, relations: [rt('a.a1', 'b', 'HTTP'), { source: 'a.a2.x', target: 'b.b1', title: 'B1' }] })
+    expect(aggregateEdges(withCode, i => withCode.childUnder(0, i)).map(e => e.via)).toEqual([''])
+    // A via on a code use is not a transport.
+    expect(new Tree({ ...model, relations: [{ source: 'a.a1', target: 'b', title: 'B', via: 'HTTP' }] }).relVia).toEqual([''])
+    // In focus, the transport is that of the relations crossing it: two HTTP calls beside an unrelated import.
+    const focus = new Tree({ ...model, relations: [rt('a.a1', 'b', 'HTTP'), rt('a.a1', 'b.b1', 'HTTP'), { source: 'a.a2.x', target: 'b.b1', title: 'B1' }] })
+    const [fe] = aggregateEdges(focus, i => focus.childUnder(0, i), i => i === focus.byId.get('a.a1'))
+    expect([fe.count, fe.via, fe.focusCount, fe.focusVia]).toEqual([3, '', 2, 'HTTP'])
+  })
+
+  it('labels an arrow: transport and count, transport and title, or what it always said', () => {
+    expect(arrowLabel(10, 'HTTP', 'kingdom actions', true)).toBe('HTTP ×10')
+    expect(arrowLabel(3, '', 'User', true)).toBe('×3')
+    expect(arrowLabel(1, 'JPA', 'accounts', true)).toBe('JPA · accounts')
+    expect(arrowLabel(1, 'JPA', '', true)).toBe('JPA')
+    expect(arrowLabel(1, 'JPA', 'JPA', true)).toBe('JPA')
+    // A single import's name shows only when named (on the focused card's edges).
+    expect(arrowLabel(1, '', 'User', false)).toBe('')
+    expect(arrowLabel(1, '', 'User', true)).toBe('User')
+    // A title that only repeats an end's name says nothing; a transport into a card of its own name still does.
+    expect(arrowLabel(1, '', 'User', true, ['Users page', 'User'])).toBe('')
+    expect(arrowLabel(1, 'Redis', '', true, ['Cache', 'Redis'])).toBe('Redis')
+    expect(arrowLabel(1, 'Redis', 'Redis', true, ['Cache', 'Redis'])).toBe('Redis')
   })
 
   it('reads a trace mark as code that ran only when it counts something', () => {
