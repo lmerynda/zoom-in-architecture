@@ -426,7 +426,8 @@ try {
   await page.setViewport({ width: 1601, height: 1000 })
   await sleep(900)
   const afterNudge = await camera()
-  check('a one-pixel resize keeps a pan', Math.abs(afterNudge[0] - panned[0]) < 1 && Math.abs(afterNudge[2] / panned[2] - 1) < 1e-3, JSON.stringify({ panned, afterNudge }))
+  // The stage's centre moves a few px with the column's width; a pan undone would jump back ~140 px.
+  check('a one-pixel resize keeps a pan', Math.abs(afterNudge[0] - panned[0]) * panned[2] < 10 && Math.abs(afterNudge[2] / panned[2] - 1) < 1e-3, JSON.stringify({ panned, afterNudge }))
   await page.evaluate(() => { const s = window.__spike; s.cam.set(s.cam.x, s.cam.y, s.cam.z * 3.5) })
   await sleep(300)
   const zoomed = await camera()
