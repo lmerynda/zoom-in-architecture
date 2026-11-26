@@ -282,7 +282,8 @@ async function main() {
   // By id, not index: a live update may number the cards anew.
   let framedAt: { id: string; x: number; y: number; z: number } | null = null
   const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.z / framedAt.z - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
-  const atWhole = () => atFramed() && framedAt!.id === '' && renderer.selected <= 0
+  // The whole map framed, with or without a card selected in it (the map's crumb keeps the selection).
+  const atWhole = () => atFramed() && framedAt!.id === ''
   /** The card last framed, in the current tree (-1 once it is gone). */
   const framedCard = () => (framedAt!.id === '' ? 0 : tree.byId.get(framedAt!.id) ?? -1)
   const fit = (i = 0) => {
@@ -971,7 +972,7 @@ async function main() {
   // Live models: the dev server pushes an event when a workspace's LikeC4 files change. The new
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean } | null = null
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number] | null } | null = null
   let liveVersion = 0
   /** A live update arrived while the reader was at the whole map: frame it whole again after its morph. */
   let refitAfterMorph = false
@@ -1031,7 +1032,7 @@ async function main() {
     // At the whole map when it is installed (not when it was asked for: the reader may have moved
     // while it was laid out), a new version is framed whole again once it has moved into place.
     refitAfterMorph = atWhole()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false }
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: null }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
@@ -1052,17 +1053,20 @@ async function main() {
     const [x0, y0, z0] = morph.cam0, [x1, y1, z1] = morph.cam1
     // The morph moves the camera with what it shows until the reader takes over (a wheel, a pan, a
     // flight): from then on the camera is theirs, and no refit follows.
-    if (!cam.settled) morph.handsOff = true
+    // A wheel or a flight leaves the camera unsettled; a drag moves it from where the morph put it.
+    const l = morph.last
+    if (!cam.settled || (l && (cam.x !== l[0] || cam.y !== l[1] || cam.z !== l[2]))) morph.handsOff = true
     if (!morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
       const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
+      morph.last = [cam.x, cam.y, cam.z]
     }
     renderer.router.invalidate()
     // The refit waits for the morph, and is dropped if the reader moved meanwhile (a wheel, a pan).
     if (u >= 1) {
       const stayed = !morph.handsOff && cam.settled && Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1
       morph = null
-      if (refitAfterMorph && stayed && renderer.selected <= 0) fit(0)
+      if (refitAfterMorph && stayed) fit(0)
       refitAfterMorph = false
     }
   }
