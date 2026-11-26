@@ -13,6 +13,7 @@ import { renderModelTabs } from './models'
 import { describeDiff, diffModels, reuseLayouts, stableOrder, startRects } from './live'
 import { Tree, type ModelJson } from './model'
 import { placeUrl, Places, type PlaceWords } from './places'
+import { findProblems, problemNote, problemsSection, type ProblemReport } from './problems'
 import { Reader } from './reader'
 import { count, OPEN_A, OPEN_B, Renderer, safeTop, setSafeTop } from './render'
 import { synthetic } from './synthetic'
@@ -159,6 +160,11 @@ async function main() {
   let raw = model
   let tree = new Tree(model, { types: showTypes })
   let published = model.published
+  // Problems in the map's structure (problems.ts); a request's steps are not parts, so the Requests view has none.
+  const problemsOf = (t: Tree): ProblemReport | null => (view === 'requests' ? null : findProblems(t))
+  let problems = problemsOf(tree)
+  /** The problem whose arrow was opened last (] and [ go on from it), and whether the outline's Problems list is open. */
+  let problemAt = -1, problemsOpen = false
   // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
   const portraitAspect = () => (innerWidth < 700 && innerHeight > innerWidth * 1.2 ? Math.max(0.45, innerWidth / Math.max(1, innerHeight - 220)) : undefined)
   let rootAspect = portraitAspect()
@@ -517,6 +523,8 @@ async function main() {
     const was = outlinedBefore
     outlinedBefore = here
     renderOutline(details, tree, here, j => renderer.relationsOf(j), j => controls.goSelect(j), surfaceLead(tree, here, surface, actions))
+    const listed = problems && problemsSection(tree, problems, here, problemsOpen, { open: k => openProblem(k), toggle: o => { problemsOpen = o; markProblems() } })
+    if (listed) details.append(listed)
     // Or, when that card is not listed here, the outline's heading: focus stays in the panel.
     if (focused != null) {
       const row = [...details.querySelectorAll<HTMLElement>('.d-outline button')].find(b => b.textContent === focused)
@@ -703,6 +711,56 @@ async function main() {
     $('announce').textContent = `${picked.length} arrows share this line`
   }
 
+  /**
+   * Opens problem k: its level framed, its arrow in the panel (every relation between its two
+   * cards, with their lines), and above that why it is listed. Back keeps the place it left.
+   */
+  const openProblem = (k: number) => {
+    const p = problems?.list[k]
+    if (!p || !problems) return
+    problemAt = k
+    // Siblings: their level framed; cards further down: the two framed together, so both show.
+    if (tree.parent[p.a] === p.level && tree.parent[p.b] === p.level) controls.go(p.level)
+    else controls.goFrame([p.a, p.b])
+    pickEdge({ s: p.a, t: p.b }, { rels: relationsAcross(tree, p.a, p.b) })
+    // Named by the cards themselves: the frame flown to shows them, whatever stood for them before.
+    renderer.edge = { s: p.a, t: p.b }
+    details.querySelector('.d-head')?.after(problemNote(tree, p, k, problems.list.length))
+    // The relations it is listed for lead their direction's list, marked.
+    const flagged = new Set(p.kind === 'coupling' ? [] : p.rels)
+    for (const li of [...details.querySelectorAll<HTMLElement>('.d-edge li[data-rel]')].reverse()) {
+      if (!flagged.has(Number(li.dataset.rel))) continue
+      li.classList.add('d-flagged')
+      li.querySelector('.d-why')?.prepend(Object.assign(document.createElement('em'), { className: 'd-flag', textContent: 'flagged' }))
+      li.parentElement!.prepend(li)
+    }
+    $('announce').textContent = `Problem ${k + 1} of ${problems.list.length}: ${p.title}. ${p.why}`
+    controls.toast.show(`Problem ${k + 1}/${problems.list.length} · ${p.title}`, '] next · [ previous')
+    markProblems()
+  }
+  /** ] and [ with nothing selected: the next or previous problem, on from the last one opened; 0 the first. False when the map has none. */
+  const stepProblem = (dir: 1 | -1 | 0) => {
+    const n = problems?.list.length ?? 0
+    if (!n) return false
+    openProblem(dir === 0 ? 0 : problemAt < 0 ? (dir > 0 ? 0 : n - 1) : (problemAt + dir + n) % n)
+    return true
+  }
+  /** Whether the panel shows a problem's arrow now. */
+  const problemShown = () => problemAt >= 0 && details.querySelector('.d-problem') != null
+  /**
+   * The map marks problems while the outline's list is open (all of them, faint) or one is open
+   * (that one, strong); the arrow legend names the mark while it is drawn.
+   */
+  let marked = ''
+  const markProblems = () => {
+    const shown = problemShown()
+    const key = `${problemsOpen}|${shown ? problemAt : -1}|${liveVersion}`
+    if (key === marked) return
+    marked = key
+    renderer.warn = problems && (problemsOpen || shown) ? { all: new Set(problemsOpen ? problems.list.flatMap(p => p.rels) : []), open: new Set(shown ? problems.list[problemAt].rels : []) } : null
+    arrowLegend()
+  }
+
   // Lenses: strategy-game overlays colouring every card by one measure.
   const lenses = buildLenses(tree)
   const lensBar = new LensBar(lenses)
@@ -720,7 +778,7 @@ async function main() {
     return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null, req: view === 'requests' ? null : undefined }
   }, () => cam.w)
   controls = installControls({
-    app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true },
+    app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, stepProblem, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true },
     api: () => surface.api, requests: view === 'requests', endpoint: id => openEndpoint(id), list: f => showApi(f), showFeature,
   })
   resize()
@@ -761,6 +819,7 @@ async function main() {
     // A map traced with the project's own tests tells the calls it could have seen and no test made,
     // when there are any: the dash is named only where one can be drawn.
     if (tree.relTraceable.some((t, k) => t && !tree.relSeen[k])) parts.push(item('a-unseen', 'calls not seen in tests'))
+    if (renderer.warn) parts.push(item('a-problem', 'problems'))
     if (kinds.has('types')) {
       parts.push(item('a-types', 'type-only imports'))
       const b = document.createElement('button')
@@ -907,6 +966,8 @@ async function main() {
     prev.destroy()
 
     tree = next; jobs = nextJobs; local = nextLocal; world = live; renderer = nextRenderer
+    problems = problemsOf(next)
+    problemAt = -1
     edgeReturn = { selected: -1, list: null }
     lenses.splice(0, lenses.length, ...buildLenses(next))
     renderer.lens = lenses.find(l => l.name === prev.lens?.name) ?? null
@@ -920,6 +981,8 @@ async function main() {
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
     if (said || changed) controls.toast.show(said ?? `Map updated · ${describeDiff(diff, next)}`)
+    marked = ''
+    markProblems()
     arrowLegend()
     console.info(`live update: ${rerun.length} of ${nextJobs.length} layouts redone · build ${buildMs} ms · swap ${Math.round(performance.now() - swapStart)} ms`)
   }
@@ -992,6 +1055,7 @@ async function main() {
       if (!cam.flying && !edgeOpen()) showOutline()
     }
     if (!cam.flying && outlined !== here && renderer.selected <= 0 && !edgeOpen()) showOutline()
+    markProblems()
     push(cpu, performance.now() - start)
     push(delta, dt)
   }
@@ -1022,6 +1086,7 @@ async function main() {
       get tree() { return tree }, get world() { return world }, get renderer() { return renderer },
       get liveVersion() { return liveVersion }, get morphing() { return morph != null }, swapModel,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
+      get problems() { return problems }, get problemAt() { return problemAt }, openProblem,
       fit, safeTop, fly: (i: number) => controls.go(i), select, setLens, unhover: () => { renderer.pointer = null }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),
       resetFrames: () => { cpu.k = delta.k = 0; cpu.full = delta.full = false },

@@ -448,6 +448,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
     for (const k of mine) {
       const a = tree.rels[k * 2], b = tree.rels[k * 2 + 1], kind = tree.relKind[k]
       const li = el('li', `k-${kind}`)
+      li.dataset.rel = String(k)
       const pair = el('button', 'd-rel')
       pair.append(el('i', '', kind === 'runtime' ? '⇢' : '→'), el('b', '', `${tree.els[a].title} → ${tree.els[b].title}`))
       pair.title = `${KIND_WORD[kind]}: go to ${tree.els[a].title}`

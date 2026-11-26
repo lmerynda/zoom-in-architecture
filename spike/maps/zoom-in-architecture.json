@@ -20,6 +20,7 @@
     { "id": "viewer.layout", "kind": "component", "title": "Layout and routing", "description": "Packs each container's children in worker threads and routes edges through the gutters between cards.", "files": ["spike/src/layout.ts", "spike/src/layoutPool.ts", "spike/src/layout.worker.ts", "spike/src/route.ts", "spike/src/edges.ts"] },
     { "id": "viewer.rendering", "kind": "component", "title": "Rendering", "description": "Draws only what the camera sees at its zoom, with lenses (size, coupling, churn).", "files": ["spike/src/render.ts", "spike/src/camera.ts", "spike/src/lens.ts", "spike/src/icons.ts"] },
     { "id": "viewer.code", "kind": "component", "title": "Code view", "description": "Past a file card, its own source: a minimap first, then coloured, readable lines with the graph's marked and cited lines.", "files": ["spike/src/code.ts", "spike/src/syntax.ts"] },
+    { "id": "viewer.problems", "kind": "component", "title": "Problems", "description": "Finds cycles between parts, uses against the grain of the layers the map's names give, and the heaviest couplings; lists them under the outline and marks them on the map.", "files": ["spike/src/problems.ts"] },
     { "id": "viewer.recorder", "kind": "component", "title": "Video recorder", "description": "A second page that encodes frames sent by the recording script into a video with WebCodecs.", "files": ["spike/src/recorder.ts"] },
     { "id": "viewer.controls", "kind": "component", "title": "Controls", "description": "The controls: search, Back and Parent, stepping through a selection's relations, a context menu and the minimap.", "files": ["spike/src/controls/**", "spike/src/minimap.ts"] }
   ],
@@ -29,6 +30,7 @@
     { "title": "Zoom from landscape to file", "nodes": ["viewer.layout", "viewer.rendering"] },
     { "title": "Requests view: endpoints and their paths", "nodes": ["mapper.requests", "viewer.shell"] },
     { "title": "Read the code in place", "nodes": ["viewer.code"] },
+    { "title": "Problems: cycles, uses against the grain, heaviest couplings", "nodes": ["viewer.problems", "viewer.shell"] },
     { "title": "Travel, routes and pins", "nodes": ["viewer.controls"] },
     { "title": "Lenses: size, coupling, churn", "nodes": ["viewer.rendering"] },
     { "title": "Live updates", "nodes": ["viewer.model", "mapper.cli", "service"] },

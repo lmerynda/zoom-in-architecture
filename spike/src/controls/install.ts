@@ -38,6 +38,8 @@ export interface Ctx {
   pickEdge: (l: { s: number; t: number } | { s: number; t: number }[] | null) => void
   /** An arrow, or the list of arrows on a trunk, is in the panel. */
   edgeOpen: () => boolean
+  /** With nothing selected, ] and [ step through the map's problems (problems.ts), 0 opens the first; false when it has none. */
+  stepProblem: (dir: 1 | -1 | 0) => boolean
   /** Moves keyboard focus to the panel's heading. */
   focusPanel: () => void
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
@@ -190,6 +192,7 @@ export function installControls(c: Ctx) {
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
+    { name: 'Problems: cycles, uses against the grain, heaviest couplings', hint: ']', run: () => { c.select(-1); if (!c.stepProblem(0)) toast.show('No problems found on this map') } },
   ]
   // A container found by search is framed, to look into, and the selection put down, so the panel
   // and the address name what was found, not what was selected before (Back brings that back); a
@@ -366,6 +369,7 @@ export function installControls(c: Ctx) {
     if (e.altKey && k === 'arrowright') { e.preventDefault(); return forward() }
     if (e.altKey && k === 'arrowup') { e.preventDefault(); return parent() }
     if (k === '.' || k === ',') return byImportance(k === '.' ? 1 : -1)
+    if ((k === ']' || k === '[') && renderer.selected <= 0 && c.stepProblem(k === ']' ? 1 : -1)) return
     if (k === ']') return cycleTarget('out', e.shiftKey ? -1 : 1)
     if (k === '[') return cycleTarget('in', e.shiftKey ? -1 : 1)
     if (k === 'enter') {
@@ -407,6 +411,8 @@ export function installControls(c: Ctx) {
         tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), [...pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), 'Click: every relation and the lines that make it'], p![0], p![1])
       } else tooltip.update(p && small && !busy ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
+    /** Frames several cards together, recording the place left so Back returns. */
+    goFrame(nodes: number[]) { leave(); frame(nodes) },
     view, go, goSelect, enterPlace, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },
