@@ -281,9 +281,15 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const tree = [...nodes.values()].map(n => ({ id: n.id, title: n.title, kind: n.kind, files: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.length, 0), voted: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.filter(p => voted.has(p)).length, 0) }))
   // Marked lines no link cites, for re-maps after the code or the hints changed. Timers are not links.
   const uncited = graph.files.flatMap(f => f.hints.filter(h => h.kind !== 'schedule' && !cited.has(`${f.path}:${h.line}`)).map(h => ({ path: f.path, ...h })))
+  // Where the code starts work other than for an HTTP request (graph.mjs entryPointsOf), each on the
+  // card of its file, for the viewer to list: a program's main, then schedules, message and event
+  // handlers, socket servers. Endpoints are the Requests view's.
+  const order = ['main', 'schedule', 'message', 'socket']
+  const entryPoints = graph.files.flatMap(f => f.entryPoints.map(e => ({ kind: e.kind, element: fileId.get(f.path), line: e.line, text: e.text, ...(e.name ? { name: e.name } : {}) })))
+    .sort((x, y) => order.indexOf(x.kind) - order.indexOf(y.kind) || x.element.localeCompare(y.element) || x.line - y.line)
   const files = graph.files.length
   return {
-    model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations },
+    model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations, entryPoints },
     errors, warnings, tree, unplaced, uncited, accepted: acceptedSeen,
     stats: { nodes: nodes.size, files, relations: relations.length, links: (map.links ?? []).length, unplaced: unplaced.length },
   }

@@ -293,6 +293,117 @@ export function hintsOf(src) {
   return out
 }
 
+// Where a process starts work other than for an HTTP request (the Requests view has those): a
+// schedule or timer, a socket server or handler, a message, queue or event handler, and a
+// program's main. A line that opens a connection to someone else is not one.
+const STARTS = [
+  ['schedule', /@Scheduled\b|\bclass\s+\w+\s*:\s*BackgroundService\b|\bsetInterval\s*\(|\bcron\.schedule\s*\(|\bnew\s+PeriodicTimer\b|@(?:periodic_task|\w+\.scheduled_job)\b|\bscheduler\.add_job\s*\(|\bschedule\.every\b|\btime\.NewTicker\s*\(|\bcron\.New\s*\(/g],
+  ['socket', /@ServerEndpoint\b|@MessageMapping\b|\b(?:extends|implements)\s+\w*WebSocketHandler\b|\bclass\s+\w+\s*:\s*Hub\b|\bnew\s+WebSocketServer\s*\(|\b[\w$]+\.on\s*\(\s*['"]connection['"]|\bwebsockets\.serve\s*\(|@\w+\.websocket\s*\(|@socketio\.on\s*\(|\bTcpListener::bind\s*\(|\bnet\.Listen\s*\(|\.MapHub\s*<|\.AcceptWebSocketAsync\s*\(/g],
+  // Installing a handler, not comparing or clearing one (onmessage === x, onmessage = null).
+  ['message', /@(?:KafkaListener|RabbitListener|JmsListener|SqsListener|StreamListener|EventListener|TransactionalEventListener)\b|@(?:shared_task|\w+\.task)\b|\baddEventListener\s*\(\s*['"]message['"]|\.on\s*\(\s*['"]message['"]|\bonmessage\s*=(?!=)(?!\s*(?:null|undefined)\b)|\bbasic_consume\s*\(|\bI(?:Notification|Message)Handler\s*<|\bIConsumer\s*</g],
+]
+// A program's main, by language. Compiled languages count it only in a file the graph found to be a
+// program's main (Go's package main, a Rust binary), so a library's `fn main` is not one.
+const MAIN = {
+  java: /\bstatic\s+void\s+main\s*\(/,
+  cs: /\bstatic\s+(?:async\s+)?[\w<>]+\s+Main\s*\(/,
+  go: /^func\s+main\s*\(\s*\)/,
+  rs: /^(?:pub\s+)?(?:async\s+)?fn\s+main\s*\(/,
+  py: /^if\s+__name__\s*==\s*['"]__main__['"]/,
+}
+const NOT_A_NAME = new Set(['if', 'for', 'while', 'switch', 'catch', 'return', 'new', 'function', 'class', 'def', 'await', 'async'])
+const NAME = '[\\p{L}_$][\\p{L}\\p{N}_$]*'
+
+/**
+ * Whether column `at` of a line is code: not inside a string or after a line comment (`//`, or `#`
+ * in Python), and not a pattern that names code (a scanner's own rules, after a slash or a bar).
+ */
+function inCode(line, at, lang) {
+  let quote = null
+  for (let k = 0; k < at; k++) {
+    const c = line[k]
+    if (quote) { if (c === '\\') k++; else if (c === quote) quote = null; continue }
+    if (c === '"' || c === "'" || c === '`') quote = c
+    else if (lang !== 'py' && c === '/' && line[k + 1] === '/') return false
+    else if (lang === 'py' && c === '#') return false
+  }
+  return !quote && !/[/|\\]/.test(line[at - 1] ?? '')
+}
+
+/**
+ * The lines of a file where its process starts work without an HTTP request, each with its kind
+ * (schedule, socket, message, main), the line as written (up to 140 characters) and, where it says,
+ * the method, class or callback it starts (`sweep`, `ChatEndpoint`, `load`). One line can hold
+ * several (a main that starts a ticker). `lang` is the file's language; `main`: the graph found the
+ * file to be a program's main (compiled languages); `entry`: it is a file a JS project starts from,
+ * so reading its arguments (`process.argv`) makes it a command's main. A program has one main.
+ */
+export function entryPointsOf(src, { lang = 'js', main = false, entry = false } = {}) {
+  const out = []
+  const lines = src.split('\n')
+  const add = (i, kind, name) => out.push({ line: i + 1, kind, text: lines[i].trim().slice(0, 140), ...(name ? { name } : {}) })
+  const hasMain = () => out.some(e => e.kind === 'main')
+  lines.forEach((line, i) => {
+    if (i === 0 && /^#!.*\b(node|bun|deno|python3?)\b/.test(line)) return add(i, 'main', null)
+    if (/^\s*(\/\/|\*|#)/.test(line)) return
+    const mm = MAIN[lang] && (lang === 'py' || main) && line.match(MAIN[lang])
+    if (mm && !hasMain() && inCode(line, mm.index, lang)) add(i, 'main', mm[0].match(/\b(main|Main)\s*\(/)?.[1] ?? null)
+    else if (lang === 'js' && entry && !hasMain()) {
+      const a = line.indexOf('process.argv')
+      if (a >= 0 && inCode(line, a, lang)) add(i, 'main', null)
+    }
+    for (const [kind, re] of STARTS) {
+      const m = [...line.matchAll(re)].find(x => inCode(line, x.index, lang))
+      if (!m) continue
+      // A socket server and the handler it is given next (wss = new WebSocketServer, then wss.on('connection')) are one start.
+      const recv = kind === 'socket' && m[0].match(/^([\w$]+)\.on\b/)?.[1]
+      const prev = out.at(-1)
+      if (recv && prev?.kind === 'socket' && new RegExp(`\\b${recv.replace(/\$/g, '\\$')}\\s*=`).test(lines[prev.line - 1])) continue
+      add(i, kind, nameAt(lines, i, m.index))
+    }
+  })
+  // C# top-level statements: a Program.cs main with no Main method starts at its first statement.
+  if (lang === 'cs' && main && !hasMain()) {
+    const k = lines.findIndex(l => l.trim() && !/^\s*(\/\/|\/\*|\*|using\b|namespace\b|\[|#)/.test(l))
+    if (k >= 0) out.push({ line: k + 1, kind: 'main', text: lines[k].trim().slice(0, 140) })
+  }
+  return out.sort((a, b) => a.line - b.line)
+}
+
+/**
+ * The method, class or callback a start at column `at` of line i names: `class ChatEndpoint` on the
+ * line; the callback a timer is given (`setInterval(load, 5000)`); or, for an annotation or decorator,
+ * the declaration it marks, read past its arguments however many lines they take, and never into a
+ * body. Null when it names none.
+ */
+function nameAt(lines, i, at) {
+  const rest = lines[i].slice(at)
+  const declared = new RegExp(`(?:^|\\s)(?:class|def)\\s+(${NAME})`, 'u')
+  const own = rest.match(declared)
+  if (own) return own[1]
+  const callback = rest.match(new RegExp(`^setInterval\\s*\\(\\s*(?:[\\w$]+\\.)*(${NAME})\\s*,`, 'u'))
+  if (callback) return callback[1]
+  if (!/^(@|\[)/.test(rest)) return null
+  // Past the annotations and their arguments, to the declaration they mark.
+  const text = [rest, ...lines.slice(i + 1, i + 12)].join('\n')
+  let k = 0
+  for (;;) {
+    while (/\s/.test(text[k] ?? '')) k++
+    if (text[k] === '[') { const end = text.indexOf(']', k); if (end < 0) return null; k = end + 1; continue }
+    if (text[k] !== '@') break
+    k++
+    while (/[\p{L}\p{N}_$.]/u.test(text[k] ?? '')) k++
+    while (/[ \t]/.test(text[k] ?? '')) k++
+    if (text[k] === '(') {
+      let depth = 0
+      for (; k < text.length; k++) { if (text[k] === '(') depth++; else if (text[k] === ')' && --depth === 0) { k++; break } }
+    }
+  }
+  const decl = text.slice(k).split(/[{;:=]/)[0]
+  const m = decl.match(declared) ?? decl.match(new RegExp(`(${NAME})\\s*\\(`, 'u'))
+  return m && !NOT_A_NAME.has(m[1]) ? m[1] : null
+}
+
 /** How many lines an edge keeps as the reason it exists. */
 const USE_LINES = 6
 
@@ -542,10 +653,13 @@ export function buildGraph(repo) {
     for (const line of log.split('\n')) if (line.trim()) churn.set(line.trim(), (churn.get(line.trim()) ?? 0) + 1)
   } catch { /* not a git checkout: no churn lens */ }
 
+  // Files a JS project starts from: there, reading the arguments makes a command line.
+  const jsEntries = new Set(entries)
   const byFolder = (a, b) => (dirOf(a.path) === dirOf(b.path) ? a.path.localeCompare(b.path) : dirOf(a.path) < dirOf(b.path) ? -1 : 1)
   const appFiles = files.sort(byFolder)
   // Compiled entry points: main methods. More than one in a project usually means a dev tool.
   const mains = appFiles.filter(f => f.lang === 'go' ? /^package\s+main\b/m.test(f.src) && /^func\s+main\s*\(/m.test(f.src) : f.lang === 'java' ? /\bstatic\s+void\s+main\s*\(/.test(f.src) : f.lang === 'cs' ? /\bstatic\s+(async\s+)?[\w<>]+\s+Main\s*\(/.test(f.src) || posix.basename(f.path) === 'Program.cs' : f.lang === 'rs' && (posix.basename(f.path) === 'main.rs' || /\/bin\//.test(f.path))).map(f => f.path)
+  const mainSet = new Set(mains)
   return {
     repo,
     // Manifests with no application code, and why: a docs site or a monorepo root, say.
@@ -554,7 +668,7 @@ export function buildGraph(repo) {
     entries: [...new Set([...entries, ...pages.inline, ...pyEntries, ...mains])].sort(),
     // Config and deploy files name the other processes: datasources, base URLs, ports, services.
     config: all.filter(p => CONFIG.test(p) && !TEST.test(p)).sort(),
-    files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src), ...(f.misses.length ? { misses: f.misses } : {}) })),
+    files: appFiles.map(f => ({ path: f.path, lang: f.lang, project: f.project?.dir ?? null, lines: f.src.split('\n').length, churn: churn.get(f.path) ?? 0, doc: summary(f.src, f.lang), hints: hintsOf(f.src), entryPoints: entryPointsOf(f.src, { lang: f.lang, main: mainSet.has(f.path), entry: f.lang === 'js' && jsEntries.has(f.path) }), ...(f.misses.length ? { misses: f.misses } : {}) })),
     edges: appFiles.flatMap(f => [...f.edges].map(([to, e]) => ({ from: f.path, to, names: [...e.names], lines: useLines(f.src, [...e.names], to), ...(e.types ? { types: true } : {}), ...(e.reexport ? { reexport: true } : {}) }))),
     dropped: { generated: all.filter(p => LANG[extOf(p)] && GENERATED.test(p) && !/(^|\/)vendor\//.test(p)).length, tests: tests.length + candidates.filter(p => testProjects.some(t => under(p, t.dir))).length, unreached: candidates.filter(p => !recs.has(p) && !testProjects.some(t => under(p, t.dir))).sort() },
   }

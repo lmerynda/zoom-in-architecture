@@ -1,0 +1,4 @@
+<project>
+  <artifactId>jobs</artifactId>
+  <parent><artifactId>spring-boot-starter-parent</artifactId></parent>
+</project>

@@ -137,6 +137,27 @@ describe('buildModel', () => {
     expect(v('@Scheduled(fixedRate = 5000)')).toBe('schedule null')
   })
 
+  it('lists where the code starts work without an HTTP request, each on its file’s card, mains first', () => {
+    const starts = buildGraph(join(import.meta.dirname, '../test/fixtures/starts'))
+    const jobs = {
+      nodes: [{ id: 'server', kind: 'app', title: 'Jobs', files: ['server/**'] }, { id: 'web', kind: 'webapp', title: 'Status', files: ['web/**'] }, { id: 'tools', kind: 'app', title: 'Tools', files: ['tools/**', 'gosvc/**', 'py/**'] }],
+      features: [{ title: 'Jobs', nodes: ['server', 'web', 'tools'] }],
+    }
+    const built = buildModel(starts, jobs, { name: 'jobs' })
+    expect(built.errors).toEqual([])
+    const els = new Set(built.model.elements.map(e => e.id))
+    expect(built.model.entryPoints.every(e => els.has(e.element))).toBe(true)
+    expect(built.model.entryPoints.map(e => `${e.kind} ${e.element}:${e.line}${e.name ? ` ${e.name}` : ''}`)).toEqual([
+      'main server.jobsApplication:5 main', 'main tools.cli:1', 'main tools.importer:8', 'main tools.main:6 main',
+      'schedule server.cleanup:6 sweep', 'schedule server.cleanup:11 hourly', 'schedule tools.main:7', 'schedule web.main:4',
+      'message server.events:5 onOrder', 'message server.events:10 ready', 'message web.live:3', 'message web.live:4',
+      'socket server.chatEndpoint:4 ChatEndpoint', 'socket web.server:3',
+    ])
+    expect(built.model.entryPoints[4]).toEqual({ kind: 'schedule', element: 'server.cleanup', line: 6, text: '@Scheduled(fixedRate = 5000)', name: 'sweep' })
+    // Code with none lists none.
+    expect(r.model.entryPoints.filter(e => e.kind !== 'main' && e.kind !== 'schedule')).toEqual([])
+  })
+
   it('warns about evidence in a file at neither end of the link', () => {
     // A real route line, but in the Api, which this link does not touch.
     const r2 = build(edit(m => { m.links[1].evidence = ['web/src/api.ts:1', 'src/Api/Controllers/OrdersController.cs:2'] }))

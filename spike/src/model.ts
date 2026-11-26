@@ -43,12 +43,32 @@ export interface RelationJson {
 
 export type RelKind = 'code' | 'types' | 'runtime'
 
+/**
+ * Where the code starts work other than for an HTTP request (endpoints are the Requests view's), as
+ * scripts/graph.mjs finds it: a program's `main` (a Java, C#, Go or Rust main where the graph
+ * found a program, a C# top-level program's first statement, a Python `__main__`, a script's shebang,
+ * a JS command that reads its arguments), a `schedule` (@Scheduled, setInterval, a cron or ticker), a
+ * `message` handler (a queue or event listener, onmessage), a `socket` server or handler. `element`
+ * is the card of its file, `line` the 1-based line in that file and `text` that line as written (up
+ * to 140 characters); `name` is the method, class or callback it starts (`sweep`, `ChatEndpoint`,
+ * `load`) when the line says. Comments and strings never count. Listed mains first, then schedules, messages and sockets, by card.
+ */
+export interface EntryPointJson {
+  kind: 'main' | 'schedule' | 'message' | 'socket'
+  element: string
+  line: number
+  text: string
+  name?: string
+}
+
 export interface ModelJson {
   name: string
   /** What the breadcrumb calls the landscape; the name when absent. */
   title?: string
   elements: ElementJson[]
   relations: RelationJson[]
+  /** Entry points beyond HTTP, on a published map (map.mjs always writes the list); samples have none. */
+  entryPoints?: EntryPointJson[]
   /** What an uploaded map was built from: the project's commit, whether it had uncommitted changes, and when. */
   published?: { commit?: string; dirty?: boolean; at: string; traced?: { at: string; command: string; exit: number; seen: number; total: number } }
 }

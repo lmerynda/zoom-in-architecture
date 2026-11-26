@@ -1,0 +1,1 @@
+{ "name": "jobs-web", "private": true, "main": "src/main.ts", "scripts": { "serve": "tsx src/server.ts" } }

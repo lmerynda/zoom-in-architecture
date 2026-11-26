@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildGraph, summary, useLines } from './graph.mjs'
+import { buildGraph, entryPointsOf, summary, useLines } from './graph.mjs'
 import { folderText, graphText } from './zoom.mjs'
 
 const g = buildGraph(join(import.meta.dirname, '../test/fixtures/polyglot'))
@@ -216,5 +216,76 @@ describe('useLines', () => {
   it('falls back to the target file’s name when the edge names nothing, and to comments when they are all there is', () => {
     expect(useLines("import './polyfills'\nrun()", [], 'src/polyfills.ts')).toEqual([1])
     expect(useLines('package web\n//go:embed assets/app.js\nvar fs embed.FS', ['go:embed'], 'web/assets/app.js')).toEqual([2])
+  })
+})
+
+describe('entryPointsOf', () => {
+  const starts = buildGraph(join(import.meta.dirname, '../test/fixtures/starts'))
+  const of = p => starts.files.find(f => f.path === p).entryPoints.map(e => `:${e.line} ${e.kind} ${e.name ?? '-'}`)
+
+  it('finds where code starts work without an HTTP request, in every language, with what it starts', () => {
+    expect(of('server/src/main/java/jobs/JobsApplication.java')).toEqual([':5 main main'])
+    // A commented-out schedule is not one; each annotation names the method below it.
+    expect(of('server/src/main/java/jobs/Cleanup.java')).toEqual([':6 schedule sweep', ':11 schedule hourly'])
+    expect(of('server/src/main/java/jobs/Events.java')).toEqual([':5 message onOrder', ':10 message ready'])
+    // An annotation on a class names the class.
+    expect(of('server/src/main/java/jobs/ChatEndpoint.java')).toEqual([':4 socket ChatEndpoint'])
+    expect(of('gosvc/cmd/sync/main.go')).toEqual([':6 main main', ':7 schedule -'])
+    expect(of('py/importer.py')).toEqual([':8 main -'])
+    expect(of('tools/cli.mjs')).toEqual([':1 main -'])
+    // A client socket the page opens is not a start; its timer and the messages it hears are.
+    expect(of('web/src/main.ts')).toEqual([':4 schedule -'])
+    expect(of('web/src/live.ts')).toEqual([':3 message -', ':4 message -'])
+    // A socket server and the handler it is given on the next line are one start.
+    expect(of('web/src/server.ts')).toEqual([':3 socket -'])
+  })
+
+  it('counts only code: not comments, strings or patterns, and not a handler being compared or cleared', () => {
+    const kinds = (src, o) => entryPointsOf(src, o).map(e => `${e.line} ${e.kind}`)
+    expect(kinds("cleanup(); // old setInterval(task, 10)\nconsole.log('example: setInterval(task, 10)')")).toEqual([])
+    expect(kinds('x = 1  # schedule.every(10).minutes', { lang: 'py' })).toEqual([])
+    expect(kinds('if (socket.onmessage === previous) return\nsocket.onmessage = null')).toEqual([])
+    // An RxJS subject named consumer is no queue; a worker hearing its parent is a message handler.
+    expect(kinds("consumer.subscribe(x => show(x))\nparentPort.on('message', dispatch)")).toEqual(['2 message'])
+  })
+
+  it('gives a compiled program a main only where the graph found one, and reads a C# top-level program', () => {
+    expect(entryPointsOf('package utils\n\nfunc main() {}', { lang: 'go' })).toEqual([])
+    expect(entryPointsOf('pub fn main() {}', { lang: 'rs' })).toEqual([])
+    expect(entryPointsOf('fn main() {}', { lang: 'rs', main: true }).map(e => e.kind)).toEqual(['main'])
+    const cs = buildGraph(join(import.meta.dirname, '../test/fixtures/csharp'))
+    expect(cs.files.find(f => f.path === 'Program.cs').entryPoints).toEqual([{ line: 1, kind: 'main', text: 'var app = new Shop.Carts.CartsController();' }])
+    // A main that starts a ticker on its own line is both.
+    expect(entryPointsOf('func main() { t := time.NewTicker(time.Second); defer t.Stop() }', { lang: 'go', main: true }).map(e => `${e.kind} ${e.name ?? '-'}`)).toEqual(['main main', 'schedule -'])
+  })
+
+  it('tells socket servers apart, keeping a server and its handler as one, and keeps the whole line', () => {
+    const two = "const a = new WebSocketServer({ port: 1 })\nconst b = new WebSocketServer({ port: 2 })\nb.on('connection', accept)"
+    expect(entryPointsOf(two).map(e => `${e.line} ${e.kind}`)).toEqual(['1 socket', '2 socket'])
+    // Another receiver's handler is a start of its own, written as the line reads.
+    const other = entryPointsOf("const a = new WebSocketServer({ port: 1 })\nwss.on('connection', accept)")
+    expect(other.map(e => e.text)).toEqual(['const a = new WebSocketServer({ port: 1 })', "wss.on('connection', accept)"])
+  })
+
+  it('names what a start starts: the method an annotation marks, past its arguments, never a call in its body; a timer’s callback', () => {
+    const name = (src, o) => entryPointsOf(src, o).map(e => e.name ?? '-')
+    expect(name('@Scheduled(fixedRate = 5000) public void sweep() { audit(); }', { lang: 'java' })).toEqual(['sweep'])
+    expect(name('@Scheduled(\n    cron = "0 0 * * * *",\n    zone = "UTC")\n@Transactional\npublic void nightly() {\n  audit();\n}', { lang: 'java' })).toEqual(['nightly'])
+    expect(name('@Scheduled(fixedRate = 5000)\npublic void sweep() {\n  audit();\n}', { lang: 'java' })).toEqual(['sweep'])
+    expect(name('const timer = window.setInterval(load, 5000);')).toEqual(['load'])
+    expect(name('setInterval(() => refresh(), 1000)')).toEqual(['-'])
+  })
+
+  it('reads arguments as a command only in a file a project starts from, and gives a program one main', () => {
+    const argv = ['const [job] = process.argv.slice(2)', 'console.log(process.argv.length)'].join('\n')
+    expect(entryPointsOf(argv, { entry: true }).map(e => `${e.line} ${e.kind}`)).toEqual(['1 main'])
+    expect(entryPointsOf(argv, { entry: false })).toEqual([])
+    expect(entryPointsOf(['#!/usr/bin/env python3', 'if __name__ == "__main__":', '    run()'].join('\n')).map(e => `${e.line} ${e.kind}`)).toEqual(['1 main'])
+    expect(entryPointsOf('')).toEqual([])
+    // A scanner's own patterns, and a string that opens with a start's words, are not one.
+    expect(entryPointsOf(String.raw`  ['schedule', /@Scheduled\b.*|\bsetInterval\s*\(.*/],` + '\n' + `const help = '@Scheduled runs it'`)).toEqual([])
+    // A non-ASCII name is read whole; a long line is kept to 140 characters.
+    const [e] = entryPointsOf([`    @Scheduled(cron = "${'0 '.repeat(100)}")`, '    void nächtlich() {}'].join('\n'))
+    expect([e.kind, e.text.length, e.name]).toEqual(['schedule', 140, 'nächtlich'])
   })
 })

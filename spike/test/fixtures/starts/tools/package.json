@@ -1,0 +1,1 @@
+{ "name": "jobs-tools", "private": true, "bin": { "jobs": "cli.mjs" } }

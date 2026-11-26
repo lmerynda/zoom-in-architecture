@@ -415,6 +415,14 @@ try {
   await sleep(1500)
   await shot('04-request-path')
 
+  // The model the viewer serves lists where the code starts work without a request, each on its file's card.
+  const starts = await page.evaluate(async () => {
+    const m = await fetch('/models/shop.json').then(r => r.json())
+    const ids = new Set(m.elements.map(e => e.id))
+    return { list: (m.entryPoints ?? []).map(e => `${e.kind} ${e.element}:${e.line}`), onCards: (m.entryPoints ?? []).every(e => ids.has(e.element)) }
+  })
+  check('the served model lists the entry points beyond HTTP, each on a card', starts.onCards && ['main server.startup.shopApplication:6', 'main py.seed:4'].every(x => starts.list.includes(x)), JSON.stringify(starts))
+
   // The viewer keeps what was uploaded: with the project gone, its code and its map are still served.
   // Windows keeps a folder while a process watches it or runs in it: wait for the watcher to end.
   await new Promise(ok => { watcher.once('exit', ok); watcher.kill() })
