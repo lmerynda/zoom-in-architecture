@@ -303,8 +303,10 @@ async function main() {
   }
   const setWhole = () => setFrame(0)
   const resize = () => {
-    const was = atWhole()
+    const was = atWhole(), z0 = cam.z
     cam.resize(app.screen.width, app.screen.height)
+    // A live update moving into place scales its camera path with the window, as the camera did.
+    if (morph) { const k = cam.z / z0; morph.cam0[2] *= k; morph.cam1[2] *= k }
     measureHud()
     if (was) setWhole()
     // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
@@ -1058,7 +1060,8 @@ async function main() {
     // flight): from then on the camera is theirs, and no refit follows.
     // A wheel or a flight leaves the camera unsettled; a drag moves it from where the morph put it.
     const l = morph.last
-    if (!cam.settled || cam.x !== l[0] || cam.y !== l[1] || cam.z !== l[2]) morph.handsOff = true
+    // Moved by more than rounding: a drag, not the next step of the morph's own numbers.
+    if (!cam.settled || Math.hypot(cam.x - l[0], cam.y - l[1]) * cam.z > 0.5 || Math.abs(cam.z / l[2] - 1) > 1e-6) morph.handsOff = true
     if (!morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
       const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
       cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
