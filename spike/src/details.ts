@@ -215,6 +215,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
     ...fileBox,
     ...(rank ? [el('p', 'd-rank', rank)] : []),
     ...seenLines(tree, i),
+    ...unseenList(tree, i, act),
     ...(tags.childElementCount ? [tags] : []),
     ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []),
     // What the scanner saw here but could not follow: the map has no arrow for it.
@@ -293,6 +294,11 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
     const k = tree.els[r.k]
     const inside = tree.children[r.k].length
     b.append(el('b', '', k.title), el('span', '', [kindWord(tree, r.k).replace(/ · \d+ inside$/, ''), inside ? `${inside} inside` : '', `uses ${r.uses}`, `used by ${r.usedBy}`].filter(Boolean).join(' · ')))
+    const cov = tree.traced ? endpointCover(tree, r.k) : null
+    if (cov?.total) {
+      const tag = el('em', cov.seen < cov.total ? 'd-seen-tag none' : 'd-seen-tag', k.metadata?.method ? (cov.seen ? 'seen in tests' : 'not seen in tests') : `${cov.seen} of ${cov.total} endpoints seen`)
+      b.append(tag)
+    }
     b.onclick = () => select(r.k)
     li.append(b)
     ul.append(li)
@@ -306,6 +312,19 @@ export function renderOutline(panel: HTMLElement, tree: Tree, here: number, rela
   panel.replaceChildren(head, ...(e.description ? [el('p', '', e.description.replace(/\s+/g, ' ').trim())] : []), el('p', 'd-hint', 'Nothing selected: click a card, or pick one here, to see what it uses and what uses it.'), box)
   panel.classList.add('outline')
   panel.hidden = false
+}
+
+/** Of the endpoints at or under i, how many the project's own tests called. */
+export function endpointCover(tree: Tree, i: number): { seen: number; total: number; unseen: number[] } {
+  const unseen: number[] = []
+  let seen = 0, total = 0
+  const walk = (n: number) => {
+    const m = tree.els[n].metadata
+    if (m?.method && m.seen != null) { total++; if (m.seen === '0') unseen.push(n); else seen++; return }
+    for (const k of tree.children[n]) walk(k)
+  }
+  walk(i)
+  return { seen, total, unseen }
 }
 
 /** What a relation is, in words. */
@@ -491,6 +510,35 @@ export function tableRows(text: string): { table: string; ops: string }[] {
     return { table, ops: verbs.join(', '), writes: verbs.some(v => v !== 'reads') }
   })
   return rows.sort((a, b) => Number(b.writes) - Number(a.writes) || a.table.localeCompare(b.table)).map(({ table, ops }) => ({ table, ops }))
+}
+
+/** Under a part's coverage, the endpoints no test called: a disclosure whose rows go to each. */
+function unseenList(tree: Tree, i: number, act: PanelActions): HTMLElement[] {
+  if (!tree.traced || tree.els[i].metadata?.method || !tree.children[i].length) return []
+  const { unseen } = endpointCover(tree, i)
+  if (!unseen.length) return []
+  const box = el('section', 'd-unseen')
+  const toggle = el('button', 'd-more', `List the ${unseen.length} endpoint${unseen.length === 1 ? '' : 's'} no test called`)
+  toggle.setAttribute('aria-expanded', 'false')
+  const ul = el('ul')
+  ul.hidden = true
+  for (const k of unseen) {
+    const li = el('li'), b = el('button', 'd-rel')
+    b.append(el('b', '', tree.els[k].title), el('span', '', pathOf(tree, k)))
+    b.onclick = () => act.go(k)
+    li.append(b)
+    ul.append(li)
+  }
+  toggle.onclick = () => { ul.hidden = !ul.hidden; toggle.setAttribute('aria-expanded', String(!ul.hidden)) }
+  box.append(toggle, ul)
+  return [box]
+}
+
+/** Where a card sits, by its parents' names below the whole map. */
+function pathOf(tree: Tree, i: number): string {
+  const out: string[] = []
+  for (let a = tree.parent[i]; a > 0; a = tree.parent[a]) out.unshift(tree.els[a].title)
+  return out.join(' › ')
 }
 
 export function seenLines(tree: Tree, i: number): HTMLElement[] {

@@ -512,7 +512,7 @@ export class Renderer {
     const texts = this.textLayers[d]
     // A name reads at full strength while its card fades in (alpha starts low as a container
     // opens): the box can arrive gently, the name must be legible from the start.
-    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.6 : 1) * (outside && !hot && !sel && !ends ? 0.75 : 1)
+    const la = Math.max(alpha, 0.9 * labelAlpha * Math.min(1, alpha * 3)) * labelAlpha * (dim < 1 ? 0.8 : 1) * (outside && !hot && !sel && !ends ? 0.85 : 1)
     if (la < 0.02 || w < 44) return
 
     // Lens value badge in the bottom-right corner.
@@ -525,13 +525,15 @@ export class Renderer {
       // A value wider than its card would be cut ("37 relatio"); it waits until the card has room.
       if (bpx >= MIN_TEXT && badge.width <= w * 0.88) {
         badge.visible = true
-        badge.tint = heatColor(Math.min(1, this.lens.heat[i] + 0.25))
+        badge.tint = 0xfde68a
         // Inside the card and inside the screen: a card running off the edge keeps its value in view.
         let bx = Math.max(x + w * 0.06, Math.min(x + w - w * 0.06 - badge.width, this.cam.w - SAFE.right - badge.width))
         const by = Math.max(y + h * 0.3, Math.min(y + h - h * 0.08 - bpx * 1.25, this.cam.h - SAFE.bottom - bpx * 1.4))
         // Out from under the minimap and the panels, which sit over the map; if that leaves the card, it waits.
         for (const [hx, hy, hw, hh] of this.hud) if (hw && bx < hx + hw && hx < bx + badge.width && by < hy + hh && hy < by + bpx * 1.3) bx = hx - badge.width - 6
         if (bx < x + w * 0.04) badge.visible = false
+        // A card larger than the screen on every side has no corner in view to carry its value.
+        if (x < 0 && y < 0 && x + w > this.cam.w && y + h > this.cam.h) badge.visible = false
         badge.position.set(bx, by)
         if (badge.visible) this.badges.push([bx, by, badge.width, bpx * 1.3])
         badge.alpha = la
@@ -586,7 +588,7 @@ export class Renderer {
       if (mpx >= MIN_TEXT && w > 160 && roomy && titleRight + 16 < x + w - pad - meta.width) {
         meta.visible = true
         meta.position.set(x + w - pad - meta.width, y + (hh - mpx * 1.25) / 2)
-        meta.alpha = la * 0.6
+        meta.alpha = la * 0.78
         st.texts++
       }
       return
@@ -681,7 +683,9 @@ export class Renderer {
       sub.visible = true
       sub.scale.set(s / FONT_PX)
       sub.position.set(bx, cy)
-      sub.alpha = la * 0.65
+      sub.alpha = la * 0.78
+      // An endpoint no test called says so in amber, as the panel does.
+      sub.tint = this.tree.traced && el.metadata?.method && el.metadata.seen === '0' ? 0xfde68a : 0xffffff
       st.texts++
       cy += s * 1.6
     }
@@ -720,7 +724,7 @@ export class Renderer {
           list.visible = true
           list.scale.set(ipx / FONT_PX)
           list.position.set(bx, cy)
-          list.alpha = la * 0.6
+          list.alpha = la * 0.78
           st.texts++
           cy += ih + ipx
         }
@@ -1110,8 +1114,9 @@ export function seenText(el: { metadata?: Record<string, string> }, traced: bool
   const s = el.metadata?.seen
   if (!traced || s == null) return ''
   if (s.includes('/')) return `${s} endpoints seen in tests`
-  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `seen in tests ×${count(+s)}`
-  return s === '0' ? '' : `ran in tests ×${count(+s)}`
+  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `${count(+s)} request${s === '1' ? '' : 's'} in tests`
+  if (el.metadata?.role === 'step') return s === '0' ? '' : 'ran in tests'
+  return s === '0' ? '' : `${count(+s)} call${s === '1' ? '' : 's'} in tests`
 }
 
 /** A trace count as people read it: 48872 → 48,872. */

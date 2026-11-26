@@ -181,6 +181,12 @@
     .d-tables code { font: 11px ui-monospace, Consolas, monospace; color: var(--text); overflow-wrap: anywhere; }
     .d-tables span { color: #86efac; white-space: nowrap; }
     .d-more { margin-top: 6px; background: none; border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; }
+    .d-unseen ul { list-style: none; margin: 6px 0 0; padding: 0; }
+    .d-unseen ul[hidden] { display: none; }
+    .d-unseen .d-rel { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid rgba(253, 230, 138, 0.6); color: var(--text); font: inherit; padding: 4px 8px; margin: 2px 0; cursor: pointer; }
+    .d-unseen .d-rel:hover { background: rgba(251, 191, 36, 0.1); }
+    .d-unseen .d-rel span { color: var(--dim); font-size: 11px; }
+    .d-outline .d-rel em { font-size: 11px; }
     .d-why.d-shared { padding: 6px 8px; margin: 8px 0 0; border: 1px solid var(--line); border-radius: 6px; }
     .k-runtime .d-kindtag { color: #c4b5fd; }
     .k-types .d-kindtag { color: var(--dim); font-style: italic; }
@@ -257,7 +263,7 @@
     #welcome .chips button:hover { background: rgba(251, 191, 36, 0.14); }
     #welcome .ok { background: #fbbf24; border: 0; color: #0b0f17; font: inherit; font-weight: 600; padding: 4px 14px; border-radius: 6px; cursor: pointer; }
     /* What the arrows are, at the map's foot. */
-    #arrows { position: fixed; z-index: 11; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 5px 10px; background: rgba(9, 12, 20, 0.9); border: 1px solid var(--line); border-radius: 8px; font-size: 11px; color: var(--dim); }
+    #arrows { position: fixed; z-index: 11; left: 12px; bottom: 12px; display: flex; align-items: center; gap: 12px; padding: 5px 10px; background: #090c14; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; color: var(--dim); }
     #arrows[hidden] { display: none; }
     #arrows .a-head { color: var(--text); font-weight: 600; }
     #arrows .a-toggle { display: none; }
@@ -333,13 +339,15 @@
     .lens-menu button.on { color: #fde68a; font-weight: 600; }
     /* The legend hangs below the lens bar, so picking a lens never reflows the top bar. */
     /* The legend has its own place under the bar: over the map on a narrow screen, and on a wide one at the head of the details column, which steps down for it. */
-    .lens-legend { position: fixed; top: calc(var(--bar, 52px) + 8px); right: 12px; z-index: 13; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 10px; color: var(--dim); font-size: 11px; background: rgba(9, 12, 20, 0.95); border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); }
-    .lens-legend .lens-range { flex-basis: 100%; }
+    .lens-legend { position: fixed; top: calc(var(--bar, 52px) + 8px); right: 12px; z-index: 13; display: grid; grid-template-columns: auto minmax(60px, 1fr) auto; align-items: center; gap: 4px 8px; padding: 8px 12px; color: var(--dim); font-size: 11px; line-height: 16px; background: #090c14; border: 1px solid var(--line); border-radius: 8px; max-width: calc(100vw - 24px); box-sizing: border-box; }
+    .lens-legend .lens-label, .lens-legend .lens-range { grid-column: 1 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lens-legend .lens-hi { white-space: nowrap; }
+    .lens-current { min-width: 9ch; text-align: left; }
     @media (min-width: 1100px) {
       .lens-legend { width: var(--pw); box-sizing: border-box; }
-      body:has(.lens-legend:not([hidden])) #details { top: 116px; }
+      body:has(.lens-legend:not([hidden])) #details { top: calc(var(--bar, 52px) + 100px); }
     }
-    .lens-legend .lens-label { color: var(--text); }
+    .lens-legend .lens-label { color: var(--text); font-weight: 600; }
     .lens-legend[hidden] { display: none; }
     .lens-ramp { width: 110px; height: 8px; border-radius: 4px; }
     /* Altimeter: depth gauge on the left edge. */

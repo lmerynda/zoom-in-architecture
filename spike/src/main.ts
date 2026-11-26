@@ -243,7 +243,7 @@ async function main() {
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
   const measureHud = () => {
-    renderer.hud = ['stats', 'minimap', 'help', 'details'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
+    renderer.hud = ['stats', 'minimap', 'help', 'details', 'arrows'].map(id => { const e = document.getElementById(id) ?? document.querySelector(`.${id}`); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? [r.x, r.y, r.width, r.height] : [0, 0, 0, 0] })
   }
   {
     cam.resize(app.screen.width, app.screen.height)
@@ -346,8 +346,9 @@ async function main() {
     if (i <= 0 || !path) return
     if (renderer.selected !== i) controls.goSelect(i)
     // Fetching and preparing a big file takes a moment; say so at once.
-    controls.toast.show(`Opening ${path.split('/').pop()}:${line}`)
+    const slow = setTimeout(() => controls.toast.show(`Opening ${path.split('/').pop()}:${line}`), 400)
     const src = await code.prepared(i)
+    clearTimeout(slow)
     reading = { id: tree.els[i].id, line }
     document.body.classList.add('reading')
     // "← back to POST /market/{id}/buy" goes to the endpoint it names, selected; Close and Esc stay on the file.
