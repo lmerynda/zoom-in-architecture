@@ -145,7 +145,8 @@ async function main() {
   let tree = new Tree(model, { types: showTypes })
   let published = model.published
   // A phone held upright lays the whole map out tall, to fill its screen rather than a strip of it.
-  const rootAspect = innerWidth < 700 && innerHeight > innerWidth * 1.2 ? Math.max(0.45, innerWidth / Math.max(1, innerHeight - 220)) : undefined
+  const portraitAspect = () => (innerWidth < 700 && innerHeight > innerWidth * 1.2 ? Math.max(0.45, innerWidth / Math.max(1, innerHeight - 220)) : undefined)
+  let rootAspect = portraitAspect()
   let jobs = layoutJobs(tree, coupling, rootAspect)
   const tLayout = performance.now()
   let local = await runLayout(jobs)
@@ -241,6 +242,8 @@ async function main() {
   const resize = () => {
     cam.resize(app.screen.width, app.screen.height)
     measureHud()
+    const next = portraitAspect()
+    if (!!next !== !!rootAspect) { rootAspect = next; void swapModel(raw).then(() => { if (renderer.selected <= 0) fit(0) }) }
   }
   // Where the panels over the map are, so chips and labels keep off them: measured again on a timer,
   // since the details panel opens and closes and layout settles after the first frame.
@@ -337,7 +340,7 @@ async function main() {
   let reading: { id: string; line: number } | null = null
   const reader = new Reader()
   reader.onLine = line => { if (reading) reading.line = line }
-  reader.onClose = () => { reading = null; document.body.classList.remove('reading'); app.canvas.focus({ preventScroll: true }) }
+  reader.onClose = () => { reading = null; document.body.classList.remove('reading'); $('stage').inert = false; app.canvas.focus({ preventScroll: true }) }
   /**
    * Reads card i's file at a line: the card is selected and framed among its neighbours, and its
    * code opens over the map in one scrolling column. Double-click, Enter, Read code and a cited
@@ -348,6 +351,8 @@ async function main() {
     if (i <= 0 || !path) return
     if (renderer.selected !== i) controls.goSelect(i)
     // Fetching and preparing a big file takes a moment; say so at once.
+    // The map under the reader takes no focus or keys while the code covers it.
+    $('stage').inert = true
     const slow = setTimeout(() => controls.toast.show(`Opening ${path.split('/').pop()}:${line}`), 400)
     const src = await code.prepared(i)
     clearTimeout(slow)
@@ -368,6 +373,7 @@ async function main() {
     openPath: (path, line, near) => { const j = cardOf(path, near); if (j > 0) void openCode(j, line) },
     read: j => void openCode(j, startOf(j)),
     inspect: (a, b) => { pickEdge({ s: a, t: b }, { rels: relationsAcross(tree, a, b) }); focusHeading() },
+    enter: j => controls.enterPlace(j),
   }
   /** In the Connections view, why a card ranks where it does among its siblings. */
   const rankText = (i: number) => {
@@ -429,6 +435,14 @@ async function main() {
     const heading = details.querySelector<HTMLElement>('h2')
     if (heading) heading.tabIndex = -1
     if (inPanel) { heading?.focus({ preventScroll: true }); heading?.scrollIntoView({ block: 'nearest' }) }
+    {
+      const sheet = details.getBoundingClientRect(), bar = $('top').getBoundingClientRect().bottom
+      const r = renderer.screenRectOf(i), cy = r[1] + Math.min(r[3], sheet.top - bar) / 2
+      if (!details.hidden && !details.classList.contains('collapsed') && sheet.top > cam.h / 2 && (cy > sheet.top - 16 || r[1] + r[3] < bar + 16)) {
+        const vw = cam.w / cam.z, vh = cam.h / cam.z, want = (bar + sheet.top) / 2
+        cam.flyTo(cam.x - vw / 2, cam.y + (cy - want) / cam.z - vh / 2, vw, vh, now(), 1)
+      }
+    }
     // A screen reader hears what was selected and how connected it is.
     $('announce').textContent = `Selected ${tree.els[i].title}: uses ${rows.uses.length}, used by ${rows.usedBy.length}`
   }
@@ -479,6 +493,14 @@ async function main() {
     rows = { uses: [], usedBy: [], mark: () => {} }
     outlined = -1
     renderEdge(details, tree, l.s, l.t, rels, actions)
+    const backTo = edgeReturn.list ? 'the arrows on this line' : edgeReturn.selected > 0 ? tree.els[edgeReturn.selected].title : ''
+    if (backTo) {
+      const b = document.createElement('button')
+      b.className = 'd-back'
+      b.textContent = `← Back to ${backTo}`
+      b.onclick = () => { details.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true }); pickEdge(null) }
+      details.querySelector('.d-head')?.prepend(b)
+    }
     $('announce').textContent = `Arrow ${tree.els[l.s].title} ↔ ${tree.els[l.t].title}: ${plural(rels.length, 'relation')}`
     if (inPanel) focusHeading()
   }
@@ -506,9 +528,12 @@ async function main() {
     const path = r ? tree.els[tree.byId.get(r.id) ?? 0]?.metadata?.path : null
     return { at: v.selected, in: v.here, file: path, line: r?.line, lens: renderer.lens?.name ?? null }
   }, () => cam.w)
-  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
+  controls = installControls({ app, tree, world, cam, renderer, minimap, lenses, connections: coupling, setLens, select, fit, now, zoomLimit, zoomFloor, read: i => void openCode(i, startOf(i)), rows: () => rows, places, pickEdge, edgeOpen, focusPanel: () => focusHeading(), closeTop: () => { if (!reader.isOpen) return false; reader.close(); return true } })
   resize()
   showIntro(tree, name => controls.feature(name))
+  $('title').textContent = `${tree.els[0].title}: ${view === 'requests' ? 'Requests' : coupling ? 'Connections' : 'Architecture'}`
+  // The welcome is up now: the first frame keeps clear of it.
+  if (!$('welcome').hidden) { const f = frameFor(0); cam.set(f.x, f.y, f.z) }
 
   /**
    * What the arrows are: runtime calls, uses in code, and type-only imports, with the toggle that

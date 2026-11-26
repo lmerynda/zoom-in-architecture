@@ -516,7 +516,7 @@ export class Renderer {
     if (la < 0.02 || w < 44) return
 
     // Lens value badge in the bottom-right corner.
-    if (this.lens && w > 90) {
+    if (this.lens && w > 90 && (this.lens.raw[i] > 0 || this.tree.children[i].length > 0 || !!this.tree.els[i].metadata?.path)) {
       const label = `${compact(this.lens.raw[i])} ${this.lens.raw[i] === 1 ? this.lens.unit.replace(/s$/, '') : this.lens.unit}`
       const badge = (v.metric ??= this.text(label, texts))
       if (badge.text !== label) badge.text = label
@@ -694,7 +694,7 @@ export class Renderer {
     }
 
     // Past its last level a file shows its own source, anchored to the card so zooming reads it.
-    const code = el.metadata?.path && w >= CODE_W ? codeBox(x, y, w, h) : null
+    const code = el.metadata?.path && w >= CODE_W && !(this.lens && w < this.cam.w * 0.5) ? codeBox(x, y, w, h) : null
     if (code) this.codeSlots.push({ i, ...code, alpha: la })
     const bottom = code ? code.y - pad * 0.4 : y + h - pad * 0.6
 
@@ -800,7 +800,8 @@ export class Renderer {
       if (Math.max(sr[2], tr[2]) < 6) continue
       // Only relations crossing the focus boundary light up, decided per folded relation.
       const els = this.tree.els, par = this.tree.parent
-      const step = sel && par[e.s] === this.selected && par[e.t] === this.selected && els[e.s].metadata?.role === 'step' && els[e.t].metadata?.role === 'step'
+      const onPath = (k: number) => els[k].metadata?.role === 'step' || (els[k].metadata?.role === 'response' && /^\d+ · /.test(els[k].title))
+      const step = sel && par[e.s] === this.selected && par[e.t] === this.selected && onPath(e.s) && onPath(e.t)
       const kind = e.out ? Kind.Out : e.in ? Kind.In : step ? Kind.Step : e.runtime ? Kind.Runtime : e.count >= 5 ? Kind.Thick : e.count >= 2 ? Kind.Mid : Kind.Thin
       const world = this.router.route(e.s, e.t)
       const pts = world ? this.toScreen(world) : straight(sr, tr)
@@ -997,9 +998,12 @@ export class Renderer {
     return out
   }
 
+  /** Where this frame's edge chips stand, so count labels keep off them. */
+  private chipRects: number[][] = []
+
   private drawChips(targets: Map<number, { x: number; y: number; count: number; kind: Kind }>, W: number, H: number) {
     let k = 0
-    const placed: number[][] = []
+    const placed: number[][] = (this.chipRects = [])
     for (const [node, c] of targets) {
       if (k >= 24) break
       const label = `${this.tree.els[node].title}${c.count > 1 ? ` ×${c.count}` : ''} →`
@@ -1055,7 +1059,7 @@ export class Renderer {
 
   private drawLabels(spots: LabelSpot[]) {
     let k = 0
-    const placed: number[][] = []
+    const placed: number[][] = (this.chipRects = [])
     const said: [string, number, number][] = []
     // Highlighted edges claim label space first, then the busiest.
     spots.sort((a, b) => b.kind - a.kind || b.weight - a.weight)
@@ -1073,6 +1077,7 @@ export class Renderer {
         !(x < SAFE.left || y < SAFE.top || x + cw > this.cam.w - SAFE.right || y + ch > this.cam.h - SAFE.bottom) &&
         !this.hud.some(([hx, hy, hw, hh]) => hw && x < hx + hw && hx < x + cw && y < hy + hh && hy < y + ch) &&
         !this.badges.some(([bx, by, bw, bh]) => x < bx + bw && bx < x + cw && y < by + bh && by < y + ch) &&
+        !this.chipRects.some(([bx, by, bw, bh]) => x < bx + bw + 4 && bx < x + cw + 4 && y < by + bh + 4 && by < y + ch + 4) &&
         // Labels live in the gutters: never on a card someone is reading (a closed card or a file).
         !this.shown.some(c => {
           if (this.tree.children[c].length && this.open(c) > 0) return false
@@ -1117,7 +1122,7 @@ export function seenText(el: { metadata?: Record<string, string> }, traced: bool
   const s = el.metadata?.seen
   if (!traced || s == null) return ''
   if (s.includes('/')) return `${s} endpoints seen in tests`
-  if (el.metadata?.method) return s === '0' ? 'not seen in tests' : `${count(+s)} request${s === '1' ? '' : 's'} in tests`
+  if (el.metadata?.method) return s === '0' ? 'untested' : `${count(+s)} request${s === '1' ? '' : 's'}`
   if (el.metadata?.role === 'step') return s === '0' ? '' : 'ran in tests'
   return s === '0' ? '' : `${count(+s)} call${s === '1' ? '' : 's'} in tests`
 }

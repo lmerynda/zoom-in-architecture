@@ -37,6 +37,8 @@ export interface Ctx {
   pickEdge: (l: { s: number; t: number } | { s: number; t: number }[] | null) => void
   /** An arrow, or the list of arrows on a trunk, is in the panel. */
   edgeOpen: () => boolean
+  /** Moves keyboard focus to the panel's heading. */
+  focusPanel: () => void
   /** Closes the top layer the page holds over the map (the code reader); false when there is none. */
   closeTop: () => boolean
   now: () => number
@@ -82,6 +84,8 @@ export function installControls(c: Ctx) {
   const go = (i: number) => { leave(); c.fit(i) }
   /** Jump that also selects the destination; the view left behind keeps its own selection. */
   const goSelect = (i: number) => { leave(); c.select(i); c.fit(i); remember(i) }
+  /** Into a container: framed open with nothing selected, so the panel outlines what is inside. */
+  const enterPlace = (i: number) => { leave(); c.select(-1); c.fit(i); remember(i) }
   /** Cards visited, most recent first, for an empty search. Kept by id, so a live update keeps them. */
   let recent: string[] = []
   const remember = (i: number) => { if (i > 0) recent = [tree.els[i].id, ...recent.filter(id => id !== tree.els[i].id)].slice(0, 8) }
@@ -173,7 +177,7 @@ export function installControls(c: Ctx) {
   // --- Search.
   const commands = (): Command[] => [
     ...['structure', ...c.lenses.map(l => l.name)].map(name => ({ name: `Colour by ${name === 'structure' ? 'structure' : name}`, run: () => c.setLens(name as LensName) })),
-    { name: 'Whole map', run: () => go(0) },
+    { name: 'Whole map', run: () => enterPlace(0) },
     { name: 'Back', hint: 'Backspace', run: back },
     { name: 'Up to the parent', hint: 'Alt+↑', run: parent },
     { name: 'Controls', hint: '?', run: () => help.toggle(true) },
@@ -182,7 +186,12 @@ export function installControls(c: Ctx) {
   // and the address name what was found, not what was selected before (Back brings that back); a
   // leaf is selected, to read about.
   const palette = new Palette(tree, commands, {
-    go: i => { if (tree.children[i].length && !tree.els[i].metadata?.method) { leave(); c.select(-1); c.fit(i); remember(i) } else goSelect(i) },
+    go: i => {
+      if (tree.children[i].length && !tree.els[i].metadata?.method) return enterPlace(i)
+      goSelect(i)
+      // What was found is in the panel: keyboard focus starts there, on its heading.
+      requestAnimationFrame(() => c.focusPanel())
+    },
     feature,
     recent: () => recent.map(id => tree.byId.get(id) ?? -1),
   })
@@ -378,7 +387,7 @@ export function installControls(c: Ctx) {
         tooltip.showLines(lines.map(l => `${l.s}-${l.t}`).join(), lines.map(l => `${name(l.s)} ↔ ${name(l.t)}`).join(' · ') + (total > 1 ? ` · ${total} relations` : ''), [...pairs.map(x => `${name(x.from)} → ${name(x.to)}${x.count > 1 ? ` ×${x.count}` : ''}`), 'Click: every relation and the lines that make it'], p![0], p![1])
       } else tooltip.update(p && small && !busy ? h : -1, p?.[0] ?? 0, p?.[1] ?? 0, now)
     },
-    view, go, goSelect, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
+    view, go, goSelect, enterPlace, feature, back, forward, parent, cycleTarget, palette, help, menu, toast,
     /** Flies to a view (a camera and a selection), recording where you were so Back returns. */
     visit(v: View) { leave(); goView(v) },
     /** Points every control at a new model version; the caller carries the selection over. */

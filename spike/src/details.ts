@@ -18,6 +18,8 @@ export interface PanelActions {
   read: (i: number) => void
   /** Lists every relation between element a and element b, as a picked arrow does. */
   inspect: (a: number, b: number) => void
+  /** Goes into container i: framed open, nothing selected, the panel its outline. */
+  enter: (i: number) => void
 }
 
 /** Every relation between the subtrees of a and b, both directions, as relation indices. */
@@ -132,7 +134,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
   } else if (tree.children[i].length) {
     const actions = el('div', 'd-actions')
     const inBtn = el('button', 'primary', 'Go in')
-    inBtn.onclick = () => act.go(i)
+    inBtn.onclick = () => act.enter(i)
     actions.append(inBtn)
     fileBox.push(actions)
   }
@@ -163,7 +165,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       b.onclick = () => act.go(r.other)
       li.append(b)
       // The arrow's own evidence, by keyboard as well as by clicking the arrow on the map.
-      const why = el('button', 'd-inspect', `${n} relation${n === 1 ? '' : 's'}`)
+      const why = el('button', 'd-inspect', `Inspect ${n} relation${n === 1 ? '' : 's'}`)
       why.setAttribute('aria-label', `Inspect the ${n} relation${n === 1 ? '' : 's'} between ${e.title} and ${tree.els[r.other].title}`)
       why.title = 'Every relation between the two, both directions, and the lines that make it'
       why.onclick = () => act.inspect(i, r.other)
@@ -473,7 +475,7 @@ function partLine(t: { seen: number; unseen: number }): HTMLElement {
 
 export function seenTag(n: number): HTMLElement {
   const tag = el('em', 'd-seen-tag', 'seen in tests')
-  tag.title = `Seen in the project's own end-to-end tests: ${count(n)} recorded in the trace for this link`
+  tag.title = `Seen in the project's own end-to-end tests. The trace counted ${count(n)} for it: the requests of its endpoint, or the calls into the code that makes it, not calls across this one link`
   return tag
 }
 
@@ -551,6 +553,8 @@ export function seenLines(tree: Tree, i: number): HTMLElement[] {
     p.append(...lines.flatMap((s, k) => (k ? [el('br'), s] : [s])))
     p.title = `From ${t.command}, run ${new Date(t.at).toLocaleString()}`
     out.push(p)
+    // On the part that holds the endpoints, the run itself: what ran, when, how it ended.
+    if (m.seen?.includes('/')) out.push(el('p', 'd-run', `Test run: ${t.command} · ${new Date(t.at).toLocaleString()} · exit ${t.exit}`))
   }
   // The tables the tests touched: one row each, what was done to it beside its name, writes first;
   // a long list shows its first rows and opens on request.
