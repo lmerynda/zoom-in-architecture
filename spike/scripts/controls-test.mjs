@@ -557,7 +557,9 @@ try {
   await page.evaluate(() => window.__spike.setLens('structure'))
 
   // The reader's rail is one keyboard stop whose arrows walk the ticks in line order.
-  await open('model=knights-of-darkness&file=backend/src/main/java/com/knightsofdarkness/web/market/MarketController.java&line=67')
+  // A file with many cited lines close together (61 ticks), at 200% zoom: the ticks overlap.
+  await page.setViewport({ width: 800, height: 500, deviceScaleFactor: 2 })
+  await open('model=knights-of-darkness&file=browser/src/api/endpoints.ts&line=39')
   await page.waitForFunction(() => !document.querySelector('.reader')?.hidden, { timeout: 15000 })
   const rail = await page.evaluate(() => {
     const ticks = [...document.querySelectorAll('.reader-rail button')]
@@ -567,14 +569,21 @@ try {
   await page.keyboard.press('ArrowDown')
   const second = await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].indexOf(document.activeElement))
   check('the rail is one Tab stop, its ticks in line order, the arrows walking them', rail.n > 1 && rail.stops === 1 && rail.hidden === null && rail.lines.every((l, k) => k === 0 || l > rail.lines[k - 1]) && second === 1, JSON.stringify({ ...rail, second }))
-  // A press at a tick's centre goes to that tick's line, and the rail stays one stop after it.
-  const last = await page.evaluate(() => { const t = [...document.querySelectorAll('.reader-rail button')].at(-1), r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, line: Number(t.dataset.line) } })
-  await page.mouse.click(last.x, last.y)
+  // A press at any tick's centre goes to that tick's line and focuses that tick, however close its
+  // neighbours stand; the rail stays one Tab stop after it.
+  const ticks = await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].map(t => { const r = t.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, line: Number(t.dataset.line) } }))
+  const misses = []
+  for (const t of ticks) {
+    await page.mouse.click(t.x, t.y)
+    const got = await page.evaluate(() => Number(document.activeElement?.dataset?.line))
+    if (got !== t.line) misses.push([t.line, got])
+  }
   await sleep(500)
-  await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].at(-1).focus())
+  const lastLine = await page.evaluate(() => Number(new URLSearchParams(location.search).get('line')))
   await page.keyboard.press('ArrowUp')
-  const pressed = await page.evaluate(() => ({ line: Number(new URLSearchParams(location.search).get('line')), stops: [...document.querySelectorAll('.reader-rail button')].filter(t => t.tabIndex === 0).length }))
-  check('a press on a tick goes to its line, and the rail stays one Tab stop', Math.abs(pressed.line - last.line) <= 1 && pressed.stops === 1, JSON.stringify({ last, pressed }))
+  const stops = await page.evaluate(() => [...document.querySelectorAll('.reader-rail button')].filter(t => t.tabIndex === 0).length)
+  check('a press on any tick goes to its line and focuses it, and the rail stays one Tab stop', ticks.length > 1 && misses.length === 0 && lastLine === ticks.at(-1).line && stops === 1, JSON.stringify({ n: ticks.length, misses, lastLine, want: ticks.at(-1).line, stops }))
+  await page.setViewport({ width: 1600, height: 1000, deviceScaleFactor: 1 })
 
   // A resize keeps the reader's place: a pan, a zoom and an arrow being inspected all survive it.
   await page.setViewport({ width: 1600, height: 1000 })

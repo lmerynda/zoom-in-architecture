@@ -27,6 +27,8 @@ export class Reader {
   private pre = el('pre')
   private rail = el('div', 'reader-rail')
   private path = ''
+  /** Where the last press on the rail went down, in client px. */
+  private pressY: number | null = null
   private total = 0
   /** Called with the line at the top as the reader scrolls, and with 0 when it closes. */
   onLine: (line: number) => void = () => {}
@@ -63,6 +65,7 @@ export class Reader {
     this.rail.setAttribute('role', 'toolbar')
     this.rail.setAttribute('aria-orientation', 'vertical')
     this.rail.setAttribute('aria-label', 'Cited and marked lines')
+    this.rail.addEventListener('pointerdown', e => { this.pressY = e.clientY })
     // Whichever tick has focus (by key or by pointer) is the rail's one stop.
     this.rail.addEventListener('focusin', e => { for (const t of this.rail.querySelectorAll('button')) t.tabIndex = t === e.target ? 0 : -1 })
     this.rail.addEventListener('keydown', e => {
@@ -147,8 +150,11 @@ export class Reader {
       // A press goes to the tick nearest the pointer (ticks of close lines overlap); a key, to its own.
       t.onclick = e => {
         if (!e.detail) return this.goto(n)
-        const ticks = [...this.rail.querySelectorAll<HTMLButtonElement>('button')]
-        const near = ticks.reduce((a, b) => { const d = (x: HTMLElement) => { const r = x.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - e.clientY) }; return d(b) < d(a) ? b : a })
+        // Measured where the press went down (a click's own y is rounded), and focus follows to the tick
+        // gone to, so Enter after it stays on that line.
+        const y = this.pressY ?? e.clientY, ticks = [...this.rail.querySelectorAll<HTMLButtonElement>('button')]
+        const near = ticks.reduce((a, b) => { const d = (x: HTMLElement) => { const r = x.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - y) }; return d(b) < d(a) ? b : a })
+        near.focus()
         this.goto(Number(near.dataset.line))
       }
       t.dataset.line = String(n)
