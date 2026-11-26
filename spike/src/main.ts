@@ -861,7 +861,9 @@ async function main() {
     if (at > 0) {
       fit = { z: 0, x: 0, y: 0 }
       for (const [l, t, rr, b] of freeFrames()) {
-        const z = Math.min((rr - l - 16) / r[at * 4 + 2], (b - t - 16) / r[at * 4 + 3])
+        // No smaller than render.ts still reads as the place (55% of the screen one way), even if then
+        // some of it runs under the panel.
+        const z = Math.max(Math.min((rr - l - 16) / r[at * 4 + 2], (b - t - 16) / r[at * 4 + 3]), Math.min((cam.w * 0.57) / r[at * 4 + 2], (cam.h * 0.57) / r[at * 4 + 3]))
         if (z <= fit.z) continue
         // Over the screen's centre, where render.ts reads the place from, even if that sets it lower in its frame.
         const half = (v: number) => (v * z) / 2, along = (lo: number, hi: number, size: number, mid: number) => Math.max(mid - half(size) + 8, Math.min(mid + half(size) - 8, (lo + hi) / 2))
