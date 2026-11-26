@@ -759,8 +759,10 @@ export class Renderer {
       if (v.subFull !== subText || v.subEm == null) { sub.text = subText; v.subEm = em(sub); v.subFull = subText }
       const subEm = v.subEm
       // A long technology list is cut short rather than shrunk past reading; the panel has it all.
-      const s = Math.max(Math.min(spx, inner / subEm), Math.min(spx, SUB_MIN))
-      const shown = fitText(subText, subEm, inner, s)
+      // The room right of where the line is held (a card past the screen edge keeps it in view): never past the card.
+      const subRoom = Math.min(inner, x + w - pad - bx)
+      const s = Math.max(Math.min(spx, subRoom / subEm), Math.min(spx, SUB_MIN))
+      const shown = fitText(subText, subEm, subRoom, s)
       if (sub.text !== shown) sub.text = shown
       sub.visible = true
       sub.scale.set(s / FONT_PX)
