@@ -24,6 +24,34 @@ export const KINDS = {
   external: { color: 'muted', shape: 'rectangle' },
 }
 const CODE = { color: 'sky', shape: 'rectangle' }
+/**
+ * How a map link travels, said first on its arrow ("HTTP ×10", "JPA · accounts"): the protocol or
+ * the access layer, in the spelling a reader knows. A link between code parts that names none is warned about.
+ */
+export const VIA = ['HTTP', 'WebSocket', 'SSE', 'gRPC', 'GraphQL', 'TCP', 'UDP', 'IPC', 'JPA', 'JDBC', 'SQL', 'ORM', 'Redis', 'MongoDB', 'AMQP', 'Kafka', 'NATS', 'SMTP', 'File', 'Process']
+/** The `via` a marked line reads like, to suggest in a warning; null when it does not say. */
+export function viaOf(hint) {
+  const t = hint.text
+  switch (hint.kind) {
+    case 'route': case 'call':
+      return /@\w+\.websocket\s*\(|\bwss?:\/\//.test(t) ? 'WebSocket' : /\bsmtplib\.SMTP|\bsmtp\s*=/.test(t) ? 'SMTP' : /graphql/i.test(t) ? 'GraphQL' : 'HTTP'
+    case 'store':
+      // Spring Data's Crud and Paging repositories sit over JPA, MongoDB or others alike: not said.
+      return /\bJpaRepository\b/.test(t) ? 'JPA' : /mongo/i.test(t) ? 'MongoDB' : /\bJdbcTemplate\b/.test(t) ? 'JDBC' : /redis/i.test(t) ? 'Redis'
+        : /prisma|\bDbContext\b|\.Use(Npgsql|SqlServer|Sqlite|MySql)\b|\bgorm\.|\bsession\.\w+\s*\(|\bSession\s*\(\s*engine|create_(async_)?engine|models\.Model|table\s*=\s*True/.test(t) ? 'ORM'
+          : /\bsql\.Open|\bpgx(pool)?\.|\b(psycopg2?|sqlite3|pymysql|asyncpg|aiosqlite)\.connect|\bsqlx::query|\bcreatePool\s*\(|\b(Npgsql(Connection|DataSource)|SqlConnection|SqliteConnection|MySqlConnection)\b|\b(tx|db|conn|stmt)\.(Exec|Query|QueryRow|Prepare)/.test(t) ? 'SQL' : null
+    case 'socket':
+      return /grpc/i.test(t) ? 'gRPC' : /\bEventSource\b/.test(t) ? 'SSE' : /WebSocket|websocket|socketIO|\bio\.connect|\bio\s*\(|HubConnection/.test(t) ? 'WebSocket'
+        : /["'`]udp|Udp|SOCK_DGRAM/.test(t) ? 'UDP' : /NamedPipe/.test(t) ? 'IPC' : 'TCP'
+    case 'queue':
+      // Celery's broker is often Redis: only an explicit broker or client says which.
+      return /kafka/i.test(t) ? 'Kafka' : /\bnats\./i.test(t) ? 'NATS' : /\bpika\.|\bamqp/i.test(t) ? 'AMQP' : /\bCelery\s*\(.*redis/i.test(t) ? 'Redis' : null
+    case 'message': return 'IPC'
+    case 'process': return 'Process'
+    case 'file': return 'File'
+    default: return null
+  }
+}
 // Links touching one of these are judgement, not code facts, so they need no evidence.
 const NO_EVIDENCE = new Set(['actor'])
 const ID = /^[a-z][a-zA-Z0-9-]*(\.[a-z][a-zA-Z0-9-]*)*$/
@@ -185,12 +213,16 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const cited = new Set()
   for (const l of map.links ?? []) {
     const a = endOf(l.from), b = endOf(l.to)
+    // A `via` the viewer does not know is an error even while an end is missing (a live re-import
+    // publishes anyway, and the map goes out with it).
+    const spelled = l.via != null && VIA.find(v => v.toLowerCase() === String(l.via).toLowerCase())
+    if (l.via != null && !VIA.includes(l.via)) errors.push(`link ${l.from} → ${l.to} has via "${l.via}"; ${spelled ? `spell it ${spelled}` : `use one of ${VIA.join(', ')}`}`)
     if (!a || !b) { drift(`link ${l.from} → ${l.to}: ${!a ? l.from : l.to} is neither a node id nor an application file`); continue }
     const evidence = l.evidence ?? []
     if (!evidence.length && !NO_EVIDENCE.has(kindOf(l.from)) && !NO_EVIDENCE.has(kindOf(l.to))) errors.push(`link ${l.from} → ${l.to} needs evidence: file:line where the code makes the call`)
     // The viewer cannot read the repository, so each cited line travels with the model.
     // Evidence that no longer resolves (loose re-publish) is kept without code, so the viewer can say so.
-    const proof = []
+    const proof = [], reads = new Set()
     for (const ev of evidence) {
       const m = String(ev).match(/^(.+?):(\d+)(?:-(\d+))?$/)
       const file = m && join(graph.repo, m[1])
@@ -203,6 +235,7 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
       // in a file at one end of the link (config and other non-code files can back any link).
       const hints = app.get(m[1])?.hints
       for (let k = from; k <= to; k++) cited.add(`${m[1]}:${k}`)
+      for (const h of hints ?? []) if (h.line >= from && h.line <= to && viaOf(h)) reads.add(viaOf(h))
       if (hints && !atEnd(l.from, m[1]) && !atEnd(l.to, m[1]) && !nearEnd(l.from, m[1]) && !nearEnd(l.to, m[1])) warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is in ${m[1]}, which is at neither end of the link`)
       else if (hints && !hints.some(h => h.line >= from && h.line <= to)) {
         // A line someone read and confirmed (a call through a wrapper the scanner does not mark)
@@ -215,7 +248,9 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
         warnings.push(`link ${l.from} → ${l.to}: evidence "${ev}" is not a line the graph recognised; it reads: ${reads.slice(0, 100)}${near ? ` (nearest marked line: ${m[1]}:${near.line} ${near.kind} ${near.text.slice(0, 60)})` : ''}${accepted != null ? ' (it was accepted when it read differently: check it again)' : ''}`)
       }
     }
-    relations.push({ source: a, target: b, title: l.title ?? '', kind: 'runtime', evidence: proof })
+    // How it travels. A person using an app is not a protocol, so a link with an actor needs none.
+    if (l.via == null && !NO_EVIDENCE.has(kindOf(l.from)) && !NO_EVIDENCE.has(kindOf(l.to))) warnings.push(`link ${l.from} → ${l.to} says no via, how it travels: one of ${VIA.join(', ')}${reads.size === 1 ? ` (its evidence reads like ${[...reads][0]})` : ''}`)
+    relations.push({ source: a, target: b, title: l.title ?? '', kind: 'runtime', ...(VIA.includes(l.via) ? { via: l.via } : {}), evidence: proof })
   }
   for (const n of nodes.values()) if (byNode.has(n.id) && [...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" has child nodes and also holds ${byNode.get(n.id).length} files; move them into a child`)
   for (const n of nodes.values()) if (!['actor', 'database', 'queue', 'external', 'system'].includes(n.kind) && !byNode.has(n.id) && ![...nodes.keys()].some(k => parentOf(k) === n.id)) warnings.push(`node "${n.id}" holds no files and no nodes`)
@@ -246,9 +281,15 @@ export function buildModel(graph, map, { name, loose = false } = {}) {
   const tree = [...nodes.values()].map(n => ({ id: n.id, title: n.title, kind: n.kind, files: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.length, 0), voted: [...byNode].filter(([id]) => under(n, id)).reduce((s, [, ps]) => s + ps.filter(p => voted.has(p)).length, 0) }))
   // Marked lines no link cites, for re-maps after the code or the hints changed. Timers are not links.
   const uncited = graph.files.flatMap(f => f.hints.filter(h => h.kind !== 'schedule' && !cited.has(`${f.path}:${h.line}`)).map(h => ({ path: f.path, ...h })))
+  // Where the code starts work other than for an HTTP request (graph.mjs entryPointsOf), each on the
+  // card of its file, for the viewer to list: a program's main, then schedules, message and event
+  // handlers, socket servers. Endpoints are the Requests view's.
+  const order = ['main', 'schedule', 'message', 'socket']
+  const entryPoints = graph.files.flatMap(f => f.entryPoints.map(e => ({ kind: e.kind, element: fileId.get(f.path), line: e.line, text: e.text, ...(e.name ? { name: e.name } : {}) })))
+    .sort((x, y) => order.indexOf(x.kind) - order.indexOf(y.kind) || x.element.localeCompare(y.element) || x.line - y.line)
   const files = graph.files.length
   return {
-    model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations },
+    model: { name, title: map.title ?? humanize(basename(graph.repo)), elements, relations, entryPoints },
     errors, warnings, tree, unplaced, uncited, accepted: acceptedSeen,
     stats: { nodes: nodes.size, files, relations: relations.length, links: (map.links ?? []).length, unplaced: unplaced.length },
   }

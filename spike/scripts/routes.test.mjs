@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildGraph } from './graph.mjs'
@@ -138,7 +139,7 @@ describe('buildRequests', () => {
     features: [{ title: 'Orders', nodes: ['web'] }],
     links: [
       { from: 'buyer', to: 'web', title: 'shops' },
-      { from: 'src/main/java/shop/OrderRepository.java', to: 'db', title: 'JPA', evidence: ['src/main/java/shop/OrderRepository.java:3'] },
+      { from: 'src/main/java/shop/OrderRepository.java', to: 'db', title: 'orders', via: 'JPA', evidence: ['src/main/java/shop/OrderRepository.java:3'] },
     ],
   }
   const built = buildModel(graph, map, { name: 'shop' })
@@ -176,6 +177,9 @@ describe('buildRequests', () => {
     // A caller's link is a call at runtime, like the map link it comes from, not a use in code.
     expect(rel('buyer', 'web').kind).toBe('runtime')
     expect(rel(`${ep.id}.s2`, 'db').kind).toBe('runtime')
+    // How it travels comes along from the map link; a person's link says none.
+    expect(rel(`${ep.id}.s2`, 'db').via).toBe('JPA')
+    expect(rel('buyer', 'web').via).toBeUndefined()
     expect(r.relations.filter(x => x.source === 'buyer')).toHaveLength(1)
   })
 
@@ -195,6 +199,22 @@ describe('buildRequests', () => {
     expect(c.elements.find(e => e.id === 'web.account.card').description).toBe('2 endpoints, handled in AccountApi')
   })
 
+  it('keeps each map link its own relation, so two links between the same cards read as two', () => {
+    const g = fixture('polyglot')
+    const base = JSON.parse(readFileSync(join(import.meta.dirname, '../test/fixtures/polyglot-map.json'), 'utf8'))
+    const handler = 'server/src/main/java/com/shop/orders/OrderController.java'
+    // A second client file of the same app reaches the same handler: by WebSocket, then by HTTP too.
+    const second = via => ({ ...base, links: [...base.links, { from: 'web/src/ui/cart.ts', to: handler, title: 'live cart', via, evidence: ['web/src/ui/cart.ts:3', `${handler}:11`] }] })
+    const into = via => {
+      const m = second(via), built = buildModel(g, m, { name: 'shop' })
+      const req = buildRequests(g, m, built.model)
+      return req.relations.filter(x => x.source === 'web' && x.kind === 'runtime').map(x => `${x.via} ${x.title} ${x.evidence?.length ?? 0}`).sort()
+    }
+    // Each carries its own link's cited lines.
+    expect(into('WebSocket')).toEqual(['HTTP GET /api/orders 2', 'WebSocket live cart 2'])
+    expect(into('HTTP')).toEqual(['HTTP GET /api/orders 2', 'HTTP live cart 2'])
+  })
+
   it('has no Requests view for code without endpoints', () => {
     const g = fixture('polyglot')
     expect(buildRequests({ ...g, files: g.files.map(f => ({ ...f, hints: f.hints.filter(h => h.kind !== 'route') })) }, { nodes: [], links: [] }, { name: 'x', title: 'X', elements: [], relations: [] })).toBe(null)
@@ -205,7 +225,7 @@ describe('buildRequests of a request path', () => {
   const graph = fixture('clinic')
   const map = {
     nodes: [{ id: 'web', kind: 'webapp', title: 'Clinic', files: ['src/**'] }, { id: 'db', kind: 'database', title: 'Clinic DB' }],
-    links: [{ from: 'src/main/java/clinic/OwnerRepository.java', to: 'db', title: 'JPA', evidence: ['src/main/java/clinic/OwnerRepository.java:3'] }],
+    links: [{ from: 'src/main/java/clinic/OwnerRepository.java', to: 'db', title: 'owners', via: 'JPA', evidence: ['src/main/java/clinic/OwnerRepository.java:3'] }],
   }
   const built = buildModel(graph, map, { name: 'clinic' })
   const r = buildRequests(graph, map, built.model)
@@ -219,6 +239,8 @@ describe('buildRequests of a request path', () => {
     expect(kids(create.id).map(e => e.title)).toEqual(['1 · processCreationForm()', '2 · ClinicService', '3 · OwnerRepository', '4 · Mailer', 'OwnerForm', 'Owner', '5 · Response'])
     expect(kids(create.id).map(e => e.metadata.role)).toEqual(['step', 'step', 'step', 'step', 'type', 'type', 'response'])
     expect(rel(`${create.id}.s1`, `${create.id}.t1`).title).toBe('OwnerForm')
+    // The store arrow carries the map link's title and how it travels.
+    expect(rel(`${create.id}.s3`, 'db')).toMatchObject({ title: 'owners', via: 'JPA', kind: 'runtime' })
   })
 
   it('ends a handler with one answer at its view, then the response, with no store it never calls', () => {

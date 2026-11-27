@@ -13,14 +13,15 @@ export interface ModelDiff {
   /** Arrows (relations, by their two ends and title) new and gone. */
   arrowsAdded: number
   arrowsRemoved: number
-  /** Arrows in both versions whose cited lines changed. */
+  /** Arrows in both versions whose cited lines changed, and whose transport (`via`) changed. */
   evidenceChanged: number
+  viaChanged: number
 }
 
-/** Each relation by its ends and title, with its cited lines. */
+/** Each relation by its ends and title, with its cited lines and how it travels. */
 const arrows = (t: Tree) => {
-  const m = new Map<string, string>()
-  for (let k = 0; k < t.rels.length; k += 2) m.set(`${t.els[t.rels[k]].id}>${t.els[t.rels[k + 1]].id}>${t.relTitles[k >> 1]}`, JSON.stringify(t.relEvidence[k >> 1] ?? []))
+  const m = new Map<string, { ev: string; via: string }>()
+  for (let k = 0; k < t.rels.length; k += 2) m.set(`${t.els[t.rels[k]].id}>${t.els[t.rels[k + 1]].id}>${t.relTitles[k >> 1]}`, { ev: JSON.stringify(t.relEvidence[k >> 1] ?? []), via: t.relVia[k >> 1] })
   return m
 }
 
@@ -35,6 +36,7 @@ export function describeDiff(d: ModelDiff, next: Tree): string {
     d.arrowsAdded && `+${n(d.arrowsAdded, 'arrow')}`,
     d.arrowsRemoved && `−${n(d.arrowsRemoved, 'arrow')}`,
     d.evidenceChanged && `${n(d.evidenceChanged, 'citation')} moved`,
+    d.viaChanged && `${n(d.viaChanged, 'arrow')} travel${d.viaChanged === 1 ? 's' : ''} another way`,
   ].filter(Boolean).join(' · ') || 'nothing on the map changed'
 }
 
@@ -57,10 +59,15 @@ export function diffModels(prev: Tree, next: Tree): ModelDiff {
   }
   const removed = prev.els.slice(1).filter(e => !next.byId.has(e.id)).map(e => e.id)
   const a = arrows(prev), b = arrows(next)
-  let arrowsAdded = 0, arrowsRemoved = 0, evidenceChanged = 0
-  for (const [k, ev] of b) { if (!a.has(k)) arrowsAdded++; else if (a.get(k) !== ev) evidenceChanged++ }
+  let arrowsAdded = 0, arrowsRemoved = 0, evidenceChanged = 0, viaChanged = 0
+  for (const [k, x] of b) {
+    const was = a.get(k)
+    if (!was) { arrowsAdded++; continue }
+    if (was.ev !== x.ev) evidenceChanged++
+    if (was.via !== x.via) viaChanged++
+  }
   for (const k of a.keys()) if (!b.has(k)) arrowsRemoved++
-  return { added, removed, changed, oldIndex, arrowsAdded, arrowsRemoved, evidenceChanged }
+  return { added, removed, changed, oldIndex, arrowsAdded, arrowsRemoved, evidenceChanged, viaChanged }
 }
 
 const jobKey = (t: Tree, job: LayoutJob) => JSON.stringify([

@@ -1,4 +1,4 @@
-import type { ElementJson, ModelJson } from './model'
+import type { ElementJson, EntryPointJson, ModelJson } from './model'
 
 /**
  * A map's HTTP surface, read from its Requests model: every endpoint with its method and path, the
@@ -165,10 +165,7 @@ export function methodCounts(eps: Endpoint[]): [string, number][] {
   return [...m].sort((a, b) => methodRank(a[0]) - methodRank(b[0]) || a[0].localeCompare(b[0]))
 }
 
-/**
- * The top-level parts that call endpoints and serve none: clients. A timer in a client (a poll
- * every few seconds) is marked like a scheduled job, but it is no way into the system.
- */
+/** The top-level parts that call endpoints and serve none: clients. */
 export function clientParts(api: Api): Set<string> {
   const serving = new Set(api.endpoints.map(ep => ep.app))
   const out = new Set<string>()
@@ -182,34 +179,42 @@ export function servedBy(api: Api, path: string): Endpoint[] {
   return api.endpoints.filter(ep => ep.handler?.path === path).sort((a, b) => a.handler!.line - b.handler!.line)
 }
 
-/** A line the scanner marked as a way in, and the top-level part whose code it is in. */
-export interface Mark { path: string; line: number; top: string }
-export interface Marks { route: Mark[]; schedule: Mark[] }
+/** A way in and the top-level part whose code it is in; `name`, the method or callback it starts, when the code says. */
+export interface Mark { path: string; line: number; top: string; name?: string }
+/** Ways in by kind: HTTP routes from the scanner's marks; the rest from the map's own entry points (EntryPointJson). */
+export interface Marks { route: Mark[]; schedule: Mark[]; message: Mark[]; socket: Mark[]; main: Mark[] }
 
 /**
- * Entry points the map's files mark, by kind, counted once per file and line: HTTP routes and
- * scheduled jobs. (Sockets and processes are marked where code reaches out as much as where it
- * listens, so they are not counted as ways in.) Until maps carry entry points of their own, this
- * is what the scanner's marks say.
+ * The ways into the map's code, by kind, once per file and line: the HTTP routes its files mark,
+ * and the entry points the published map lists (`entryPoints`): scheduled jobs, message and event
+ * handlers, socket entry points, program mains. A timer, handler or socket in a browser app (a
+ * webapp part) or in a page or component file (a poll, an animation, a live view) is the page's own,
+ * not a way into the system; a worker that also calls an API keeps its own.
  */
-export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'metadata'>[]): Marks {
+export function markedEntries(els: Pick<ElementJson, 'id' | 'parent' | 'kind' | 'metadata'>[], entryPoints: EntryPointJson[]): Marks {
   const byId = new Map(els.map(e => [e.id, e]))
   const top = (e: Pick<ElementJson, 'id' | 'parent'>) => { let a = e; while (a.parent && byId.has(a.parent)) a = byId.get(a.parent)!; return a.id }
+  const page = (path: string) => /\.(tsx|jsx|vue|svelte|html?)$/i.test(path)
   const seen = new Set<string>()
-  const out: Marks = { route: [], schedule: [] }
+  const out: Marks = { route: [], schedule: [], message: [], socket: [], main: [] }
   for (const e of els) {
     const path = e.metadata?.path
     if (!path) continue
     for (const m of (e.metadata?.marks ?? '').split(' ')) {
       const [line, kind] = m.split(':')
-      if ((kind !== 'route' && kind !== 'schedule') || seen.has(`${path}:${line}`)) continue
-      // A timer in a page or a component (a poll, an animation) is marked as a schedule, but it is no way in.
-      if (kind === 'schedule' && /\.(tsx|jsx|vue|svelte|html?)$/i.test(path)) continue
+      if (kind !== 'route' || seen.has(`${path}:${line}`)) continue
       seen.add(`${path}:${line}`)
-      out[kind].push({ path, line: Number(line), top: top(e) })
+      out.route.push({ path, line: Number(line), top: top(e) })
     }
   }
-  for (const k of ['route', 'schedule'] as const) out[k].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
+  for (const ep of entryPoints) {
+    const e = byId.get(ep.element), path = e?.metadata?.path
+    if (!e || !path) continue
+    const t = top(e)
+    if (ep.kind !== 'main' && (page(path) || byId.get(t)?.kind === 'webapp')) continue
+    out[ep.kind].push({ path, line: ep.line, top: t, ...(ep.name ? { name: ep.name } : {}) })
+  }
+  for (const k of ['route', 'schedule', 'message', 'socket', 'main'] as const) out[k].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
   return out
 }
 

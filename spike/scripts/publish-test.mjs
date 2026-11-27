@@ -374,7 +374,8 @@ try {
     }
   })
   check('cards laid out by coupling wear their rank as a badge', badges.badges.length === badges.closed && [...badges.badges, ...badges.headers.map(h => h.split(' ')[0])].includes('#1'), JSON.stringify(badges))
-  check('the Coupling landscape labels its arrows in narrow gutters', ['shops in a browser', 'GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
+  // A map link says how it travels first: HTTP, JPA.
+  check('the Coupling landscape labels its arrows in narrow gutters, transport first', ['shops in a browser', 'HTTP · GET /api/orders'].every(t => counts.includes(t)), JSON.stringify(counts))
   await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').click())
   await page.waitForFunction(() => !location.search.includes('view=') && window.__spike?.ready, { timeout: 60000 })
 
@@ -390,6 +391,27 @@ try {
     const t = window.__spike.tree, kids = id => t.els.filter(e => e.parent === id).map(e => e.title)
     return { top: t.children[0].map(i => t.els[i].title), groups: kids('server'), path: kids('server.api-orders.e1') }
   })
+  // The landscape's store arrow says how it travels, then what it keeps.
+  const reqLabels = await page.evaluate(() => {
+    const s = window.__spike
+    s.select(-1); s.unhover(); s.manual(true); s.fit(0)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    const labels = s.renderer.labels.filter(l => l.text.visible).map(l => l.text.text)
+    s.manual(false)
+    return labels
+  })
+  check('the Requests landscape’s store arrow says how it travels, then what it keeps', reqLabels.includes('JPA · orders'), JSON.stringify(reqLabels))
+  // Its panel tells the mapped link from what the trace measured: the endpoint's requests, the tables, and that the call itself was not counted.
+  const storePanel = await page.evaluate(async () => {
+    const s = window.__spike
+    s.select(s.tree.byId.get('server')); await new Promise(r => setTimeout(r, 300))
+    const b = [...document.querySelectorAll('#details .d-inspect')].find(x => /PostgreSQL/.test(x.getAttribute('aria-label')))
+    b?.click(); await new Promise(r => setTimeout(r, 300))
+    const text = document.querySelector('#details').innerText
+    s.select(-1)
+    return text
+  })
+  check('a store arrow’s panel tells the mapped call from the measured traffic', /1 mapped runtime link/.test(storePanel) && /\bJPA\b/.test(storePanel) && /\b3 requests of its endpoint · this call not measured/.test(storePanel) && /reads orders/.test(storePanel), storePanel.replace(/\n/g, ' | ').slice(0, 300))
   const traced = await page.evaluate(async () => {
     const s = window.__spike, t = s.tree, text = () => [...document.querySelectorAll('#details p.d-seen, #details .d-tables li, #details .d-table-rows li')].map(p => p.textContent).join(' | ')
     s.select(t.byId.get('server.api-orders.e1')); await new Promise(r => setTimeout(r, 100)); const seen = text()
@@ -404,6 +426,14 @@ try {
   await page.waitForFunction(() => !window.__spike.cam.flying, { timeout: 10000 })
   await sleep(1500)
   await shot('04-request-path')
+
+  // The model the viewer serves lists where the code starts work without a request, each on its file's card.
+  const starts = await page.evaluate(async () => {
+    const m = await fetch('/models/shop.json').then(r => r.json())
+    const ids = new Set(m.elements.map(e => e.id))
+    return { list: (m.entryPoints ?? []).map(e => `${e.kind} ${e.element}:${e.line}`), onCards: (m.entryPoints ?? []).every(e => ids.has(e.element)) }
+  })
+  check('the served model lists the entry points beyond HTTP, each on a card', starts.onCards && ['main server.startup.shopApplication:6', 'main py.seed:4'].every(x => starts.list.includes(x)), JSON.stringify(starts))
 
   // The viewer keeps what was uploaded: with the project gone, its code and its map are still served.
   // Windows keeps a folder while a process watches it or runs in it: wait for the watcher to end.

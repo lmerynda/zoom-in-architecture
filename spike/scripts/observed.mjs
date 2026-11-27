@@ -34,9 +34,13 @@ export function tableVerbs(tables) {
 
 /**
  * Marks `model` (the architecture) and `requests` (the Requests view, or null) with `observed`.
- * Elements get metadata.seen (a count, as a string), endpoints also statuses and tables; relations
- * get `seen` (a count). A request that touched a store with no store link inferred from code gets
- * one, marked as seen only. Returns the coverage: endpoints seen of all.
+ * Elements get metadata.seen (a count, as a string), endpoints also statuses and tables. A runtime
+ * relation gets `seen`, a count of what the trace measured near it, never of calls across that one
+ * link (the trace does not count those), and `seenOf`, which count it is: `code` (how often the
+ * code of its source file ran) or `requests` (the requests of the endpoint it serves; a store arrow
+ * in the Requests view then also carries `tables`, what those requests did to which tables). A
+ * request that touched a store with no store link inferred from code gets one, `origin: 'trace'`:
+ * the map has no such link. Returns the coverage: endpoints seen of all.
  */
 export function markObserved(model, requests, observed) {
   const classCount = new Map()
@@ -56,7 +60,7 @@ export function markObserved(model, requests, observed) {
   const stores = new Set()
   for (const r of model.relations) {
     const n = seenFile.get(byId.get(r.source)?.metadata?.path)
-    if (r.kind === 'runtime' && n) { r.seen = n; if (byId.get(r.target)?.kind === 'database') stores.add(r.target) }
+    if (r.kind === 'runtime' && n) { r.seen = n; r.seenOf = 'code'; if (byId.get(r.target)?.kind === 'database') stores.add(r.target) }
   }
   // One store reached: every table seen is its. More than one: which table lives where is not known here.
   if (stores.size === 1 && Object.keys(tables).length) { const s = byId.get([...stores][0]); s.metadata = { ...s.metadata, tables: tableText(tables) } }
@@ -65,7 +69,10 @@ export function markObserved(model, requests, observed) {
   if (requests) {
     const els = new Map(requests.elements.map(e => [e.id, e]))
     const obs = new Map(observed.endpoints.map(e => [`${e.method} ${e.route}`, e]))
-    const db = requests.elements.find(e => e.kind === 'database' && !e.parent)
+    // The trace names tables, not which database holds them: with one store they are its; with more, no
+    // store link is given tables or added (the endpoint keeps its tables either way).
+    const dbs = requests.elements.filter(e => e.kind === 'database' && !e.parent)
+    const db = dbs.length === 1 ? dbs[0] : null
     const apps = new Map()
     for (const ep of requests.elements.filter(e => e.metadata?.method && e.metadata?.route)) {
       total++
@@ -92,10 +99,10 @@ export function markObserved(model, requests, observed) {
       const mine = new Set(steps.map(s => s.id))
       const toStore = requests.relations.filter(r => mine.has(r.source) && els.get(r.target)?.kind === 'database')
       if (!Object.keys(o.tables).length) continue
-      for (const r of toStore) r.seen = o.count
+      for (const r of toStore) { r.seen = o.count; r.seenOf = 'requests'; if (db) r.tables = tableVerbs(o.tables) }
       const handler = steps.find(s => s.metadata?.role === 'step' && s.metadata?.step === '1')
       if (!toStore.length && db && handler) {
-        requests.relations.push({ source: handler.id, target: db.id, title: tableVerbs(o.tables), kind: 'runtime', seen: o.count })
+        requests.relations.push({ source: handler.id, target: db.id, title: tableVerbs(o.tables), kind: 'runtime', seen: o.count, seenOf: 'requests', tables: tableVerbs(o.tables), origin: 'trace' })
       }
     }
     for (const [app, a] of apps) { const e = els.get(app); if (e) e.metadata = { ...e.metadata, seen: `${a.seen}/${a.total}` } }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { searchMap } from './controls/logic'
 import { buildApi, callsIn, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
-import type { ElementJson, ModelJson } from './model'
+import type { ElementJson, EntryPointJson, ModelJson } from './model'
 import { placeUrl } from './places'
 
 const el = (id: string, parent: string | null, extra: Partial<ElementJson> = {}): ElementJson => ({ id, parent, title: id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -170,13 +170,34 @@ describe('filterApi, groupApi and methodCounts', () => {
 })
 
 describe('markedEntries', () => {
-  it('counts each marked route and job once per file and line, with its top-level part', () => {
-    const m = markedEntries(requests.elements)
+  it('counts each marked route once per file and line, and the map’s entry points by kind, each with its top-level part', () => {
+    // A scanner's schedule mark (20:schedule) no longer counts: the map's entry points say what starts work.
+    const starts: EntryPointJson[] = [
+      { kind: 'schedule', element: 'server.zlast.e1.s1', line: 20, text: '@Scheduled(cron = "0 0 * * * *")', name: 'nightly' },
+      { kind: 'message', element: 'server.zlast.e1.s1', line: 30, text: '@KafkaListener(topics = "orders")', name: 'onOrder' },
+      { kind: 'main', element: 'server.zlast.e1.s1', line: 2, text: 'public static void main(String[] args)', name: 'main' },
+      // An element the model does not have is left out, not guessed.
+      { kind: 'socket', element: 'server.gone', line: 1, text: 'new WebSocketServer({ port: 1 })' },
+    ]
+    const m = markedEntries(requests.elements, starts)
     expect(m.route.map(r => `${r.path}:${r.line}`)).toEqual([`${ctrl}:34`, `${ctrl}:66`, 'src/Zélan.java:8'])
-    expect(m.schedule).toEqual([{ path: 'src/Zélan.java', line: 20, top: 'server' }])
-    expect(markedEntries([])).toEqual({ route: [], schedule: [] })
-    // A timer in a page is no way in.
-    expect(markedEntries([el('web', null), el('web.p', 'web', { metadata: { path: 'web/Collab.tsx', marks: '841:schedule 9:route' } })]).schedule).toEqual([])
+    expect(m.schedule).toEqual([{ path: 'src/Zélan.java', line: 20, top: 'server', name: 'nightly' }])
+    expect(m.message).toEqual([{ path: 'src/Zélan.java', line: 30, top: 'server', name: 'onOrder' }])
+    expect(m.main.map(x => x.line)).toEqual([2])
+    expect(m.socket).toEqual([])
+    expect(markedEntries([], [])).toEqual({ route: [], schedule: [], message: [], socket: [], main: [] })
+    // A timer or a handler in a page is the page's own, no way in; a page's route still counts.
+    const page = [el('web', null), el('web.p', 'web', { metadata: { path: 'web/Collab.tsx', marks: '841:schedule 9:route' } })]
+    const inPage = markedEntries(page, [{ kind: 'schedule', element: 'web.p', line: 841, text: 'setInterval(poll, 5000)', name: 'poll' }, { kind: 'message', element: 'web.p', line: 850, text: 'socket.onmessage = show' }])
+    expect([inPage.schedule, inPage.message, inPage.route.map(r => r.line)]).toEqual([[], [], [9]])
+    // A browser app's timers are its own even in a .ts file; a worker's handler and its start stay, whatever it calls.
+    const parts = [el('web', null, { kind: 'webapp' }), el('web.api', 'web', { metadata: { path: 'web/src/api/client.ts' } }), el('worker', null, { kind: 'app' }), el('worker.q', 'worker', { metadata: { path: 'worker/src/consumer.ts' } })]
+    const both = markedEntries(parts, [
+      { kind: 'schedule', element: 'web.api', line: 133, text: 'refreshTimer = window.setInterval(async () => {' },
+      { kind: 'message', element: 'worker.q', line: 12, text: "parentPort.on('message', dispatch)" },
+      { kind: 'main', element: 'worker.q', line: 1, text: '#!/usr/bin/env node' },
+    ])
+    expect([both.schedule, both.message.map(m => m.top), both.main.map(m => m.top)]).toEqual([[], ['worker'], ['worker']])
   })
 })
 

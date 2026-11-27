@@ -1,4 +1,4 @@
-import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Marks } from './endpoints'
+import { clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, methodCounts, routeParams, servedBy, takenTypes, wordRe, type Api, type ApiFilter, type Endpoint, type Mark, type Marks } from './endpoints'
 import { kindName, type ElementJson, type EvidenceJson, type Tree } from './model'
 import { count } from './render'
 import { traceSections } from './traces'
@@ -41,6 +41,7 @@ export function relationsAcross(tree: Tree, a: number, b: number): number[] {
 }
 
 /** One relation as the panel lists it: the card on the other side, what it reaches there, and the cited lines. */
+/** `seen`: how many of the row's relations the trace saw evidence of; never a sum of their counts, which measure different things. */
 export interface RelationRow { other: number; names: string[]; evidence: EvidenceJson[]; seen: number }
 
 type Rel = { other: number; title: string; evidence?: EvidenceJson[]; seen?: number }
@@ -58,7 +59,7 @@ export function relationRows(tree: Tree, i: number, rels: Rel[]): RelationRow[] 
   for (const r of rels) {
     const o = rollUp(r.other)
     const row = byOther.get(o) ?? { names: new Set(), evidence: new Map(), seen: 0 }
-    row.seen += r.seen ?? 0
+    if (r.seen) row.seen++
     const name = o === r.other ? r.title : tree.els[r.other].title
     // A relation named after the element it reaches (an import of KingdomDto) says nothing twice.
     if (name && name !== tree.els[o].title && name !== 'uses') row.names.add(name)
@@ -187,7 +188,7 @@ export function renderDetails(panel: HTMLElement, tree: Tree, relationsOf: (i: n
       // A partly tested arrow says so: how many of the calls the trace could see it saw.
       const tally = traceTally(tree, across)
       if (tally.unseen) b.append(partTag(tally))
-      else if (r.seen) b.append(seenTag(r.seen))
+      else if (r.seen) { const tag = el('em', 'd-seen-tag', 'seen in tests'); tag.title = `The project's own tests left evidence of ${plural(r.seen, 'relation')} here. Inspect says what the trace counted for each.`; b.append(tag) }
       b.onclick = () => act.go(r.other)
       li.append(b)
       // The arrow's own evidence, by keyboard as well as by clicking the arrow on the map.
@@ -411,8 +412,7 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
   panel.classList.remove('outline')
   const head = el('div', 'd-head')
   head.append(el('span', 'd-kind', 'Arrow'), el('h2', '', `${tree.els[s].title} ↔ ${tree.els[t].title}`))
-  const count = (kind: string) => rels.filter(k => tree.relKind[k] === kind).length
-  const summary = (['runtime', 'code', 'types'] as const).filter(k => count(k)).map(k => `${count(k)} ${count(k) === 1 ? KIND_ONE[k] : KIND_WORD[k]}`).join(' · ')
+  const summary = arrowSummary(tree, rels)
   const files = new Set(tree.els.flatMap(f => (f.metadata?.path ? [f.metadata.path] : [])))
   const inside = (root: number, n: number) => n === root || tree.isAncestor(root, n)
   head.querySelector('h2')!.textContent = arrowTitle(tree, s, t, rels)
@@ -459,7 +459,14 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
       li.append(pair)
       const why = el('div', 'd-why')
       why.append(el('span', 'd-kindtag', KIND_WORD[kind]))
-      if (tree.relSeen[k]) why.append(seenTag(tree.relSeen[k]))
+      // How a map link travels (HTTP, JPA), as its arrow says it.
+      if (tree.relVia[k]) why.append(el('span', 'd-kindtag', tree.relVia[k]))
+      if (tree.relTraceOnly[k]) {
+        const tag = el('em', 'd-seen-tag outside', 'added by the trace')
+        tag.title = 'The map has no such link: a tested request touched this store where the code reading found no call'
+        why.append(tag)
+      }
+      if (tree.relSeen[k]) why.append(seenTag(tree.relSeen[k], tree.relSeenOf[k]))
       else if (tree.relTraceable[k]) why.append(el('em', 'd-seen-tag none', 'not seen in tests'))
       else if (tree.traced && kind === 'runtime') {
         const tag = el('em', 'd-seen-tag outside', 'outside the trace')
@@ -467,6 +474,10 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
         why.append(tag)
       }
       if (tree.relTitles[k]) why.append(el('span', 'd-names', tree.relTitles[k]))
+      // What the trace measured near it, in its own unit, and that this call itself was not counted.
+      const measured = measureText(tree.relSeen[k], tree.relSeenOf[k])
+      if (measured) why.append(el('span', 'd-measure', measured))
+      if (tree.relTables[k] && tree.relTables[k] !== tree.relTitles[k]) why.append(el('span', 'd-names', tree.relTables[k]))
       const path = tree.els[a].metadata?.path
       // The lines that make it: a use's own lines in its file, a runtime call's cited lines.
       for (const line of tree.relLines[k]) {
@@ -500,7 +511,33 @@ export function renderEdge(panel: HTMLElement, tree: Tree, s: number, t: number,
  * trace recorded for the link (spans of its code, or its endpoint's requests), not a count of this
  * one call, and the row needs its room for what the call reaches.
  */
-/** Of some relations, how many the trace could judge, and how many of those the tests made. */
+/**
+ * An arrow's relations by kind, a runtime call split by where it comes from: "2 mapped calls at
+ * runtime · 1 the trace added · 3 uses in code". A mapped call is one of the map's links; the trace
+ * adds one where a tested request touched a store the map links nothing to.
+ */
+export function arrowSummary(tree: Tree, rels: number[]): string {
+  const n = (f: (k: number) => boolean) => rels.filter(f).length
+  const mapped = n(k => tree.relKind[k] === 'runtime' && !tree.relTraceOnly[k]), added = n(k => tree.relTraceOnly[k])
+  const code = n(k => tree.relKind[k] === 'code'), types = n(k => tree.relKind[k] === 'types')
+  return [
+    mapped && `${mapped} mapped runtime link${mapped === 1 ? '' : 's'}`,
+    added && `${added} the trace added`,
+    code && `${code} ${code === 1 ? KIND_ONE.code : KIND_WORD.code}`,
+    types && `${types} ${types === 1 ? KIND_ONE.types : KIND_WORD.types}`,
+  ].filter(Boolean).join(' · ')
+}
+
+/**
+ * What the trace measured near a runtime call, in its unit, said as not a count of the call itself:
+ * "12 requests of its endpoint · this call not measured", "its code ran 340 times · …"; '' unseen.
+ */
+export function measureText(seen: number, of: Tree['relSeenOf'][number]): string {
+  if (!seen || !of) return ''
+  return `${of === 'requests' ? `${count(seen)} request${seen === 1 ? '' : 's'} of its endpoint` : `its code ran ${count(seen)} time${seen === 1 ? '' : 's'}`} · this call not measured`
+}
+
+/** Of some relations, how many the trace could judge, and how many of those it saw evidence of (their source's code ran, or their endpoint was called). */
 export function traceTally(tree: Tree, rels: number[]): { seen: number; unseen: number } {
   let seen = 0, unseen = 0
   for (const k of rels) if (tree.relSeen[k]) seen++; else if (tree.relTraceable[k]) unseen++
@@ -510,7 +547,7 @@ export function traceTally(tree: Tree, rels: number[]): { seen: number; unseen: 
 /** A partly tested arrow's tag: "14/15 seen", light red, with the exceptions in its tooltip. */
 function partTag(t: { seen: number; unseen: number }): HTMLElement {
   const tag = el('em', 'd-seen-tag none', `${t.seen}/${t.seen + t.unseen} seen`)
-  tag.title = `The project's own tests made ${t.seen} of the ${t.seen + t.unseen} calls here the trace could see; ${t.unseen} not seen. Inspect lists them first.`
+  tag.title = `The project's own tests left evidence of ${t.seen} of the ${t.seen + t.unseen} calls here the trace could see (their code ran, or their endpoint was called); ${t.unseen} without. Inspect lists them first.`
   return tag
 }
 
@@ -519,9 +556,9 @@ function partLine(t: { seen: number; unseen: number }): HTMLElement {
   return el('p', 'd-missed', `${t.seen} of ${t.seen + t.unseen} calls seen in tests · ${t.unseen} not seen, listed first`)
 }
 
-export function seenTag(n: number): HTMLElement {
+export function seenTag(n: number, of: Tree['relSeenOf'][number] = ''): HTMLElement {
   const tag = el('em', 'd-seen-tag', 'seen in tests')
-  tag.title = `Seen in the project's own end-to-end tests. The trace counted ${count(n)} for it: the requests of its endpoint, or the calls into the code that makes it, not calls across this one link`
+  tag.title = `Seen in the project's own end-to-end tests. ${measureText(n, of) || `The trace counted ${count(n)} for it: the requests of its endpoint, or the calls into the code that makes it, not calls across this one link`}`
   return tag
 }
 
@@ -642,7 +679,7 @@ export interface Surface {
   api: Api | null
   /** The open view is Requests: an endpoint is a card here. */
   requests: boolean
-  /** Routes and scheduled jobs marked in the map's code (the Architecture model's, when it is loaded). */
+  /** The ways into the map's code: routes its files mark, and its entry points (the Architecture model's, when it is loaded). */
   marks: Marks
 }
 
@@ -751,12 +788,15 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
   const api = s.api
   const eps = api ? filterApi(api, { app: scope.app, ids: scope.ids }) : []
   const calls = api && scope.calls ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => scope.calls!.includes(c.top))) : []
-  const marks = { route: s.marks.route.filter(m => !scope.app || m.top === scope.app), schedule: s.marks.schedule.filter(m => !scope.app || m.top === scope.app) }
-  const clients = api ? clientParts(api) : new Set<string>()
-  const jobs = scope.ids ? [] : marks.schedule.filter(m => !clients.has(m.top))
+  const mine = (k: keyof Marks) => s.marks[k].filter(m => !scope.app || m.top === scope.app)
+  const marks = { route: mine('route') }
+  // The other ways in (the map's entry points; a browser app's own timers and handlers are left out
+  // where they are read). A program's start is not a way in, but says where it begins.
+  const ways = (k: 'schedule' | 'message' | 'socket' | 'main') => (scope.ids ? [] : mine(k))
+  const jobs = ways('schedule'), handlers = ways('message'), sockets = ways('socket'), mains = ways('main')
   const routesOnly = !eps.length && !scope.ids && marks.route.length > 0
   const pages = scope.pages ?? []
-  if (!eps.length && !calls.length && !jobs.length && !routesOnly && !pages.length) return []
+  if (!eps.length && !calls.length && !jobs.length && !handlers.length && !sockets.length && !mains.length && !routesOnly && !pages.length) return []
   const box = el('section', 'd-surface')
   box.append(el('h3', '', 'Surface'))
   const row = el('div', 'd-actions')
@@ -791,7 +831,12 @@ export function surfaceBox(s: Surface, act: ApiActions & PanelActions, scope: { 
     box.append(toggle, ul)
   }
   if (pages.length) fold('Pages', pages.map(p => ({ text: p.title, title: `${p.title}: select it`, run: () => act.go(p.i) })))
-  if (jobs.length) fold('Scheduled jobs', jobs.map(j => ({ text: `${j.path.split('/').pop()}:${j.line}`, title: `${j.path}:${j.line}: open the code here`, run: () => act.openPath(j.path, j.line, -1) })))
+  // Each row: the file, what it starts when the code says (BotClock · runBots), and its line.
+  const rowOf = (j: Mark) => ({ text: `${j.path.split('/').pop()!.replace(/\.\w+$/, '')}${j.name ? ` · ${j.name}` : ''}:${j.line}`, title: `${j.path}:${j.line}: open the code here`, run: () => act.openPath(j.path, j.line, -1) })
+  if (jobs.length) fold('Scheduled jobs', jobs.map(rowOf))
+  if (handlers.length) fold('Message and event handlers', handlers.map(rowOf))
+  if (sockets.length) fold('Socket entry points', sockets.map(rowOf))
+  if (mains.length) fold('Starts at', mains.map(rowOf))
   return [box]
 }
 
@@ -934,7 +979,8 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
     const calls: { k: number; target: number }[] = []
     for (let k = 0; k < tree.rels.length; k += 2) {
       const a = tree.rels[k], b = tree.rels[k + 1]
-      if (inside(a) && !inside(b) && tree.relKind[k >> 1] === 'runtime') calls.push({ k: k >> 1, target: b })
+      // A link the trace added is not on the code path the map follows: the tables it names are what the note below is about.
+      if (inside(a) && !inside(b) && tree.relKind[k >> 1] === 'runtime' && !tree.relTraceOnly[k >> 1]) calls.push({ k: k >> 1, target: b })
     }
     const s = section('data', `Reads and writes · ${tested.length || calls.length}`)
     if (tested.length) {
@@ -952,7 +998,7 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
         const src = tree.rels[c.k * 2]
         const li = rowBtn(tree.els[c.target].title, [tree.relTitles[c.k], `from ${tree.els[src].title}`].filter(Boolean).join(' · '), () => act.inspect(i, c.target), '⇢')
         const b = li.firstElementChild as HTMLElement
-        if (tree.relSeen[c.k]) b.append(seenTag(tree.relSeen[c.k]))
+        if (tree.relSeen[c.k]) b.append(seenTag(tree.relSeen[c.k], tree.relSeenOf[c.k]))
         else if (tree.relTraceable[c.k]) b.append(el('em', 'd-seen-tag none', 'not seen in tests'))
         ul.append(li)
       }
@@ -998,7 +1044,7 @@ export function endpointEffects(tree: Tree, i: number, act: PanelActions, api: A
       const li = rowBtn(tree.els[src].title, [...new Set(rels.map(k => tree.relTitles[k]).filter(Boolean))].join(' · '), () => act.go(src), '←')
       const b = li.firstElementChild as HTMLElement
       const seen = rels.find(k => tree.relSeen[k]), unseen = rels.some(k => tree.relTraceable[k] && !tree.relSeen[k])
-      if (seen != null) b.append(seenTag(tree.relSeen[seen]))
+      if (seen != null) b.append(seenTag(tree.relSeen[seen], tree.relSeenOf[seen]))
       else if (unseen) b.append(el('em', 'd-seen-tag none', 'not seen in tests'))
       else if (tree.traced && rels.some(k => tree.relKind[k] === 'runtime')) { const t = el('em', 'd-seen-tag outside', 'outside the trace'); t.title = 'The trace watched only the apps the tests ran; this caller is outside them'; b.append(t) }
       ul.append(li)

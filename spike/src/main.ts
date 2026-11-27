@@ -4,7 +4,7 @@ import { changeCount, renderChanges, sinceText } from './changes'
 import { CodeView } from './code'
 import { installControls } from './controls/install'
 import { endpointsUnder, relationsAcross, stepRole, renderApi, renderDetails, renderEdge, renderFeature, renderLines, renderOutline, surfaceLead, type PanelActions, type PanelRows, type Surface } from './details'
-import { buildApi, callsIn, clientParts, endpointOf, featureFacts, isPage, markedEntries, topCounts, type ApiFilter } from './endpoints'
+import { buildApi, callsIn, endpointOf, featureFacts, isPage, markedEntries, topCounts, type ApiFilter } from './endpoints'
 import { LensBar, ago } from './hud'
 import { CARD_W, importance, layoutJobs, openScale, placeWorld, rankKey, ranks, siblingPartners, type LocalLayout, type World } from './layout'
 import { runLayout } from './layoutPool'
@@ -643,18 +643,20 @@ async function main() {
    * Architecture model once loaded). `other` is the model of the other view.
    */
   let other: ModelJson | null = null
-  const surface: Surface = { api: null, requests: view === 'requests', marks: { route: [], schedule: [] } }
+  const surface: Surface = { api: null, requests: view === 'requests', marks: { route: [], schedule: [], message: [], socket: [], main: [] } }
   /** Per card, its surface in words: drawn on the card under its kind. */
   let surfaceText = new Map<number, string>()
   const cardSurface = () => {
-    const out = new Map<number, string>(), api = surface.api, clients = api ? clientParts(api) : new Set<string>()
+    const out = new Map<number, string>(), api = surface.api
     const n = (k: number, w: string) => `${count(k)} ${w}${k === 1 ? '' : 's'}`
     for (const i of tree.children[0]) {
       const id = tree.els[i].id
       const served = api ? api.endpoints.filter(ep => ep.app === id).length : 0
       const calls = api ? api.endpoints.filter(ep => (api.callers.get(ep.id) ?? []).some(c => c.top === id)).length : 0
-      const jobs = clients.has(id) ? 0 : surface.marks.schedule.filter(m => m.top === id).length
-      const words = [served ? n(served, 'endpoint') : '', calls ? `calls ${n(calls, 'endpoint')}` : '', jobs ? n(jobs, 'scheduled job') : ''].filter(Boolean)
+      // A browser app's own timers and handlers are left out where the marks are read (markedEntries).
+      const ways = (k: 'schedule' | 'message' | 'socket') => surface.marks[k].filter(m => m.top === id).length
+      const jobs = ways('schedule'), handlers = ways('message'), sockets = ways('socket')
+      const words = [served ? n(served, 'endpoint') : '', calls ? `calls ${n(calls, 'endpoint')}` : '', jobs ? n(jobs, 'scheduled job') : '', handlers ? n(handlers, 'event handler') : '', sockets ? n(sockets, 'socket entry point') : ''].filter(Boolean)
       if (words.length) out.set(i, words.join(' · '))
     }
     // Inside a part (not in Requests, whose cards are the endpoints): a component's endpoints, by the handlers in it; a file's, served.
@@ -676,7 +678,9 @@ async function main() {
     const req = view === 'requests' ? raw : other
     const api = req ? buildApi(req) : null
     surface.api = api?.endpoints.length ? api : null
-    surface.marks = markedEntries(view === 'requests' && other ? other.elements : raw.elements)
+    const arch = view === 'requests' && other ? other : raw
+    // Sample and synthetic models list no entry points; a published map always does.
+    surface.marks = markedEntries(arch.elements, arch.entryPoints ?? [])
     surfaceText = cardSurface()
     callsRead = null
     renderer.surface = i => surfaceText.get(i) ?? ''
@@ -1330,7 +1334,7 @@ async function main() {
     morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z], resized, flying }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
-    const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged > 0
+    const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged + diff.viaChanged > 0
     if (said || changed) controls.toast.show(said ?? `Map updated · ${describeDiff(diff, next)}`)
     marked = ''
     markProblems()

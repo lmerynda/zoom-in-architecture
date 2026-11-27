@@ -5,7 +5,7 @@ import { CODE_W, codeBox, type CodeSlot } from './code'
 import { drawGlyph, glyphOf, GLYPHS, type Glyph } from './icons'
 import { heatColor, type Lens } from './lens'
 import { CARD_W, HEADER, openScale, PAD, type World } from './layout'
-import { aggregateEdges, kindName, type EvidenceJson, type ShownEdge, type Tree } from './model'
+import { aggregateEdges, arrowLabel, kindName, type EvidenceJson, type ShownEdge, type Tree } from './model'
 
 const FONT = 'ui'
 const FONT_PX = 32
@@ -980,12 +980,13 @@ export class Renderer {
         const at = stretches(pts)
         const n = hot ? e.focusCount : e.count, rel = hot ? e.focusRel : e.rel
         // A single import's name ("User") is detail: it shows on the focused card's edges only.
-        // Counts and the map's links (what a call or a store does) always say what they carry.
+        // Counts and the map's links (what a call or a store does) always say what they carry, and
+        // how it travels first when every relation on the arrow says the same ("HTTP ×10").
         // A count sits by the arrowhead it belongs to (this stretch ends there); which pairs a line
         // carries is said on hover (linesAt).
-        const s = n > 1 ? `×${n}` : hot || this.tree.relEvidence[rel] ? this.tree.relTitles[rel] : ''
-        // One import named after the card it reaches says nothing the arrow does not.
-        if (at.length && s && s !== this.tree.els[e.t].title && s !== this.tree.els[e.s].title) labelSpots.push({ at, s, kind, weight: n })
+        const via = n > 1 ? (hot ? e.focusVia : e.via) : this.tree.relVia[rel]
+        const s = arrowLabel(n, via, this.tree.relTitles[rel], hot || !!this.tree.relEvidence[rel], [this.tree.els[e.s].title, this.tree.els[e.t].title])
+        if (at.length && s) labelSpots.push({ at, s, kind, weight: n })
       }
     }
 

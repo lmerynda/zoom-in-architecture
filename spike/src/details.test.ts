@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrowTitle, foldEvidence, kindWord, offPath, relationRows, seenText, tableRows } from './details'
+import { arrowSummary, arrowTitle, measureText, foldEvidence, kindWord, offPath, relationRows, seenText, tableRows } from './details'
 import { Tree, type ModelJson } from './model'
 
 const el = (id: string, parent: string | null, extra = {}) => ({ id, parent, title: id.split('.').pop()!, kind: 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle', ...extra })
@@ -100,5 +100,46 @@ describe('offPath', () => {
     expect(offPath(['spy_report_entity', 'user_entity'], ['reads spy_report_entity · reads user_entity'])).toEqual([])
     expect(offPath(['orders'], [])).toEqual(['orders'])
     expect(offPath([], ['x'])).toEqual([])
+  })
+})
+
+describe('store arrows: a mapped relation apart from what the trace measured', () => {
+  const els = ['app', 'app.repo', 'app.ctl', 'db'].map(id => ({ id, parent: id.includes('.') ? 'app' : null, title: id, kind: id === 'db' ? 'database' : 'component', description: '', technology: '', tags: [], color: 'primary', shape: 'rectangle' }))
+  const model: ModelJson = {
+    name: 'm',
+    elements: els,
+    relations: [
+      { source: 'app.repo', target: 'db', title: 'offers', kind: 'runtime', via: 'JPA', evidence: [], seen: 3, seenOf: 'requests', tables: 'updates and reads offers' },
+      { source: 'app.ctl', target: 'db', title: 'inserts offers', kind: 'runtime', seen: 1, seenOf: 'requests', tables: 'inserts offers', origin: 'trace' },
+      { source: 'app.ctl', target: 'app.repo', title: 'OfferRepository' },
+    ],
+  }
+  const tree = new Tree(model)
+
+  it('carries what a count counts, the tables, and whether only the trace knows the link', () => {
+    expect(tree.relSeenOf).toEqual(['requests', 'requests', ''])
+    expect(tree.relTables).toEqual(['updates and reads offers', 'inserts offers', ''])
+    expect(tree.relTraceOnly).toEqual([false, true, false])
+  })
+
+  it('counts a row’s seen relations, never a sum of counts that measure different things', () => {
+    const [row] = relationRows(tree, tree.byId.get('app')!, [{ other: tree.byId.get('db')!, title: 'offers', seen: 3 }, { other: tree.byId.get('db')!, title: 'inserts offers', seen: 1 }, { other: tree.byId.get('db')!, title: 'x' }])
+    expect(row.seen).toBe(2)
+  })
+
+  it('counts mapped calls apart from those the trace added', () => {
+    expect(arrowSummary(tree, [0, 1, 2])).toBe('1 mapped runtime link · 1 the trace added · 1 use in code')
+    expect(arrowSummary(tree, [0])).toBe('1 mapped runtime link')
+    expect(arrowSummary(tree, [1])).toBe('1 the trace added')
+    expect(arrowSummary(tree, [])).toBe('')
+  })
+
+  it('says a count in its unit, and that the call itself was not measured', () => {
+    expect(measureText(3, 'requests')).toBe('3 requests of its endpoint · this call not measured')
+    expect(measureText(1, 'requests')).toBe('1 request of its endpoint · this call not measured')
+    expect(measureText(48872, 'code')).toBe('its code ran 48,872 times · this call not measured')
+    // Unseen, or a count that does not say what it counts: nothing to say.
+    expect(measureText(0, 'requests')).toBe('')
+    expect(measureText(5, '')).toBe('')
   })
 })

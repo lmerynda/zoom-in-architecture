@@ -35,13 +35,42 @@ export interface RelationJson {
    * leave it out: a link with evidence is runtime, the rest code.
    */
   kind?: RelKind
+  /** How a runtime link travels (HTTP, JPA, WebSocket, …), from the map; said first on its arrow. */
+  via?: string
   /** Lines of the source's file that name what it uses there: why the relation exists. */
   lines?: number[]
-  /** How many times the project's own end-to-end tests made this call (zoom trace); absent: not seen, or not traced. */
+  /**
+   * What the project's own end-to-end tests showed near this runtime call (zoom trace); absent: not
+   * seen, or not traced. Never a count of calls across this one link: `seenOf` says what it counts.
+   */
   seen?: number
+  /** What `seen` counts: `code`, how often the source file's code ran; `requests`, the requests of the endpoint the call serves. */
+  seenOf?: 'code' | 'requests'
+  /** On a store call in the Requests view: what its endpoint's requests did to which tables ("updates kingdom_entity · reads user_entity"). */
+  tables?: string
+  /** `trace`: the map has no such link; the trace added it because a request touched a store the code reading missed. */
+  origin?: 'trace'
 }
 
 export type RelKind = 'code' | 'types' | 'runtime'
+
+/**
+ * Where the code starts work other than for an HTTP request (endpoints are the Requests view's), as
+ * scripts/graph.mjs finds it: a program's `main` (a Java, C#, Go or Rust main where the graph
+ * found a program, a C# top-level program's first statement, a Python `__main__`, a script's shebang,
+ * a JS command that reads its arguments), a `schedule` (@Scheduled, setInterval, a cron or ticker), a
+ * `message` handler (a queue or event listener, onmessage), a `socket` server or handler. `element`
+ * is the card of its file, `line` the 1-based line in that file and `text` that line as written (up
+ * to 140 characters); `name` is the method, class or callback it starts (`sweep`, `ChatEndpoint`,
+ * `load`) when the line says. Comments and strings never count. Listed mains first, then schedules, messages and sockets, by card.
+ */
+export interface EntryPointJson {
+  kind: 'main' | 'schedule' | 'message' | 'socket'
+  element: string
+  line: number
+  text: string
+  name?: string
+}
 
 export interface ModelJson {
   name: string
@@ -49,6 +78,8 @@ export interface ModelJson {
   title?: string
   elements: ElementJson[]
   relations: RelationJson[]
+  /** Entry points beyond HTTP, on a published map (map.mjs always writes the list); samples have none. */
+  entryPoints?: EntryPointJson[]
   /** What an uploaded map was built from: the project's commit, whether it had uncommitted changes, and when. */
   published?: { commit?: string; dirty?: boolean; at: string; traced?: { at: string; command: string; exit: number; seen: number; total: number } }
   /** What changed since the upload before this one (the store works it out); absent with no earlier upload. */
@@ -105,6 +136,12 @@ export class Tree {
   readonly relLines: number[][]
   /** Per relation: how often the project's own tests made it; 0 when not seen. */
   readonly relSeen: number[]
+  /** Per relation: what its `seen` counts ('' when not seen), the tables its requests touched, and whether only the trace knows it. */
+  readonly relSeenOf: ('code' | 'requests' | '')[]
+  readonly relTables: string[]
+  readonly relTraceOnly: boolean[]
+  /** Per relation: how it travels (a map link's `via`), '' when it does not say. */
+  readonly relVia: string[]
   /**
    * Per relation: whether the trace could have seen it, so that unseen means not made in the tests.
    * The trace watches only the processes it ran, the top-level parts where some code ran in the tests
@@ -149,6 +186,10 @@ export class Tree {
     this.relKind = []
     this.relLines = []
     this.relSeen = []
+    this.relSeenOf = []
+    this.relTables = []
+    this.relTraceOnly = []
+    this.relVia = []
     this.relTraceable = []
     this.traced = model.published?.traced ?? null
     const top = (i: number) => { while (this.depth[i] > 1) i = this.parent[i]; return i }
@@ -166,6 +207,10 @@ export class Tree {
       this.relKind.push(kind)
       this.relLines.push(r.lines ?? [])
       this.relSeen.push(r.seen ?? 0)
+      this.relSeenOf.push(r.seen ? r.seenOf ?? '' : '')
+      this.relTables.push(r.tables ?? '')
+      this.relTraceOnly.push(r.origin === 'trace')
+      this.relVia.push(kind === 'runtime' ? r.via ?? '' : '')
       // The trace counts a call by the file that makes it: one drawn from a component, with no file,
       // could never be seen, so it is not judged either.
       this.relTraceable.push(kind === 'runtime' && ran.has(top(s)) && !!this.els[s].metadata?.path)
@@ -261,6 +306,23 @@ export interface ShownEdge {
   seen: boolean
   /** Some folded relation is new since the upload before (Tree.relNew). */
   fresh: boolean
+  /** How every folded relation travels, when they all say the same (HTTP, JPA); '' otherwise. */
+  via: string
+  /** The same over the relations that cross the focus (those focusCount counts). */
+  focusVia: string
+}
+
+/**
+ * What an arrow says, transport first: "HTTP ×10" for ten calls that all travel one way, "JPA · accounts"
+ * for one map link with a title, "×3" for relations of mixed kinds. `named`: whether a single
+ * relation's own title shows (a map link's always does; one import's only on the focused card's edges).
+ * A lone title that only repeats an end's name (an import of User into User's card) says nothing;
+ * a transport still does ("Redis" into a card named Redis).
+ */
+export function arrowLabel(count: number, via: string, title: string, named: boolean, ends: string[] = []): string {
+  if (count > 1) return via ? `${via} ×${count}` : `×${count}`
+  if (!via) return named && !ends.includes(title) ? title : ''
+  return title && title !== via ? `${via} · ${title}` : via
 }
 
 /** A trace mark that says some code ran in the tests: a count above 0, or coverage of at least one ("63/67", not "0/67"). */
@@ -283,7 +345,8 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: true, seen: false, traceable: false, fresh: false }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: true, seen: false, traceable: false, fresh: false, via: tree.relVia[k >> 1], focusVia: '' }))
+    else if (e.via !== tree.relVia[k >> 1]) e.via = ''
     e.count++
     const kind = tree.relKind[k >> 1]
     if (kind === 'runtime') e.runtime = true
@@ -296,8 +359,9 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
       const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])
       if (fi && !ti) e.out = true
       if (ti && !fi) e.in = true
-      if (fi !== ti && e.focusCount++ === 0) e.focusRel = k >> 1
       if (fi !== ti) {
+        if (e.focusCount++ === 0) { e.focusRel = k >> 1; e.focusVia = tree.relVia[k >> 1] }
+        else if (e.focusVia !== tree.relVia[k >> 1]) e.focusVia = ''
         if (kind === 'runtime') e.focusRuntime = true
         if (kind !== 'types') e.focusTypesOnly = false
         if (tree.relSeen[k >> 1] > 0) e.focusSeen = true
