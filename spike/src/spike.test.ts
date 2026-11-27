@@ -69,7 +69,7 @@ describe('Tree', () => {
     const m: ModelJson = { ...model, relations: [{ source: 'a', target: 'b', title: '' }, { source: 'b.b1', target: 'a.a1', title: '' }] }
     const t = new Tree(m)
     const e = aggregateEdges(t, i => t.childUnder(0, i))
-    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: false, seen: false, traceable: false }])
+    expect(e).toEqual([{ s: t.byId.get('a'), t: t.byId.get('b'), count: 2, both: true, rel: 0, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: false, seen: false, traceable: false, fresh: false }])
   })
 
   it('judges a runtime call against the trace only when a file inside a part where code ran makes it', () => {

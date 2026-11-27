@@ -2,6 +2,7 @@
 // only from it. Nothing here knows where the project lives, and nothing reads it.
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
+import { changeCount, changesBetween, sameShape } from './changes.mjs'
 
 /** The service's own folder (spike/): imports/, public/models/ and model/ live under it, wherever a command runs. */
 export const ROOT = join(import.meta.dirname, '..')
@@ -46,7 +47,8 @@ export function refusals(bundle, root = ROOT) {
   const out = []
   if (!bundle || typeof bundle !== 'object') return ['the upload is not a bundle']
   if (!isName(bundle.name)) out.push(`"${bundle.name}" is not a model name: use letters, digits, ".", "-" and "_"`)
-  if (!bundle.model || !Array.isArray(bundle.model.elements)) out.push('the bundle has no model')
+  if (!bundle.model || !Array.isArray(bundle.model.elements) || !Array.isArray(bundle.model.relations)) out.push('the bundle has no model')
+  if (bundle.requests != null && (!Array.isArray(bundle.requests.elements) || !Array.isArray(bundle.requests.relations))) out.push('the bundle has a requests view with no model')
   if (!bundle.map || !Array.isArray(bundle.map.nodes)) out.push('the bundle has no map')
   if (out.length) return out
   if (existsSync(at(root, 'model', bundle.name))) out.push(`"${bundle.name}" is a sample model's name; pass --name`)
@@ -59,14 +61,25 @@ export function refusals(bundle, root = ROOT) {
 
 /**
  * Stores a bundle as import `name`: imports/<name>/ keeps the map, its title and the uploaded
- * sources; public/models/<name>.json (and .requests.json) is what the viewer opens. The models are
- * written last, since writing them is what tells open viewers to update.
+ * sources; public/models/<name>.json (and .requests.json) is what the viewer opens. What changed
+ * since the upload before is worked out first, so an upload it cannot compare is refused before
+ * anything is replaced. The models are written after the rest, since writing them is what tells open
+ * viewers to update; last of all the upload is kept whole (last.json), the next one's base.
  */
 export function storeBundle(bundle, root = ROOT) {
   const refused = refusals(bundle, root)
   if (refused.length) throw new Error(refused.join('\n'))
   const { name } = bundle
   const dir = at(root, 'imports', name)
+  const { base, rotate } = baseFor(name, bundle, root)
+  // Each model says what it was built from, so a reader can tell a current map from an old one, and
+  // what changed since the upload before it. A `changed` the bundle brings is never its own.
+  const stamp = (m, view) => {
+    const { changed: _, published: __, ...plain } = m
+    const changed = base ? changesBetween(base, bundle, view) : null
+    return JSON.stringify({ ...plain, ...(bundle.published ? { published: bundle.published } : {}), ...(changeCount(changed) ? { changed: { since: base.published ?? null, ...changed } } : {}) })
+  }
+  const models = { architecture: stamp(bundle.model, 'architecture'), requests: bundle.requests ? stamp(bundle.requests, 'requests') : null }
   mkdirSync(dir, { recursive: true })
   // The sources are swapped in whole, so a reader never sees half of one upload and half of another.
   const fresh = at(dir, 'sources.new'), old = at(dir, 'sources.old')
@@ -82,13 +95,39 @@ export function storeBundle(bundle, root = ROOT) {
   rmSync(old, { recursive: true, force: true })
   writeAtomic(at(dir, 'map.json'), `${JSON.stringify(bundle.map, null, 2)}\n`)
   writeAtomic(at(dir, 'import.json'), `${JSON.stringify({ title: bundle.model.title ?? humanize(name), ...(bundle.published ? { published: bundle.published } : {}) }, null, 2)}\n`)
+  if (rotate) writeAtomic(at(dir, 'previous.json'), JSON.stringify(base))
   mkdirSync(at(root, 'public/models'), { recursive: true })
-  // Each model says what it was built from, so a reader can tell a current map from an old one.
-  const stamp = m => JSON.stringify(bundle.published ? { ...m, published: bundle.published } : m)
-  writeAtomic(at(root, 'public/models', `${name}.json`), stamp(bundle.model))
-  if (bundle.requests) writeAtomic(at(root, 'public/models', `${name}.requests.json`), stamp(bundle.requests))
+  writeAtomic(at(root, 'public/models', `${name}.json`), models.architecture)
+  if (models.requests) writeAtomic(at(root, 'public/models', `${name}.requests.json`), models.requests)
   else rmSync(at(root, 'public/models', `${name}.requests.json`), { force: true })
+  writeAtomic(at(dir, 'last.json'), JSON.stringify(uploadOf(bundle)))
   writeIndex(root)
+}
+
+/** What a later upload is compared with: the models as built, without the store's own stamps, and what they were built from. */
+const uploadOf = b => {
+  const plain = m => { if (!m) return null; const { changed: _, published: __, ...rest } = m; return rest }
+  return { model: plain(b.model), requests: plain(b.requests), published: b.published ?? null }
+}
+
+/** A kept upload that can be compared with: a model, and a requests view or none, each with elements and relations. */
+const whole = u => {
+  const ok = m => Array.isArray(m?.elements) && Array.isArray(m?.relations)
+  return !!u && ok(u.model) && (u.requests == null || ok(u.requests))
+}
+
+/**
+ * The upload a new one is compared with, and whether it becomes the kept base: the last complete
+ * upload (imports/<name>/last.json, written whole after its models) when the new one differs from it
+ * in what the marks are about (endpoints, crossings, dependencies); else the base kept before
+ * (previous.json), so a re-publish or a new trace does not wipe the marks. A kept file that is cut
+ * off or not an upload counts as none. { base: null } when there is no earlier upload.
+ */
+export function baseFor(name, bundle, root = ROOT) {
+  const read = f => { try { const v = JSON.parse(readFileSync(at(root, 'imports', name, f), 'utf8')); return whole(v) ? v : null } catch { return null } }
+  const last = read('last.json')
+  if (last && !sameShape(last, bundle)) return { base: last, rotate: true }
+  return { base: read('previous.json'), rotate: false }
 }
 
 /** An uploaded file's source for the code view, or null: only a file the stored model shows. */

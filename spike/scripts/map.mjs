@@ -8,7 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
 import { buildRequests } from './requests.mjs'
-import { markObserved } from './observed.mjs'
+import { markCallers, markObserved } from './observed.mjs'
 import { isName } from './store.mjs'
 
 /** Node kinds a map may use, and how the viewer draws them. */
@@ -321,6 +321,8 @@ export function bundle(repo, map, { name = toName(repo), loose = false, observed
   const requests = buildRequests(graph, map, built.model)
   // What the project's own end-to-end tests ran (zoom trace): seen versus only inferred.
   const coverage = observed ? markObserved(built.model, requests, observed) : null
+  // Which pages and tests made each request, when the trace says.
+  if (observed) markCallers(built.model, requests, observed, sources)
   const ms = Date.now() - t0
   return {
     name, ...built, ms,

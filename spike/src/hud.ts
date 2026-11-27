@@ -21,8 +21,8 @@ export class LensBar {
   private names: [LensName, string][]
   onPick: (name: LensName) => void = () => {}
 
-  constructor(private lenses: Lens[]) {
-    this.names = [['structure', 'Structure'], ...lenses.map(l => [l.name, l.name[0].toUpperCase() + l.name.slice(1)] as [LensName, string])]
+  constructor(lenses: Lens[]) {
+    this.names = []
     this.button.setAttribute('aria-haspopup', 'menu')
     this.button.setAttribute('aria-expanded', 'false')
     this.menu.setAttribute('role', 'menu')
@@ -31,13 +31,7 @@ export class LensBar {
     this.menu.hidden = true
     new MutationObserver(() => this.button.setAttribute('aria-expanded', String(!this.menu.hidden))).observe(this.menu, { attributes: true, attributeFilter: ['hidden'] })
     this.button.onclick = e => { e.stopPropagation(); this.menu.hidden = !this.menu.hidden; if (!this.menu.hidden) (this.menu.querySelector('.on') as HTMLElement | null)?.focus() }
-    for (const [name, label] of this.names) {
-      const b = el('button', '', label)
-      b.setAttribute('role', 'menuitemradio')
-      b.dataset.lens = name
-      b.onclick = () => { this.menu.hidden = true; this.onPick(name); this.button.focus() }
-      this.menu.append(b)
-    }
+    this.setLenses(lenses)
     this.menu.addEventListener('keydown', e => {
       const items = [...this.menu.querySelectorAll('button')], k = items.indexOf(document.activeElement as HTMLButtonElement)
       if (e.key === 'ArrowDown') { items[(k + 1) % items.length].focus(); e.preventDefault() }
@@ -55,6 +49,18 @@ export class LensBar {
     top.insertBefore(this.root, document.getElementById('help'))
   }
 
+  /** The lenses this map has: a new upload can bring one (Changed) or take it away. */
+  setLenses(lenses: Lens[]) {
+    this.names = [['structure', 'Structure'], ...lenses.map(l => [l.name, l.name[0].toUpperCase() + l.name.slice(1)] as [LensName, string])]
+    this.menu.replaceChildren(...this.names.map(([name, label]) => {
+      const b = el('button', '', label)
+      b.setAttribute('role', 'menuitemradio')
+      b.dataset.lens = name
+      b.onclick = () => { this.menu.hidden = true; this.onPick(name); this.button.focus() }
+      return b
+    }))
+  }
+
   show(active: Lens | null) {
     const name = active?.name ?? 'structure'
     this.button.textContent = this.names.find(([n]) => n === name)?.[1] ?? 'Structure'
@@ -66,9 +72,11 @@ export class LensBar {
       const lo = Math.min(...[...active.raw].slice(1)), hi = Math.max(...active.raw.slice(1))
       const parts = this.legend.children as HTMLCollectionOf<HTMLElement>
       parts[0].textContent = active.label
-      parts[1].textContent = '0'
-      parts[3].textContent = 'most at its level'
-      parts[4].textContent = `each card against the others at its level; across the map ${Math.round(lo).toLocaleString()}–${Math.round(hi).toLocaleString()} ${active.unit}`
+      const changed = active.name === 'changed'
+      parts[1].textContent = changed ? 'unchanged' : '0'
+      parts[3].textContent = changed ? 'changed' : 'most at its level'
+      // Changed is lit or not: a card where something changed since the upload before, or inside it.
+      parts[4].textContent = changed ? 'lit where something changed, or inside it' : `each card against the others at its level; across the map ${Math.round(lo).toLocaleString()}–${Math.round(hi).toLocaleString()} ${active.unit}`
     }
   }
 }

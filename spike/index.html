@@ -83,6 +83,7 @@
       #travel { order: 2; padding: 6px 10px; }
       #help { order: 3; }
       #crumbs { order: 4; flex: 1 1 100%; }
+      #changes { order: 5; }
       /* At the whole map the one crumb repeats the map's name. */
       #crumbs:not(:has(button + button)) { display: none; }
       #views { order: 5; flex: 1 1 auto; padding: 0; }
@@ -97,6 +98,18 @@
     }
     #crumbs .provenance { flex: none; color: var(--dim); font: 11px ui-monospace, Consolas, monospace; padding: 0 8px 0 10px; border-left: 1px solid var(--line); margin-left: 6px; cursor: help; }
     #crumbs .provenance.stale { color: var(--warn); }
+    /* How much changed since the upload before: turns the Changed lens on. */
+    #changes { flex: none; color: #4ade80; background: none; font: 11px ui-monospace, Consolas, monospace; border: 1px solid rgba(74, 222, 128, 0.45); border-radius: 10px; padding: 3px 9px; white-space: nowrap; cursor: pointer; }
+    #changes:hover, #changes[aria-pressed="true"] { background: rgba(74, 222, 128, 0.16); }
+    .d-outline span.d-rel { cursor: default; }
+    .d-outline .d-gone b { text-decoration: line-through; color: var(--dim); }
+    /* A call tree: the marker beside its call, each level indented under a guide line. */
+    .d-calltree .d-call { display: flex; align-items: flex-start; gap: 2px; }
+    .d-calltree .d-call .d-rel { flex: 1; min-width: 0; }
+    .d-calltree .d-fold { flex: none; width: 24px; min-height: 24px; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; border-radius: 4px; padding: 0; }
+    .d-calltree .d-fold:hover, .d-calltree .d-fold:focus-visible { color: var(--text); background: rgba(251, 191, 36, 0.12); }
+    .d-calltree .d-fold-gap { flex: none; width: 24px; }
+    .d-calltree ul ul { margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
     #stats { left: 12px; bottom: 12px; padding: 10px 12px; white-space: pre; font: 11px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace; color: #94a3b8; }
     #minimap { right: 12px; bottom: 12px; width: 240px; height: 150px; cursor: crosshair; }
     #minimap { transition: opacity 0.3s; }
@@ -530,6 +543,7 @@
   <header id="top">
     <nav id="models" aria-label="Map"></nav>
     <nav id="crumbs" aria-label="Where you are"></nav>
+    <button id="changes" type="button" hidden></button>
     <button id="travel" type="button">Search<kbd>Ctrl K</kbd></button>
     <nav id="views" aria-label="View" hidden></nav>
     <button id="help" type="button" aria-haspopup="dialog"><kbd>?</kbd> Help</button>

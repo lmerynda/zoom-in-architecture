@@ -33,6 +33,8 @@ const IN = 0x22d3ee
 const RUNTIME = 0xc4b5fd
 /** A problem's line (problems.ts): a warning red halo under it, unlike any arrow kind. */
 const WARN = 0xf43f5e
+/** An arrow new since the upload before, under the Changed lens. */
+const FRESH = 0x4ade80
 /** A card's rank badge in the Coupling layout: white, as the current choice is (amber is outgoing only). */
 const RANK = 0xf1f5f9
 const FLASH_MS = 3200
@@ -123,6 +125,8 @@ export interface FrameStats {
   texts: number
   edges: number
   chips: number
+  /** Arrows drawn green as new since the upload before (the Changed lens). */
+  fresh: number
   /** Cards on screen that do not just surround it: 0 means the reader is looking at empty space. */
   inView: number
   cpuMs: number
@@ -362,7 +366,7 @@ export class Renderer {
     const t0 = performance.now()
     this.time = now
     this.frameNo++
-    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, inView: 0, cpuMs: 0 }
+    const st: FrameStats = { nodes: 0, texts: 0, edges: 0, chips: 0, fresh: 0, inView: 0, cpuMs: 0 }
     this.hover = this.pointer ? this.hoverAt(this.pointer[0], this.pointer[1]) : -1
     this.here = this.breadcrumb()
     const focus = this.selected > 0 ? this.selected : this.hover
@@ -905,13 +909,17 @@ export class Renderer {
     if (files > RESTING_FILES && focus <= 0) {
       // A picked line, and a problem's, stay drawn among them.
       const e = this.edge
-      const keep = drawn.filter(d => (e && ((d.e.s === e.s && d.e.t === e.t) || (d.e.s === e.t && d.e.t === e.s))) || warned.has(warnKey(d)))
+      // Under the Changed lens, so do the arrows new since the upload before (changes.ts).
+      const changed = this.lens?.name === 'changed'
+      const keep = drawn.filter(d => (changed && d.e.fresh) || (e && ((d.e.s === e.s && d.e.t === e.t) || (d.e.s === e.t && d.e.t === e.s))) || warned.has(warnKey(d)))
       drawn.length = 0
       drawn.push(...keep)
     }
     this.lines = []
     // Problem halos by mark (listed, open) and by the width of the arrow they lie under.
     const halos = new Map<string, { level: number; width: number; pts: number[][] }>()
+    /** Under the Changed lens, the arrows new since the upload before, drawn over in green. */
+    const fresh: number[][] = []
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -931,6 +939,8 @@ export class Renderer {
       }
       paths[kind].push(clipped)
       const w = warned.get(Math.min(e.s, e.t) * this.tree.size + Math.max(e.s, e.t))
+      // A new arrow keeps its dash: a call no test made is still one, new or not.
+      if (e.fresh && this.lens?.name === 'changed') fresh.push(...(e.typesOnly || (e.runtime && e.traceable && !e.seen) ? dashes(clipped) : [clipped]))
       this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
@@ -1026,6 +1036,13 @@ export class Renderer {
       for (let k = 0; k < j.length; k += 2) gg.circle(j[k], j[k + 1], r)
       if (j.length) gg.fill({ color, alpha })
     }
+
+    for (const p of fresh) {
+      hg.moveTo(p[0], p[1])
+      for (let k = 2; k < p.length; k += 2) hg.lineTo(p[k], p[k + 1])
+    }
+    if (fresh.length) hg.stroke({ width: 3, color: FRESH, alpha: 0.95, join: 'round', cap: 'round' })
+    st.fresh = fresh.length
 
     st.chips = this.drawChips(chipTargets, W, H)
     this.drawLabels(labelSpots)

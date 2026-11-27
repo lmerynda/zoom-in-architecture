@@ -1,3 +1,5 @@
+import { newRelations, type Changes } from './changes'
+
 export interface ElementJson {
   id: string
   parent: string | null
@@ -49,6 +51,8 @@ export interface ModelJson {
   relations: RelationJson[]
   /** What an uploaded map was built from: the project's commit, whether it had uncommitted changes, and when. */
   published?: { commit?: string; dirty?: boolean; at: string; traced?: { at: string; command: string; exit: number; seen: number; total: number } }
+  /** What changed since the upload before this one (the store works it out); absent with no earlier upload. */
+  changed?: Changes
 }
 
 /** A sibling-level edge: relations between descendants of two children of one container, rolled up. */
@@ -110,6 +114,9 @@ export class Tree {
   readonly relTraceable: boolean[]
   /** The run of the project's own tests this map was traced with, if it was: then unseen means not seen, not unknown. */
   readonly traced: NonNullable<ModelJson['published']>['traced'] | null
+  /** What changed since the upload before, or null; and per relation, whether it is new since then (changes.ts). */
+  readonly changed: Changes | null
+  readonly relNew: boolean[]
 
   /** `types`: keep type-only imports too (off: they are left out, as compile-time coupling only). */
   constructor(model: ModelJson, { types = false }: { types?: boolean } = {}) {
@@ -164,6 +171,8 @@ export class Tree {
       this.relTraceable.push(kind === 'runtime' && ran.has(top(s)) && !!this.els[s].metadata?.path)
     }
     this.rels = Int32Array.from(pairs)
+    this.changed = model.changed ?? null
+    this.relNew = newRelations(this, this.changed)
   }
 
   get size() { return this.els.length }
@@ -250,6 +259,8 @@ export interface ShownEdge {
   traceable: boolean
   /** Some folded relation was seen in the project's own tests. */
   seen: boolean
+  /** Some folded relation is new since the upload before (Tree.relNew). */
+  fresh: boolean
 }
 
 /** A trace mark that says some code ran in the tests: a count above 0, or coverage of at least one ("63/67", not "0/67"). */
@@ -272,13 +283,14 @@ export function aggregateEdges(tree: Tree, rep: (i: number) => number, inFocus?:
     if (s === t || tree.isAncestor(s, t) || tree.isAncestor(t, s)) continue
     const key = Math.min(s, t) * n + Math.max(s, t)
     let e = out.get(key)
-    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: true, seen: false, traceable: false }))
+    if (!e) out.set(key, (e = { s, t, count: 0, both: false, rel: k >> 1, out: false, in: false, focusCount: 0, focusRel: -1, runtime: false, focusRuntime: false, focusTypesOnly: true, focusSeen: false, focusTraceable: false, typesOnly: true, seen: false, traceable: false, fresh: false }))
     e.count++
     const kind = tree.relKind[k >> 1]
     if (kind === 'runtime') e.runtime = true
     if (kind !== 'types') e.typesOnly = false
     if (tree.relSeen[k >> 1] > 0) e.seen = true
     if (tree.relTraceable[k >> 1]) e.traceable = true
+    if (tree.relNew[k >> 1]) e.fresh = true
     if (e.s !== s) e.both = true
     if (inFocus) {
       const fi = inFocus(tree.rels[k]), ti = inFocus(tree.rels[k + 1])
