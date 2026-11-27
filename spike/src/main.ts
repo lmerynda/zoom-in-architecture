@@ -323,7 +323,7 @@ async function main() {
     const most = Math.min(...nodes.map(n => frameFor(n).z))
     // A card is drawn as itself, its arrows ending at it, once its parent is half open (render.ts rep()).
     let opens = 0
-    for (const n of nodes) for (let c = tree.parent[n]; c > 0; c = tree.parent[c]) opens = Math.max(opens, ((OPEN_A + OPEN_B) / 2 + 6) / (CARD_W * world.content[c * 3 + 2]))
+    for (const n of nodes) for (let c = tree.parent[n]; c > 0; c = tree.parent[c]) opens = Math.max(opens, ((OPEN_A + OPEN_B) / 2 + 6) / (CARD_W * openScale(world, c)))
     let best = { z: 0, x: 0, y: 0 }
     for (const [l, t, rr, b] of freeFrames()) {
       const all = box(nodes), fw = Math.max(40, rr - l) - 32, fh = Math.max(40, b - t) - 32
