@@ -31,6 +31,8 @@ const OUT = 0xfbbf24
 const IN = 0x22d3ee
 /** A call at runtime (HTTP, a store, a queue), as opposed to a use in code. */
 const RUNTIME = 0xc4b5fd
+/** A problem's line (problems.ts): a warning red halo under it, unlike any arrow kind. */
+const WARN = 0xf43f5e
 /** A card's rank badge in the Coupling layout: white, as the current choice is (amber is outgoing only). */
 const RANK = 0xf1f5f9
 const FLASH_MS = 3200
@@ -897,14 +899,19 @@ export class Renderer {
     const reading = here > 0 && !this.tree.children[here].length
     // Among many files a web of arrows says nothing: at rest they wait for a card in focus.
     const files = this.shown.filter(c => !this.tree.children[c].length && this.tree.els[c].metadata?.path && this.onScreen(c)).length
+    // The lines that carry a problem's relations: 1 for one listed, 2 for the one open.
+    const warned = this.warnedLines()
+    const warnKey = (d: { e: ShownEdge }) => Math.min(d.e.s, d.e.t) * this.tree.size + Math.max(d.e.s, d.e.t)
     if (files > RESTING_FILES && focus <= 0) {
-      // A picked line stays drawn among them.
+      // A picked line, and a problem's, stay drawn among them.
       const e = this.edge
-      const keep = e ? drawn.filter(d => (d.e.s === e.s && d.e.t === e.t) || (d.e.s === e.t && d.e.t === e.s)) : []
+      const keep = drawn.filter(d => (e && ((d.e.s === e.s && d.e.t === e.t) || (d.e.s === e.t && d.e.t === e.s))) || warned.has(warnKey(d)))
       drawn.length = 0
       drawn.push(...keep)
     }
     this.lines = []
+    // Problem halos by mark (listed, open) and by the width of the arrow they lie under.
+    const halos = new Map<string, { level: number; width: number; pts: number[][] }>()
 
     for (const { e, kind, pts, sOn, tOn } of drawn) {
       const hot = kind === Kind.Out || kind === Kind.In
@@ -923,9 +930,18 @@ export class Renderer {
         }
       }
       paths[kind].push(clipped)
+      const w = warned.get(Math.min(e.s, e.t) * this.tree.size + Math.max(e.s, e.t))
       this.lines.push({ s: e.s, t: e.t, count: hot ? e.focusCount : e.count, pts: clipped })
       // A line is as thick as what it carries: the weight shows without reading labels.
       const tier = weightTier(hot ? e.focusCount : e.count)
+      if (w) {
+        // Wider than the arrow by a clear margin, however heavy the arrow is.
+        const width = TIER_W[tier] + (hot ? 0.5 : 1) + (w === 2 ? 10 : 6)
+        const key = `${w}|${width}`
+        const h = halos.get(key) ?? { level: w, width, pts: [] }
+        h.pts.push(clipped)
+        halos.set(key, h)
+      }
       // Dashed: a type-only import (coupling at compile time, not use), or, on a map traced with the
       // project's own tests, a runtime call the trace could have seen and no test made. A call from
       // outside the traced apps (a browser, a person) is drawn plain: the trace says nothing of it.
@@ -981,6 +997,14 @@ export class Renderer {
     const style: [Graphics, number, number, number][] = [
       [g, 0, EDGE, base], [g, 0, EDGE, base], [g, 0, EDGE, base], [hg, 0.5, OUT, 0.95], [hg, 0.5, IN, 0.95], [g, 0.3, RUNTIME, Math.min(0.9, base + 0.3)], [hg, 1, STEP, 0.95], [hg, 0.5, EDGE, 0.75],
     ]
+    // Problems first, so every arrow draws over its halo: faint for each listed, strong for the open one.
+    for (const h of [...halos.values()].sort((x, y) => x.level - y.level)) {
+      for (const p of h.pts) {
+        g.moveTo(p[0], p[1])
+        for (let j = 2; j < p.length; j += 2) g.lineTo(p[j], p[j + 1])
+      }
+      g.stroke({ width: h.width, color: WARN, alpha: h.level === 2 ? 0.6 : 0.24, join: 'round', cap: 'round' })
+    }
     TIER_W.forEach((tw, tier) => style.forEach(([gg, extra, color, alpha], kind) => {
       const ps = strokes[kind][tier]
       for (const p of ps) {
@@ -1056,6 +1080,28 @@ export class Renderer {
     }
     // Nearest first: on a shared trunk, the line the pointer is closest to leads.
     return this.lines.map(l => ({ l, d: dist(l.pts) })).filter(x => x.d <= r).sort((a, b) => a.d - b.d).map(x => x.l)
+  }
+
+  /**
+   * Problems to mark on the map (problems.ts): the relations of every one listed, and of the one
+   * open. A line carrying any of them gets a warning halo. Null marks none.
+   */
+  warn: { all: Set<number>; open: Set<number> } | null = null
+
+  /** Shown lines carrying a warned relation, by their ends' key: 2 when the open problem's, else 1. */
+  private warnedLines(): Map<number, number> {
+    const out = new Map<number, number>()
+    if (!this.warn) return out
+    const n = this.tree.size, r = this.tree.rels
+    for (const [set, level] of [[this.warn.all, 1], [this.warn.open, 2]] as const) {
+      for (const k of set) {
+        const a = this.rep(r[k * 2]), b = this.rep(r[k * 2 + 1])
+        if (a === b) continue
+        const key = Math.min(a, b) * n + Math.max(a, b)
+        if ((out.get(key) ?? 0) < level) out.set(key, level)
+      }
+    }
+    return out
   }
 
   /** The line picked for the details panel (clicked), by the two cards it joins. */

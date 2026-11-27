@@ -371,7 +371,7 @@ export class Help {
     const groups: [string, [string, string][]][] = [
       ...(coarse ? [touch] : []),
       ['Mouse', [['Wheel', 'Zoom at the pointer'], ['Drag', 'Pan'], ['Click', 'Select: amber arrows it uses, cyan what uses it'], ['Double-click', 'Go into a card; on a file, read its code'], ['Right-click', 'Go in, read code, copy path'], ['Click a cited line', 'Open its code at that line']]],
-      ['Keys', [['Ctrl+K or /', 'Search the map'], ['Backspace or Alt+←', 'Back to the previous place'], ['Alt+→', 'Forward'], ['Alt+↑', 'Up to the parent'], [']  /  [', 'Step through what it uses / what uses it'], ['Enter', 'Go to the card stepped to, or into the selection'], ...(coupling ? [['.  /  ,', 'Next / previous by coupling rank in this level'] as [string, string]] : []), ['Arrows, + / −', 'Move and zoom'], ['Esc', 'Close the top layer, then clear the selection'], ['?', 'This page']]],
+      ['Keys', [['Ctrl+K or /', 'Search the map'], ['Backspace or Alt+←', 'Back to the previous place'], ['Alt+→', 'Forward'], ['Alt+↑', 'Up to the parent'], [']  /  [', 'Step through what it uses / what uses it; with nothing selected, through problems'], ['Enter', 'Go to the card stepped to, or into the selection'], ...(coupling ? [['.  /  ,', 'Next / previous by coupling rank in this level'] as [string, string]] : []), ['Arrows, + / −', 'Move and zoom'], ['Esc', 'Close the top layer, then clear the selection'], ['?', 'This page']]],
     ]
     const legend: [string, string][] = [
       ['Card', 'A part of the product; a card inside a card is a part of it'],
