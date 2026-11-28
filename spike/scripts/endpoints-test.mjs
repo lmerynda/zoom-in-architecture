@@ -48,18 +48,14 @@ const featureRoutes = () => page.evaluate(() => {
   return { own: rows('#details .d-serves:not(.d-shared) .d-ep'), shared: rows('#details .d-shared .d-ep') }
 })
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
-// Source reads in flight: a feature's panel is drawn again once its pages' code is read.
-let reading = 0
-const isSource = r => new URL(r.url()).pathname.startsWith('/source/')
-page.on('request', r => { if (isSource(r)) reading++ })
-for (const ev of ['requestfinished', 'requestfailed']) page.on(ev, r => { if (isSource(r)) reading-- })
-/** Opens a feature and waits until its pages' code is read and its panel, drawn again then, stops changing. */
+/**
+ * Opens a feature and waits for the lookup of which pages call which endpoints: the panel is drawn
+ * again, for the last time, as that settles (its redraw was queued first).
+ */
 const showFeature = async name => {
   await page.evaluate(f => window.__spike.controls.feature(f), name)
-  await page.waitForFunction(f => document.querySelector('#details h2')?.textContent === f, { timeout: 10000 }, name)
-  for (let k = 0; k < 60 && reading > 0; k++) await sleep(250)
-  let last = ''
-  for (let k = 0; k < 40; k++) { const now = await page.evaluate(() => document.getElementById('details').innerHTML); if (now === last) return; last = now; await sleep(250) }
+  await page.evaluate(() => window.__spike.pageCalls().then(m => m.size))
+  check(`the ${name} panel is open`, await page.evaluate(f => document.querySelector('#details h2')?.textContent === f, name))
 }
 const clickText = (sel, text) => page.evaluate((sel, text) => { const b = [...document.querySelectorAll(sel)].find(x => x.textContent.startsWith(text)); b?.click(); return !!b }, sel, text)
 const crossed = async view => { await page.waitForFunction(v => (new URLSearchParams(location.search).get('view') ?? '') === v && window.__spike?.ready, { timeout: 60000 }, view); await ready() }

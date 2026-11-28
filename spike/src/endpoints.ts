@@ -358,7 +358,7 @@ export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 
   const answered = (ep: Endpoint): Set<string> => {
     const theirs = handlerFeatures(ep), stems = [...new Set(ep.cards.map(c => c.path))].map(p => [p, p.normalize('NFC').replace(/\.\w+$/, '')])
     const found = new Set<string>()
-    for (const t of ep.answers) for (const id of t.normalize('NFC').replace(/(["'`]).*?\1/g, ' ').match(TYPE_NAME) ?? []) {
+    for (const t of ep.answers) for (const id of t.normalize('NFC').replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g, ' ').match(TYPE_NAME) ?? []) {
       const suffix = id.replace(/\./g, '/'), match = stems.filter(([, s]) => s === suffix || s.endsWith(`/${suffix}`))
       if (match.length !== 1) continue
       for (const f of byId.get(files.get(match[0][0]) ?? '')?.features ?? []) if (theirs.has(f)) found.add(f)

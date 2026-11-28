@@ -1483,6 +1483,8 @@ async function main() {
       get liveVersion() { return liveVersion }, get morphing() { return morph != null }, swapModel,
       gpu: dbg && gl ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown',
       get problems() { return problems }, get problemAt() { return problemAt }, openProblem,
+      /** Which pages call which endpoints: an open feature's panel is drawn for the last time once this settles. */
+      pageCalls,
       fit, safeTop, fly: (i: number) => controls.go(i), select, setLens, unhover: () => { renderer.pointer = null }, last: () => last, id: (s: string) => tree.byId.get(s) ?? -1,
       frames: () => ({ cpu: values(cpu), delta: values(delta) }),
       resetFrames: () => { cpu.k = delta.k = 0; cpu.full = delta.full = false },

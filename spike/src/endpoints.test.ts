@@ -371,12 +371,15 @@ describe('featureFacts', () => {
       expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Report', ['Report.java']], ['GET /y', 'y']], folder))).toEqual([[], []])
     })
     it('lists apart a route one feature’s words claim and another’s answer does', () => {
-      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /list', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], thing(['B view'])))).toEqual([[], []])
+      const h = handler('C.java', ['A list', 'B view'], [['GET /list', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], thing(['B view']))
+      expect(owns(h)).toEqual([[], []])
+      for (const f of ['A list', 'B view']) expect(apart(featureFacts(h.arch, h.api, f))).toEqual(['GET /list', 'GET /y'])
     })
     it('lists apart a route whose answers carry two features, whatever a third feature’s words say', () => {
       const types = [el('app.i', 'app', { features: ['Invoices'], metadata: { path: 'Invoice.java' } }), el('app.r', 'app', { features: ['Receipts'], metadata: { path: 'Receipt.java' } })]
       const h = handler('C.java', ['Invoices', 'Receipts', 'Export'], [['GET /export', 'export', '', ['Invoice.java', 'Receipt.java'], ['Invoice', 'Receipt']], ['GET /health', 'health']], types)
       expect(['Invoices', 'Receipts', 'Export'].map(f => own(featureFacts(h.arch, h.api, f)))).toEqual([[], [], []])
+      for (const f of ['Invoices', 'Receipts', 'Export']) expect(apart(featureFacts(h.arch, h.api, f))).toEqual(['GET /export', 'GET /health'])
     })
     it('reads no type from a format alone, a part of a name, or a literal value', () => {
       // "returns JSON." names a format, not a type: a JSON.js card is not the route's answer.
@@ -387,6 +390,8 @@ describe('featureFacts', () => {
       // CaféResult (with a combining accent) is one name, not Result; Literal["pending"] names no pending.py.
       expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['Result.java'], ['List<CaféResult>']], ['GET /y', 'y']], thing(['A list'], 'Result.java')))).toEqual([[], []])
       expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['pending.py'], ['Literal["pending"]']], ['GET /y', 'y']], thing(['A list'], 'pending.py')))).toEqual([[], []])
+      // An escaped quote does not end the literal.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['pending.py'], ['Literal["state=\\"pending\\""]']], ['GET /y', 'y']], thing(['A list'], 'pending.py')))).toEqual([[], []])
       // The same names whole do point at their files.
       expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['CaféResult.java'], ['List<CaféResult>']], ['GET /y', 'y']], thing(['A list'], 'CaféResult.java')))).toEqual([['GET /x'], []])
     })
