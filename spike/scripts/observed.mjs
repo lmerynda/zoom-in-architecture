@@ -6,35 +6,49 @@ import { posix } from 'node:path'
 import { javaCode, normalRoute } from './trace.mjs'
 
 /**
- * Each class's file among the model's files: com.x.Foo is …/com/x/Foo.<ext>. A nested, inner, local
- * or anonymous class is in its top-level class's file, named com.x.Foo$Inner or com.x.Foo$1 by the
- * agent (a lambda com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0) and com.x.Foo.Inner by
- * others: the longest name that is a file wins, and only class names (a capital first) are dropped
- * to find it, never a package, so com.x.Missing is not …/com/x.ts. A name two files fit as well (one
- * package in two modules, a class in no package) has no file here: which of them ran is not known.
+ * The top-level types the Java files of `texts` ({ path: source }) declare, by full name: a Map of
+ * 'com.x.Foo' to every file that declares it (one, unless two modules share a package). Classes,
+ * interfaces, enums, records and annotations, package-private ones too; nested and local types are
+ * their top-level type's. Only Java: the Java agent's spans name no other language's code, so a
+ * polyglot model's shop/Order.py or Order.cs never takes shop.Order's calls.
  */
-export function classFiles(paths, classes) {
-  // Each file under every tail of its path without the extension: Foo, x/Foo, com/x/Foo, …
-  const byTail = new Map()
-  for (const p of new Set(paths)) {
-    const dot = p.lastIndexOf('.')
-    if (dot <= p.lastIndexOf('/') + 1) continue
-    const parts = p.slice(0, dot).split('/')
-    for (let k = 0; k < parts.length; k++) {
-      const tail = parts.slice(k).join('/')
-      if (!byTail.has(tail)) byTail.set(tail, new Set())
-      byTail.get(tail).add(p)
+export function declaredTypes(texts) {
+  const out = new Map()
+  for (const [path, text] of Object.entries(texts)) {
+    if (!path.endsWith('.java')) continue
+    const code = javaCode(text)
+    const pkg = /^\s*package\s+([\p{L}\p{N}_$.]+)\s*;/mu.exec(code)?.[1]
+    let depth = 0
+    for (let i = 0; i < code.length; i++) {
+      if (code[i] === '}') depth--
+      else if (code[i] === '{' && depth++ === 0) {
+        // A top-level type starts: the declaration just before this brace names it.
+        const decl = /\b(?:class|interface|enum|record)\s+([\p{L}_$][\p{L}\p{N}_$]*)[^;{}]*$/u.exec(code.slice(Math.max(0, i - 500), i))
+        if (!decl) continue
+        const name = pkg ? `${pkg}.${decl[1]}` : decl[1]
+        out.set(name, [...new Set([...(out.get(name) ?? []), path])].sort())
+      }
     }
   }
+  return out
+}
+
+/**
+ * Each class's file, among `types` (declaredTypes): the file that declares it, or for a nested,
+ * inner, local or anonymous class its top-level class's, which the agent names com.x.Foo$Inner or
+ * com.x.Foo$1 (a lambda com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0) and others
+ * com.x.Foo.Inner. The longest declared name wins, so a top-level class named Foo$Bar is its own.
+ * A class no file declares (a library's), or two files do (one package in two modules), has none:
+ * which file ran is not known.
+ */
+export function classFiles(types, classes) {
   const out = new Map()
   for (const c of classes) {
-    const parts = c.replace(/\$[\s\S]*$/, '').split('.')
-    // The whole name first, then without its innermost class, while what is left ends in a class.
-    for (let k = parts.length; k >= 1; k--) {
-      if (k < parts.length && !/^\p{Lu}/u.test(parts[k - 1])) break
-      const hits = byTail.get(parts.slice(0, k).join('/'))
+    // The whole name, then shorter at each "$" or "." from its end: Foo$Inner$1, Foo$Inner, Foo.
+    for (let k = c.length; k > 0; k = Math.max(c.lastIndexOf('$', k - 1), c.lastIndexOf('.', k - 1))) {
+      const hits = types.get(c.slice(0, k))
       if (!hits) continue
-      if (hits.size === 1) out.set(c, [...hits][0])
+      if (hits.length === 1) out.set(c, hits[0])
       break
     }
   }
@@ -43,11 +57,15 @@ export function classFiles(paths, classes) {
 
 /**
  * Calls into each file's code, from `codeCalls` (trace.mjs: each class's spans by the class of the
- * nearest span of code above them) and `fileOf` (classFiles): the spans of a file's classes whose
- * caller is not of that file, so a request reaching it or another file's code calling it. One
- * method of the file calling another, its nested and anonymous classes, and the agent's controller
- * span over the method's own span are inside one call, not more calls. A caller no file is (a
- * library, '' the request) calls from outside. Returns path → calls; a file nothing called is not in it.
+ * nearest span of code above them) and `fileOf` (classFiles). What is counted is spans, so only what
+ * the agent makes a span for: a span naming one of the file's classes whose nearest span of code
+ * above is not of that file, either none (the request itself, '') or another file's or a library's.
+ * One method of the file calling another, its nested and anonymous classes, and the agent's
+ * controller span over the method's own span are one call, not more. The agent's spans start where
+ * the call is made: a controller's as Spring hands the request to it (a request refused while its
+ * arguments are read still counts), a Spring Data repository's at the interface, whose methods the
+ * library runs. A call back into the file through code with no span of its own is inside the first.
+ * Returns path → calls; a file nothing called is not in it.
  */
 export function callsInto(codeCalls, fileOf) {
   const out = new Map()
@@ -84,17 +102,17 @@ export function tableVerbs(tables) {
  * and `seenOf`, which count it is: `code` (the calls into its source file's code) or `requests` (the
  * requests of the endpoint it serves; a store arrow in the Requests view then also carries
  * `tables`, what those requests did to which tables). A request that touched a store with no store
- * link inferred from code gets one, `origin: 'trace'`: the map has no such link. Returns the
- * coverage: endpoints seen of all.
+ * link inferred from code gets one, `origin: 'trace'`: the map has no such link. `types` are the
+ * model's Java declarations (declaredTypes). Returns the coverage: endpoints seen of all.
  */
-export function markObserved(model, requests, observed) {
+export function markObserved(model, requests, observed, types) {
+  if (observed.endpoints.some(e => !e.codeCalls)) throw new Error('this trace was summed before calls into code were counted by their caller (it has no codeCalls): run zoom trace again')
   const tables = {}
   for (const e of observed.endpoints) for (const [t, ops] of Object.entries(e.tables)) tables[t] = [...new Set([...(tables[t] ?? []), ...ops])].sort()
-  // One file for each class, callers too, among every file either view shows.
+  // One file for each class, callers too.
   const classes = new Set()
   for (const e of observed.endpoints) for (const [c, by] of Object.entries(e.codeCalls)) { classes.add(c); for (const b of Object.keys(by)) if (b) classes.add(b) }
-  const all = [...model.elements, ...(requests?.elements ?? [])].flatMap(e => (e.metadata?.path ? [e.metadata.path] : []))
-  const fileOf = classFiles(all, [...classes])
+  const fileOf = classFiles(types, [...classes])
 
   // The architecture: files whose code was called, the runtime links they make, and the store they reach.
   const seenFile = new Map()
@@ -271,15 +289,14 @@ export function pageFor(routes, at) {
  * metadata.testCount all of them, metadata.untimed the requests no single test was running for). An
  * address no route of the app names is not kept, only counted (metadata.otherPages): it may hold a
  * value (an id, a token) the map should not show. JSON in metadata, as metadata holds only strings.
- * `sources` are the files the model shows.
+ * `sources` are the files the model shows, `types` its Java declarations (declaredTypes).
  */
-export function markCallers(model, requests, observed, sources) {
+export function markCallers(model, requests, observed, sources, types) {
   if (!requests) return { pages: 0 }
   const routes = pageRoutes(sources)
   const eps = new Map(requests.elements.filter(e => e.metadata?.method && e.metadata?.route).map(e => [`${e.metadata.method} ${normalRoute(e.metadata.route)}`, e]))
   const handler = new Map(requests.elements.filter(e => e.metadata?.role === 'step' && e.metadata?.step === '1').map(e => [e.parent, e.metadata.path]))
   const fileEl = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e]))
-  const files = [...fileEl.keys()]
   const calls = new Map(), routeOf = new Map()
   for (const o of observed.endpoints) {
     const ep = eps.get(`${o.method} ${o.route}`)
@@ -310,7 +327,7 @@ export function markCallers(model, requests, observed, sources) {
     }
     if (o.untimed) ep.metadata.untimed = String(o.untimed)
     // trace --methods: its call tree, each method with the file and line it is declared at.
-    if (o.tree?.length) ep.metadata.callTree = JSON.stringify(placeTree(o.tree, files, sources))
+    if (o.tree?.length) ep.metadata.callTree = JSON.stringify(placeTree(o.tree, types, sources))
   }
   for (const [path, c] of calls) {
     const e = fileEl.get(path)
@@ -325,14 +342,14 @@ export const TESTS_KEPT = 40
 
 /**
  * A call tree from `trace --methods` with each method placed: { at, count, path, line, kids }, path
- * being the file of its class among the model's files and line where the method is declared there
+ * being the file of its class (classFiles of the model's `types`) and line where the method is declared there
  * (the first declaration of that name). Tables touched and "N more" stay as they are.
  */
-export function placeTree(tree, files, sources) {
+export function placeTree(tree, types, sources) {
   const classes = new Set()
   const walk = ns => { for (const n of ns) { const k = n.at.lastIndexOf('.'); if (k > 0 && !/\s/.test(n.at)) classes.add(n.at.slice(0, k)); walk(n.kids ?? []) } }
   walk(tree)
-  const fileOf = classFiles(files, [...classes])
+  const fileOf = classFiles(types, [...classes])
   // Where a method is declared: its name after a type (on this line or the one before), not after
   // "return", "new" or a dot, outside comments and strings.
   const lineOf = (path, name) => {

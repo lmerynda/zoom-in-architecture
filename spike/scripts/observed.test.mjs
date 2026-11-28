@@ -1,55 +1,89 @@
 import { describe, expect, it } from 'vitest'
-import { callsInto, classFiles, markObserved, tableVerbs } from './observed.mjs'
+import { callsInto, classFiles, declaredTypes, markObserved, tableVerbs } from './observed.mjs'
 
 const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code', metadata: { path } })
 
+const java = (pkg, body) => `${pkg ? `package ${pkg};\n\n` : ''}import java.util.List;\n\n${body}\n`
+
+describe('declaredTypes', () => {
+  it('lists the top-level types each Java file declares, by package: package-private ones and interfaces too, nested ones not', () => {
+    const types = declaredTypes({
+      'src/shop/Offer.java': java('shop', '/** An offer. class NotThis {} */\n@Entity(name = "class Nope {")\npublic class Offer {\n  static class Builder { }\n  interface Step { }\n}\n\nclass OfferHelper implements Comparable<OfferHelper> { }\nrecord Price(int cents) { }'),
+      'src/shop/OfferRepository.java': java('shop', 'public interface OfferRepository extends JpaRepository<Offer, Long> { }'),
+      'src/Main.java': java('', 'public final class Main { public static void main(String[] a) { new Object() { }; } }'),
+      'src/läden/Größe.java': java('läden', 'public enum Größe { KLEIN { }, GROSS }\n@interface Maß { }'),
+    })
+    expect(types).toEqual(new Map([
+      ['shop.Offer', ['src/shop/Offer.java']], ['shop.OfferHelper', ['src/shop/Offer.java']], ['shop.Price', ['src/shop/Offer.java']],
+      ['shop.OfferRepository', ['src/shop/OfferRepository.java']], ['Main', ['src/Main.java']],
+      ['läden.Größe', ['src/läden/Größe.java']], ['läden.Maß', ['src/läden/Größe.java']],
+    ]))
+  })
+
+  it('keeps every file one name is declared in, reads only Java, and lists nothing from nothing', () => {
+    expect(declaredTypes({ 'a/src/shop/Cart.java': java('shop', 'class Cart {}'), 'b/src/shop/Cart.java': java('shop', 'class Cart {}') }))
+      .toEqual(new Map([['shop.Cart', ['a/src/shop/Cart.java', 'b/src/shop/Cart.java']]]))
+    // A polyglot model's other files have their own Order: the Java agent's spans never name them.
+    expect(declaredTypes({ 'py/shop/Order.py': 'class Order:\n  pass\n', 'cs/shop/Order.cs': 'namespace shop { public class Order { } }', 'go/shop/order.go': 'package shop\ntype Order struct{}\n' })).toEqual(new Map())
+    expect(declaredTypes({})).toEqual(new Map())
+    expect(declaredTypes({ 'src/Empty.java': '' })).toEqual(new Map())
+  })
+})
+
 describe('classFiles', () => {
-  it('finds a class’s file by its package path, and never a longer name', () => {
-    const paths = ['src/main/java/shop/MarketController.java', 'src/main/java/shop/MarketControllerTest.java', 'web/shop/Offer.kt']
-    expect(classFiles(paths, ['shop.MarketController', 'shop.Offer', 'other.Missing'])).toEqual(new Map([
-      ['shop.MarketController', 'src/main/java/shop/MarketController.java'],
-      ['shop.Offer', 'web/shop/Offer.kt'],
+  const types = declaredTypes({
+    'src/shop/MarketController.java': java('shop', 'public class MarketController { }'),
+    'src/shop/MarketControllerTest.java': java('shop', 'class MarketControllerTest { }'),
+    'src/shop/Offer.java': java('shop', 'public class Offer { static class Builder { class Step { } } }\nclass OfferHelper { }'),
+    'src/shop/Cash$Box.java': java('shop', 'class Cash$Box { }'),
+    'src/shop/Cash.java': java('shop', 'class Cash { }'),
+    'src/market/Offer.java': java('market', 'public class Offer { }'),
+    'a/src/shop/Cart.java': java('shop', 'class Cart { }'), 'b/src/shop/Cart.java': java('shop', 'class Cart { }'),
+    'src/shop/Main.java': java('shop', 'class Main { }'),
+    'src/shop/付款.java': java('shop', 'class 付款 { }'),
+    'src/läden/Größe.java': java('läden', 'class Größe { }'),
+  })
+
+  it('finds a class’s file by its package and name, two top-level classes of one file both, and never a longer or shorter name', () => {
+    expect(classFiles(types, ['shop.MarketController', 'shop.Offer', 'shop.OfferHelper', 'market.Offer', 'other.Missing', 'shop.Market'])).toEqual(new Map([
+      ['shop.MarketController', 'src/shop/MarketController.java'], ['shop.Offer', 'src/shop/Offer.java'], ['shop.OfferHelper', 'src/shop/Offer.java'], ['market.Offer', 'src/market/Offer.java'],
     ]))
   })
 
-  it('places inner, anonymous, lambda and proxy classes ($) in their top-level class’s file', () => {
-    const paths = ['src/shop/Offer.java']
-    expect(classFiles(paths, ['shop.Offer$Builder', 'shop.Offer$1', 'shop.Offer$Builder$2', 'shop.Offer$$Lambda/0x01', 'shop.Offer$$SpringCGLIB$$0'])).toEqual(new Map([
-      ['shop.Offer$Builder', 'src/shop/Offer.java'], ['shop.Offer$1', 'src/shop/Offer.java'], ['shop.Offer$Builder$2', 'src/shop/Offer.java'],
+  it('places inner, anonymous, lambda and proxy classes ($) in their top-level class’s file, unless a top-level class has that very name', () => {
+    expect(classFiles(types, ['shop.Offer$Builder', 'shop.Offer$1', 'shop.Offer$Builder$Step', 'shop.Offer$$Lambda/0x01', 'shop.Offer$$SpringCGLIB$$0', 'shop.Cash$Box', 'shop.Cash$1'])).toEqual(new Map([
+      ['shop.Offer$Builder', 'src/shop/Offer.java'], ['shop.Offer$1', 'src/shop/Offer.java'], ['shop.Offer$Builder$Step', 'src/shop/Offer.java'],
       ['shop.Offer$$Lambda/0x01', 'src/shop/Offer.java'], ['shop.Offer$$SpringCGLIB$$0', 'src/shop/Offer.java'],
+      ['shop.Cash$Box', 'src/shop/Cash$Box.java'], ['shop.Cash$1', 'src/shop/Cash.java'],
     ]))
   })
 
-  it('places a nested class written with a dot in its outer class’s file, the longest name that is a file winning, and never drops a package to find one', () => {
-    const paths = ['src/shop/Offer.java', 'src/shop/Offer/Price.java', 'src/shop.ts']
-    expect(classFiles(paths, ['shop.Offer.Builder', 'shop.Offer.Builder.Step', 'shop.Offer.Price', 'shop.Missing', 'shop.Missing.Inner'])).toEqual(new Map([
+  it('places a nested class written with a dot in its outer class’s file, in any script', () => {
+    expect(classFiles(types, ['shop.Offer.Builder', 'shop.Offer.Builder.Step', 'shop.付款.Inner', 'läden.Größe.Maß', 'läden.Größe$Maß', 'shop.Missing.Inner'])).toEqual(new Map([
       ['shop.Offer.Builder', 'src/shop/Offer.java'], ['shop.Offer.Builder.Step', 'src/shop/Offer.java'],
-      // A file of that exact name is the class's own, not its outer one's.
-      ['shop.Offer.Price', 'src/shop/Offer/Price.java'],
+      ['shop.付款.Inner', 'src/shop/付款.java'], ['läden.Größe.Maß', 'src/läden/Größe.java'], ['läden.Größe$Maß', 'src/läden/Größe.java'],
     ]))
   })
 
-  it('tells classes of one name in two packages apart, and places none that two files fit equally', () => {
-    const paths = ['a/src/shop/Offer.java', 'a/src/market/Offer.java', 'b/src/shop/Cart.java', 'c/src/shop/Cart.java', 'd/Main.java', 'e/Main.java']
-    expect(classFiles(paths, ['shop.Offer', 'market.Offer$1', 'shop.Cart', 'Main', 'Offer'])).toEqual(new Map([
-      ['shop.Offer', 'a/src/shop/Offer.java'], ['market.Offer$1', 'a/src/market/Offer.java'],
-    ]))
+  it('places no class in a package it is not in, and none that two files declare', () => {
+    // Main in no package is not shop.Main; shop.Cart is in two modules: which ran is not known.
+    expect(classFiles(types, ['Main', 'Offer', 'shop.Cart', 'shop.Cart$1'])).toEqual(new Map())
   })
 
-  it('places nothing from nothing, and reads names in any script', () => {
-    expect(classFiles([], ['shop.MarketController'])).toEqual(new Map())
-    expect(classFiles(['src/shop/Offer.java'], [])).toEqual(new Map())
-    expect(classFiles(['src/shop/Offer.java'], [''])).toEqual(new Map())
-    expect(classFiles(['src/läden/Größe.java', 'src/läden/Ölmühle.kt'], ['läden.Größe$Maß', 'läden.Ölmühle.Rad', 'läden.Größe'])).toEqual(new Map([
-      ['läden.Größe$Maß', 'src/läden/Größe.java'], ['läden.Ölmühle.Rad', 'src/läden/Ölmühle.kt'], ['läden.Größe', 'src/läden/Größe.java'],
-    ]))
+  it('places nothing from nothing', () => {
+    expect(classFiles(new Map(), ['shop.MarketController'])).toEqual(new Map())
+    expect(classFiles(types, [])).toEqual(new Map())
+    expect(classFiles(types, ['', '$Proxy42', 'com.sun.proxy.$Proxy42'])).toEqual(new Map())
   })
 })
 
 describe('callsInto', () => {
-  const fileOf = classFiles(['src/shop/MarketController.java', 'src/shop/Offer.java', 'src/shop/OfferRepository.java'], ['shop.MarketController', 'shop.Offer', 'shop.Offer$Builder', 'shop.OfferHelper', 'shop.OfferRepository', 'lib.Proxy'])
-  // Two classes in one file: OfferHelper beside Offer in Offer.java.
-  fileOf.set('shop.OfferHelper', 'src/shop/Offer.java')
+  const fileOf = classFiles(declaredTypes({
+    'src/shop/MarketController.java': java('shop', 'public class MarketController { }'),
+    'src/shop/OfferRepository.java': java('shop', 'public interface OfferRepository { }'),
+    // Two top-level classes in one file.
+    'src/shop/Offer.java': java('shop', 'public class Offer { static class Builder { } }\nclass OfferHelper { }'),
+  }), ['shop.MarketController', 'shop.Offer', 'shop.Offer$Builder', 'shop.OfferHelper', 'shop.OfferRepository', 'lib.Proxy'])
 
   it('counts a call into a file once: a span under one of that file’s own is the same call or a call inside it', () => {
     // Three requests: the agent's controller span over the method's own span (both MarketController), which calls the repository twice.
@@ -59,7 +93,7 @@ describe('callsInto', () => {
 
   it('adds up a file’s classes called from outside it, and never counts its classes calling each other', () => {
     const codeCalls = {
-      'shop.Offer': { 'shop.MarketController': 4, 'shop.Offer$Builder': 9 },
+      'shop.Offer': { 'shop.MarketController': 4, 'shop.Offer$Builder': 9, 'shop.OfferHelper': 3 },
       'shop.Offer$Builder': { 'shop.MarketController': 2, 'shop.Offer': 5 },
       'shop.OfferHelper': { 'shop.Offer': 7, 'lib.Proxy': 1, 'lib.Unplaced': 1 },
     }
@@ -82,6 +116,13 @@ describe('markObserved', () => {
     ],
     background: {},
   }
+  // What the model's Java files declare (declaredTypes): Offer.java holds Offer's nested classes too.
+  const types = declaredTypes({
+    'src/shop/MarketController.java': java('shop', 'public class MarketController { }'),
+    'src/shop/OfferRepository.java': java('shop', 'public interface OfferRepository { }'),
+    'src/shop/MarketService.java': java('shop', 'public class MarketService { }'),
+    'src/shop/Offer.java': java('shop', 'public class Offer { static class Builder { } record Price(int c) { } }'),
+  })
   const build = () => ({
     model: {
       elements: [{ id: 'app', parent: null, title: 'App', kind: 'app' }, { id: 'db', parent: null, title: 'DB', kind: 'database' }, file('app.ctl', 'src/shop/MarketController.java'), file('app.repo', 'src/shop/OfferRepository.java'), file('app.svc', 'src/shop/MarketService.java')],
@@ -104,7 +145,7 @@ describe('markObserved', () => {
 
   it('marks endpoints seen or not, with statuses and tables, and gives coverage per app', () => {
     const { model, requests } = build()
-    expect(markObserved(model, requests, observed)).toEqual({ seen: 2, total: 3 })
+    expect(markObserved(model, requests, observed, types)).toEqual({ seen: 2, total: 3 })
     const at = id => requests.elements.find(e => e.id === id).metadata
     expect(at('app.e1')).toMatchObject({ seen: '3', statuses: '200 ×2 · 401 ×1', tables: 'offers: SELECT, UPDATE' })
     // An endpoint no test called says so; its route written :id still matches the observed {id} form.
@@ -114,7 +155,7 @@ describe('markObserved', () => {
 
   it('marks the steps whose classes ran with their own counts, and leaves the others unclaimed rather than unseen', () => {
     const { model, requests } = build()
-    markObserved(model, requests, observed)
+    markObserved(model, requests, observed, types)
     const at = id => requests.elements.find(e => e.id === id).metadata.seen
     // The repository ran twice in three requests (one stopped at 401): its count is its own.
     expect([at('app.e1.s1'), at('app.e1.s2'), at('app.e1.s3')]).toEqual(['3', undefined, '2'])
@@ -122,7 +163,7 @@ describe('markObserved', () => {
 
   it('marks a store link seen by its endpoint’s requests, with the tables they touched, and adds one a request needed but the code reading missed', () => {
     const { model, requests } = build()
-    markObserved(model, requests, observed)
+    markObserved(model, requests, observed, types)
     // The count is the endpoint's requests, said so, never calls across the link itself.
     expect(requests.relations[0]).toMatchObject({ seen: 3, seenOf: 'requests', tables: 'updates and reads offers' })
     // The added link says the map has none: the trace added it.
@@ -132,7 +173,7 @@ describe('markObserved', () => {
   it('gives no store tables it cannot place: with two databases, a mapped link keeps its count but no tables, and none is added', () => {
     const { model, requests } = build()
     requests.elements.push({ id: 'cache', parent: null, title: 'Cache', kind: 'database', metadata: {} })
-    markObserved(model, requests, observed)
+    markObserved(model, requests, observed, types)
     expect(requests.relations).toHaveLength(1)
     expect(requests.relations[0]).toMatchObject({ seen: 3, seenOf: 'requests' })
     expect(requests.relations[0].tables).toBeUndefined()
@@ -149,7 +190,7 @@ describe('markObserved', () => {
 
   it('marks the architecture: files that ran, their runtime links, and the tables of the one store reached', () => {
     const { model, requests } = build()
-    markObserved(model, requests, observed)
+    markObserved(model, requests, observed, types)
     const at = id => model.elements.find(e => e.id === id).metadata
     expect([at('app.ctl').seen, at('app.repo').seen, at('app.svc').seen]).toEqual(['3', '2', undefined])
     expect(model.relations.map(r => r.seen)).toEqual([2, undefined])
@@ -164,16 +205,22 @@ describe('markObserved', () => {
     requests.elements.push({ id: 'app.e1.s4', parent: 'app.e1', title: '4 · Offer', metadata: { role: 'step', step: '4', path: 'src/shop/Offer.java' } })
     const buy = { ...observed.endpoints[0], codeCalls: { ...observed.endpoints[0].codeCalls, 'shop.Offer': { 'shop.MarketController': 2 }, 'shop.Offer$Builder': { 'shop.MarketController': 1, 'shop.Offer': 4 }, 'shop.Offer.Price': { 'shop.Offer$Builder': 6 } } }
     const list = { method: 'GET', route: '/market/:id', count: 1, statuses: { 200: 1 }, tables: {}, codeCalls: { 'shop.Offer$1': { '': 1 } }, calls: {} }
-    markObserved(model, requests, { endpoints: [buy, observed.endpoints[1], list], background: {} })
+    markObserved(model, requests, { endpoints: [buy, observed.endpoints[1], list], background: {} }, types)
     expect(model.elements.find(e => e.id === 'app.offer').metadata.seen).toBe('4')
     expect(model.elements.find(e => e.id === 'app.ctl').metadata.seen).toBe('3')
     // In the request, only that endpoint's calls.
     expect(requests.elements.find(e => e.id === 'app.e1.s4').metadata.seen).toBe('3')
   })
 
+  it('refuses a trace summed before calls into code were counted by caller: it says to trace again', () => {
+    const { model, requests } = build()
+    const old = { endpoints: [{ method: 'POST', route: '/market/create', count: 1, statuses: {}, tables: {}, code: { 'shop.MarketController.create': 1 }, calls: {} }], background: {} }
+    expect(() => markObserved(model, requests, old, types)).toThrow(/zoom trace again/)
+  })
+
   it('works with no Requests view and no observations', () => {
     const { model } = build()
-    expect(markObserved(model, null, { endpoints: [], background: {} })).toEqual({ seen: 0, total: 0 })
+    expect(markObserved(model, null, { endpoints: [], background: {} }, new Map())).toEqual({ seen: 0, total: 0 })
     expect(model.elements.every(e => e.metadata?.seen === undefined)).toBe(true)
   })
 })

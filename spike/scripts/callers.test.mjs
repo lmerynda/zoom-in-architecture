@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markCallers, pageFor, pageRoutes, placeTree, TESTS_KEPT } from './observed.mjs'
+import { declaredTypes, markCallers, pageFor, pageRoutes, placeTree, TESTS_KEPT } from './observed.mjs'
 
 const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code', metadata: { path } })
 
@@ -108,7 +108,7 @@ describe('markCallers', () => {
 
   it('lists an endpoint’s pages, two addresses of one route as one page, and the tests that made it; an address no route names is only counted', () => {
     const { model, requests } = models()
-    expect(markCallers(model, requests, observed, sources)).toEqual({ pages: 2 })
+    expect(markCallers(model, requests, observed, sources, declaredTypes(sources))).toEqual({ pages: 2 })
     const ep = requests.elements[0].metadata
     expect(JSON.parse(ep.pages)).toEqual([
       { page: '/shop/:id', path: 'web/Shop.tsx', count: 3 },
@@ -127,7 +127,7 @@ describe('markCallers', () => {
 
   it('lists a page’s endpoints on its file, with the file that serves each', () => {
     const { model, requests } = models()
-    markCallers(model, requests, observed, sources)
+    markCallers(model, requests, observed, sources, declaredTypes(sources))
     const shop = model.elements.find(e => e.id === 'web.shop').metadata
     expect(shop.page).toBe('/shop/:id')
     expect(JSON.parse(shop.pageCalls)).toEqual([{ endpoint: 'POST /market/{id}/buy', count: 3, path: 'src/shop/MarketController.java' }])
@@ -140,7 +140,7 @@ describe('markCallers', () => {
   it('keeps the busiest tests by name and counts them all', () => {
     const { model, requests } = models()
     const tests = Object.fromEntries(Array.from({ length: TESTS_KEPT + 5 }, (_, k) => [`t${String(k).padStart(2, '0')}`, k + 1]))
-    markCallers(model, requests, { endpoints: [{ method: 'GET', route: '/market', count: 1, pages: {}, tests }] }, sources)
+    markCallers(model, requests, { endpoints: [{ method: 'GET', route: '/market', count: 1, pages: {}, tests }] }, sources, declaredTypes(sources))
     const m = requests.elements[2].metadata
     expect(JSON.parse(m.tests)).toHaveLength(TESTS_KEPT)
     expect(JSON.parse(m.tests)[0]).toEqual({ test: `t${TESTS_KEPT + 4}`, count: TESTS_KEPT + 5 })
@@ -149,7 +149,7 @@ describe('markCallers', () => {
 
   it('does nothing without a requests view', () => {
     const { model } = models()
-    expect(markCallers(model, null, observed, sources)).toEqual({ pages: 0 })
+    expect(markCallers(model, null, observed, sources, declaredTypes(sources))).toEqual({ pages: 0 })
     expect(model.elements.every(e => !e.metadata?.pageCalls)).toBe(true)
   })
 })
@@ -158,15 +158,15 @@ describe('placeTree', () => {
   it('places each method of a call tree at its file and the line it is declared on; tables and "more" stay as they are', () => {
     const sources = { 'src/shop/OrderService.java': 'package shop;\nclass OrderService {\n  // list() is called below\n  public List<Order> list() {\n    return repo.findAll();\n  }\n}\n' }
     const tree = [{ at: 'shop.OrderService.list', count: 2, kids: [{ at: 'SELECT orders', count: 2, kids: [] }, { at: 'shop.Missing.run', count: 1, kids: [] }, { at: '3 more', count: 4 }] }]
-    expect(placeTree(tree, Object.keys(sources), sources)).toEqual([{ at: 'shop.OrderService.list', count: 2, path: 'src/shop/OrderService.java', line: 4, kids: [
+    expect(placeTree(tree, declaredTypes(sources), sources)).toEqual([{ at: 'shop.OrderService.list', count: 2, path: 'src/shop/OrderService.java', line: 4, kids: [
       { at: 'SELECT orders', count: 2 }, { at: 'shop.Missing.run', count: 1 }, { at: '3 more', count: 4 },
     ] }])
-    expect(placeTree([], [], {})).toEqual([])
+    expect(placeTree([], new Map(), {})).toEqual([])
   })
 
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
-    markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {})
+    markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())
     expect(JSON.parse(requests.elements[0].metadata.callTree)).toEqual([{ at: 'a.B.c', count: 1 }])
   })
 })

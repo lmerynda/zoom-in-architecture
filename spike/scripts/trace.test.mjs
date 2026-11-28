@@ -106,6 +106,27 @@ describe('observe', () => {
     })
   })
 
+  it('gives each span to the request it ran in: a request one endpoint makes to another is that one’s, its code and tables too', () => {
+    const front = span('server', 'GET /front', { 'http.request.method': 'GET', 'http.route': '/front' })
+    const f = span('internal', 'Front.handle', { 'code.namespace': 'shop.Front', 'code.function': 'handle' }, front.id)
+    const out = span('client', 'GET', { 'http.request.method': 'GET', 'server.address': 'localhost', 'url.full': 'http://localhost/back' }, f.id)
+    // The server span names its handler itself (code.function.name on it, as some instrumentations do).
+    const back = span('server', 'GET /back', { 'http.request.method': 'GET', 'http.route': '/back', 'code.function.name': 'shop.Back.handle' }, out.id)
+    const b = span('internal', 'BackRepository.find', { 'code.namespace': 'shop.BackRepository', 'code.function': 'find' }, back.id)
+    const q = span('client', 'SELECT shop.back', { 'db.system': 'h2', 'db.sql.table': 'back', 'db.operation': 'SELECT' }, b.id)
+    const o = observe([front, f, out, back, b, q])
+    const at = r => o.endpoints.find(e => e.route === r)
+    expect([at('/front').codeCalls, at('/front').tables, at('/front').calls]).toEqual([{ 'shop.Front': { '': 1 } }, {}, { 'GET localhost': 1 }])
+    expect([at('/back').codeCalls, at('/back').tables]).toEqual([{ 'shop.Back': { '': 1 }, 'shop.BackRepository': { 'shop.Back': 1 } }, { back: ['SELECT'] }])
+  })
+
+  it('sums a request whose method spans nest thousands deep', () => {
+    const s = span('server', 'GET /deep', { 'http.request.method': 'GET', 'http.route': '/deep' })
+    const spans = [s]
+    for (let k = 0; k < 20000; k++) spans.push(span('internal', 'Walker.step', { 'code.namespace': 'shop.Walker', 'code.function': 'step' }, spans[spans.length - 1].id))
+    expect(observe(spans).endpoints[0].codeCalls).toEqual({ 'shop.Walker': { '': 1, 'shop.Walker': 19999 } })
+  })
+
   it('adds up the spans of many requests per class and caller, the busiest caller first', () => {
     const spans = []
     for (let k = 0; k < 12; k++) {

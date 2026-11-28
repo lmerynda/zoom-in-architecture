@@ -184,12 +184,14 @@ export function pruneTree(list) {
 /**
  * Sums spans up per endpoint (method and route template, from server spans) as they arrive: how
  * many requests, their statuses, the tables each read or wrote (from SQL spans under it), the code
- * it went through (codeCalls: for each class a span of code names, as the agent names it, so
- * com.x.Foo$Inner apart from com.x.Foo, its spans by the class of the nearest span of code above
- * them, '' when there is none but the request: { 'com.x.Repo': { 'com.x.Ctl': 2 }, 'com.x.Ctl':
- * { '': 1 } }; observed.mjs decides from it which spans are calls into a file), outgoing calls, the
+ * it went through (codeCalls: for each class a span of code names, the server span's own included,
+ * as the agent names it, so com.x.Foo$Inner apart from com.x.Foo, its spans by the class of the
+ * nearest span of code above them, '' when there is none but the request: { 'com.x.Repo':
+ * { 'com.x.Ctl': 2 }, 'com.x.Ctl': { '': 1 } }; observed.mjs decides from it which spans are calls
+ * into a file), outgoing calls, the
  * pages a browser made them from (Referer), and with `methods` its call tree (of `own` classes when
- * given). A trace is summed once it has had a root span and no new span for `quietMs` (a JVM exports
+ * given). A span is its nearest request's: what a request to another endpoint below it ran is that
+ * endpoint's. A trace is summed once it has had a root span and no new span for `quietMs` (a JVM exports
  * a span when it ends, a child sometimes after its parent), or once it has had no new span for
  * `staleMs` whatever came (a root in another process never comes here), and then dropped, so a long
  * run with method spans does not hold them all. Spans outside any request (startup, schedules) are
@@ -207,10 +209,21 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
     const kids = new Map()
     for (const s of group) if (s.parent && byId.has(s.parent)) { const k = kids.get(s.parent); if (k) k.push(s); else kids.set(s.parent, [s]) }
     for (const k of kids.values()) k.sort((a, b) => a.start - b.start)
-    // Every span under s, each with the class of the nearest span of code above it ('' none).
-    const below = s => { const out = []; const walk = (x, by) => { for (const c of kids.get(x.id) ?? []) { out.push([c, by]); walk(c, codeAt(c) ? classOf(codeAt(c)) : by) } }; walk(s, ''); return out }
+    const routed = s => s.kind === 'server' && route(s)
+    // The spans of s's request, s first, each with the class of the nearest span of code above it
+    // ('' none), in the order they started. A routed server span below s is a request of its own (one
+    // endpoint calling another) and is summed as that one. A stack, not recursion: methods nest deep.
+    function* request(s) {
+      const todo = [[s, '']]
+      while (todo.length) {
+        const [x, by] = todo.pop()
+        yield [x, by]
+        const next = codeAt(x) ? classOf(codeAt(x)) : by, ks = kids.get(x.id) ?? []
+        for (let k = ks.length - 1; k >= 0; k--) if (!routed(ks[k])) todo.push([ks[k], next])
+      }
+    }
     for (const s of group) {
-      if (s.kind === 'server' && route(s)) {
+      if (routed(s)) {
         const key = `${method(s)} ${normalRoute(route(s))}`
         const e = endpoints.get(key) ?? { method: method(s), route: normalRoute(route(s)), count: 0, statuses: new Map(), tables: new Map(), codeCalls: new Map(), calls: new Map(), pages: new Map(), at: [], tree: [] }
         e.count++
@@ -219,7 +232,7 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
         const file = testFileOf(s)
         if (file) e.at.push([s.start, file])
         if (status(s) != null) add(e.statuses, String(status(s)))
-        for (const [c, by] of below(s)) {
+        for (const [c, by] of request(s)) {
           if (table(c) && operation(c)) { const ops = e.tables.get(table(c)) ?? new Set(); ops.add(operation(c)); e.tables.set(table(c), ops) }
           if (codeAt(c)) { const cls = classOf(codeAt(c)), m = e.codeCalls.get(cls) ?? new Map(); add(m, by); e.codeCalls.set(cls, m) }
           if (c.kind === 'client' && (c.attrs['url.full'] || c.attrs['server.address']) && !c.attrs['db.system']) add(e.calls, `${method(c)} ${c.attrs['server.address'] ?? new URL(c.attrs['url.full']).host}`)
