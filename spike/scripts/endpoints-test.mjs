@@ -346,14 +346,12 @@ try {
   check('an older map lists every route, a shortened one whole', pc.length === 17 && pc.includes('/owners/{ownerId}/edit'), JSON.stringify(pc))
   await open('model=petclinic&at=petclinic.owners.ownerController')
   check('Serves names no line the map does not know', !/line 1\b/.test(await page.evaluate(() => document.querySelector('#details .d-serves').innerText)))
-  await page.evaluate(() => window.__spike.controls.feature('Find owners'))
-  await sleep(500)
-  const fo = await page.evaluate(() => ({ pages: [...document.querySelectorAll('#details .d-pages li')].map(l => l.textContent), eps: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  await showFeature('Find owners')
+  const fo = { pages: await page.evaluate(() => [...document.querySelectorAll('#details .d-pages li')].map(l => l.textContent)), eps: (await featureRoutes()).own }
   check('a feature on a shared controller gets the endpoints it names, and its templates as pages', fo.pages.length === 2 && !fo.eps.some(e => e.startsWith('POST /owners/new')) && fo.eps.some(e => e.startsWith('GET /owners/find')), JSON.stringify(fo))
-  await page.evaluate(() => window.__spike.controls.feature('Owner information'))
-  await sleep(400)
-  const oi = await page.evaluate(() => ({ claimed: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: document.querySelectorAll('#details .d-shared .d-ep').length }))
-  check('a feature its words cannot place claims none of a shared controller\'s routes, and says they are shared', !oi.claimed.includes('POST /owners/new') && oi.shared > 0, JSON.stringify(oi))
+  await showFeature('Owner information')
+  const oi = await featureRoutes()
+  check('a feature its words cannot place owns only the route that renders its page, and lists the controller\'s others apart', same(oi, { own: ['GET /owners/{ownerId}'], shared: ['GET /owners', 'GET /owners/find', 'GET /owners/new', 'POST /owners/new', 'GET /owners/{ownerId}/edit', 'POST /owners/{ownerId}/edit'] }), JSON.stringify(oi))
   // A route whose answer is a type the feature lists is its own: GET /vets returns Vets, which only Vets as JSON or XML carries.
   await showFeature('Vets as JSON or XML')
   const vj = await featureRoutes()
@@ -379,12 +377,12 @@ try {
   check('an older map\'s client says what it calls and lists its route pages, not their layouts', dash.some(b => /^Calls \d+ endpoints?$/.test(b)) && dash.includes('login') && dash.includes('items') && !dash.includes('__root') && !dash.includes('_layout'), JSON.stringify(dash))
   await open('model=galaxy-wars')
   check('a person who builds and runs the system calls no endpoint', await page.evaluate(() => { const s = window.__spike; return s.renderer.surface(s.id('developer')) === '' }))
-  // Words that tell a shared handler's routes apart give each feature its own.
+  // Words that tell a shared handler's routes apart give each feature its own; reset-password is
+  // recovery's because its reset page calls it.
   for (const [f, want, not] of [['Login with JWT authentication', 'POST /api/v1/login/access-token', 'POST /api/v1/password-recovery/{email}'], ['Email-based password recovery', 'POST /api/v1/password-recovery/{email}', 'POST /api/v1/login/access-token'], ['Email-based password recovery', 'POST /api/v1/reset-password', 'POST /api/v1/login/test-token']]) {
     await open('model=fastapi-cold')
-    await page.evaluate(f => window.__spike.controls.feature(f), f)
-    await sleep(400)
-    const got = await page.evaluate(() => [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]))
+    await showFeature(f)
+    const got = (await featureRoutes()).own
     check(`${f} gets ${want}, not ${not}`, got.includes(want) && !got.includes(not), JSON.stringify(got))
   }
   // A route word that joins the feature's words ("signup" for "Sign up") names it; the users file's other routes stay shared.
