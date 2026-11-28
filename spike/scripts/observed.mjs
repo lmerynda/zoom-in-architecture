@@ -5,13 +5,56 @@
 import { posix } from 'node:path'
 import { javaCode, normalRoute } from './trace.mjs'
 
-/** A class's file among the model's files: com.x.Foo (or com.x.Foo$Inner) is …/com/x/Foo.<ext>. */
+/**
+ * Each class's file among the model's files: com.x.Foo is …/com/x/Foo.<ext>. A nested, inner, local
+ * or anonymous class is in its top-level class's file, named com.x.Foo$Inner or com.x.Foo$1 by the
+ * agent (a lambda com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0) and com.x.Foo.Inner by
+ * others: the longest name that is a file wins, and only class names (a capital first) are dropped
+ * to find it, never a package, so com.x.Missing is not …/com/x.ts. A name two files fit as well (one
+ * package in two modules, a class in no package) has no file here: which of them ran is not known.
+ */
 export function classFiles(paths, classes) {
+  // Each file under every tail of its path without the extension: Foo, x/Foo, com/x/Foo, …
+  const byTail = new Map()
+  for (const p of new Set(paths)) {
+    const dot = p.lastIndexOf('.')
+    if (dot <= p.lastIndexOf('/') + 1) continue
+    const parts = p.slice(0, dot).split('/')
+    for (let k = 0; k < parts.length; k++) {
+      const tail = parts.slice(k).join('/')
+      if (!byTail.has(tail)) byTail.set(tail, new Set())
+      byTail.get(tail).add(p)
+    }
+  }
   const out = new Map()
   for (const c of classes) {
-    const tail = `/${c.replace(/\$.*$/, '').replace(/\./g, '/')}.`
-    const hit = paths.find(p => `/${p}`.includes(tail) && `/${p}`.lastIndexOf(tail) + tail.length === `/${p}`.lastIndexOf('.') + 1)
-    if (hit) out.set(c, hit)
+    const parts = c.replace(/\$[\s\S]*$/, '').split('.')
+    // The whole name first, then without its innermost class, while what is left ends in a class.
+    for (let k = parts.length; k >= 1; k--) {
+      if (k < parts.length && !/^\p{Lu}/u.test(parts[k - 1])) break
+      const hits = byTail.get(parts.slice(0, k).join('/'))
+      if (!hits) continue
+      if (hits.size === 1) out.set(c, [...hits][0])
+      break
+    }
+  }
+  return out
+}
+
+/**
+ * Calls into each file's code, from `codeCalls` (trace.mjs: each class's spans by the class of the
+ * nearest span of code above them) and `fileOf` (classFiles): the spans of a file's classes whose
+ * caller is not of that file, so a request reaching it or another file's code calling it. One
+ * method of the file calling another, its nested and anonymous classes, and the agent's controller
+ * span over the method's own span are inside one call, not more calls. A caller no file is (a
+ * library, '' the request) calls from outside. Returns path → calls; a file nothing called is not in it.
+ */
+export function callsInto(codeCalls, fileOf) {
+  const out = new Map()
+  for (const [cls, by] of Object.entries(codeCalls)) {
+    const path = fileOf.get(cls)
+    if (!path) continue
+    for (const [caller, n] of Object.entries(by)) if (fileOf.get(caller) !== path) out.set(path, (out.get(path) ?? 0) + n)
   }
   return out
 }
@@ -34,27 +77,28 @@ export function tableVerbs(tables) {
 
 /**
  * Marks `model` (the architecture) and `requests` (the Requests view, or null) with `observed`.
- * Elements get metadata.seen (a count, as a string), endpoints also statuses and tables. A runtime
- * relation gets `seen`, a count of what the trace measured near it, never of calls across that one
- * link (the trace does not count those), and `seenOf`, which count it is: `code` (how often the
- * code of its source file ran) or `requests` (the requests of the endpoint it serves; a store arrow
- * in the Requests view then also carries `tables`, what those requests did to which tables). A
- * request that touched a store with no store link inferred from code gets one, `origin: 'trace'`:
- * the map has no such link. Returns the coverage: endpoints seen of all.
+ * Elements get metadata.seen (a count, as a string): an endpoint its requests (with statuses and
+ * tables), a file the calls into its code in all requests (callsInto), a step of a request the calls
+ * into its file in that endpoint's requests. A runtime relation gets `seen`, a count of what the
+ * trace measured near it, never of calls across that one link (the trace does not count those),
+ * and `seenOf`, which count it is: `code` (the calls into its source file's code) or `requests` (the
+ * requests of the endpoint it serves; a store arrow in the Requests view then also carries
+ * `tables`, what those requests did to which tables). A request that touched a store with no store
+ * link inferred from code gets one, `origin: 'trace'`: the map has no such link. Returns the
+ * coverage: endpoints seen of all.
  */
 export function markObserved(model, requests, observed) {
-  const classCount = new Map()
-  for (const e of observed.endpoints) for (const [c, n] of Object.entries(e.code)) {
-    const cls = c.slice(0, c.lastIndexOf('.'))
-    classCount.set(cls, (classCount.get(cls) ?? 0) + n)
-  }
   const tables = {}
   for (const e of observed.endpoints) for (const [t, ops] of Object.entries(e.tables)) tables[t] = [...new Set([...(tables[t] ?? []), ...ops])].sort()
+  // One file for each class, callers too, among every file either view shows.
+  const classes = new Set()
+  for (const e of observed.endpoints) for (const [c, by] of Object.entries(e.codeCalls)) { classes.add(c); for (const b of Object.keys(by)) if (b) classes.add(b) }
+  const all = [...model.elements, ...(requests?.elements ?? [])].flatMap(e => (e.metadata?.path ? [e.metadata.path] : []))
+  const fileOf = classFiles(all, [...classes])
 
-  // The architecture: files whose classes ran, the runtime links they make, and the store they reach.
-  const paths = model.elements.flatMap(e => (e.metadata?.path ? [e.metadata.path] : []))
-  const files = classFiles(paths, [...classCount.keys()])
-  const seenFile = new Map([...files].map(([c, p]) => [p, classCount.get(c)]))
+  // The architecture: files whose code was called, the runtime links they make, and the store they reach.
+  const seenFile = new Map()
+  for (const e of observed.endpoints) for (const [p, n] of callsInto(e.codeCalls, fileOf)) seenFile.set(p, (seenFile.get(p) ?? 0) + n)
   const byId = new Map(model.elements.map(e => [e.id, e]))
   for (const e of model.elements) if (e.metadata?.path && seenFile.has(e.metadata.path)) e.metadata.seen = String(seenFile.get(e.metadata.path))
   const stores = new Set()
@@ -87,12 +131,9 @@ export function markObserved(model, requests, observed) {
       apps.set(app, a)
       ep.metadata.statuses = statusText(o.statuses)
       if (Object.keys(o.tables).length) ep.metadata.tables = tableText(o.tables)
-      // Its steps whose classes ran in this request, each with its own count: the spans of its class's
-      // methods, not the endpoint's requests (a request can stop before it reaches a later step).
-      const perClass = new Map()
-      for (const [c, n] of Object.entries(o.code)) { const cls = c.slice(0, c.lastIndexOf('.')); perClass.set(cls, (perClass.get(cls) ?? 0) + n) }
-      const ran = classFiles(requests.elements.filter(s => s.parent === ep.id && s.metadata?.path).map(s => s.metadata.path), [...perClass.keys()])
-      const ranCount = new Map([...ran].map(([c, p]) => [p, perClass.get(c)]))
+      // Its steps whose code was called in this endpoint's requests, each with its own count: the calls
+      // into its file, not the endpoint's requests (a request can stop before it reaches a later step).
+      const ranCount = callsInto(o.codeCalls, fileOf)
       const steps = requests.elements.filter(s => s.parent === ep.id)
       for (const s of steps) if (s.metadata?.path && ranCount.has(s.metadata.path)) s.metadata.seen = String(ranCount.get(s.metadata.path))
       // Its store links are seen when it touched tables; none inferred but tables touched: add one.

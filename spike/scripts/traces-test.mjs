@@ -41,7 +41,7 @@ writeFileSync(join(scratch, 'map.json'), JSON.stringify(map))
 const tests = Object.fromEntries(Array.from({ length: 10 }, (_, k) => [`web.test.ts › orders > shows order ${k + 1}`, 10 - k]))
 writeFileSync(join(scratch, 'trace.json'), JSON.stringify({
   at: '2026-11-25T12:00:00.000Z', command: 'npm run test:browser', exit: 0, ms: 1000, spans: 40, background: {},
-  endpoints: [{ method: 'GET', route: '/api/orders', count: 57, statuses: { 200: 57 }, tables: { orders: ['SELECT'] }, code: { 'com.shop.orders.OrderController.all': 57 }, calls: {}, pages: { '/orders/1': 30, '/orders/2': 20, '/reset/t0ken-123': 3 }, tests, untimed: 2,
+  endpoints: [{ method: 'GET', route: '/api/orders', count: 57, statuses: { 200: 57 }, tables: { orders: ['SELECT'] }, codeCalls: { 'com.shop.orders.OrderController': { '': 57 } }, calls: {}, pages: { '/orders/1': 30, '/orders/2': 20, '/reset/t0ken-123': 3 }, tests, untimed: 2,
     tree: [{ at: 'com.shop.orders.OrderController.all', count: 57, kids: [{ at: 'com.shop.orders.OrderRepository.findAll', count: 57, kids: [{ at: 'SELECT orders', count: 57 }] }] }] }],
 }))
 const cli = join(import.meta.dirname, 'zoom.mjs')

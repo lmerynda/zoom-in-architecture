@@ -530,11 +530,11 @@ export function arrowSummary(tree: Tree, rels: number[]): string {
 
 /**
  * What the trace measured near a runtime call, in its unit, said as not a count of the call itself:
- * "12 requests of its endpoint · this call not measured", "its code ran 340 times · …"; '' unseen.
+ * "12 requests of its endpoint · this call not measured", "340 calls into its code · …"; '' unseen.
  */
 export function measureText(seen: number, of: Tree['relSeenOf'][number]): string {
   if (!seen || !of) return ''
-  return `${of === 'requests' ? `${count(seen)} request${seen === 1 ? '' : 's'} of its endpoint` : `its code ran ${count(seen)} time${seen === 1 ? '' : 's'}`} · this call not measured`
+  return `${of === 'requests' ? `${count(seen)} request${seen === 1 ? '' : 's'} of its endpoint` : `${count(seen)} call${seen === 1 ? '' : 's'} into its code`} · this call not measured`
 }
 
 /** Of some relations, how many the trace could judge, and how many of those it saw evidence of (their source's code ran, or their endpoint was called). */

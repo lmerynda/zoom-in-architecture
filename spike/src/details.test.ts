@@ -137,7 +137,9 @@ describe('store arrows: a mapped relation apart from what the trace measured', (
   it('says a count in its unit, and that the call itself was not measured', () => {
     expect(measureText(3, 'requests')).toBe('3 requests of its endpoint · this call not measured')
     expect(measureText(1, 'requests')).toBe('1 request of its endpoint · this call not measured')
-    expect(measureText(48872, 'code')).toBe('its code ran 48,872 times · this call not measured')
+    // The unit a file's panel says too: calls into its code.
+    expect(measureText(48872, 'code')).toBe('48,872 calls into its code · this call not measured')
+    expect(measureText(1, 'code')).toBe('1 call into its code · this call not measured')
     // Unseen, or a count that does not say what it counts: nothing to say.
     expect(measureText(0, 'requests')).toBe('')
     expect(measureText(5, '')).toBe('')

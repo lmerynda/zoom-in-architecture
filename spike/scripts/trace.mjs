@@ -115,6 +115,8 @@ const codeAt = s => {
   const f = s.attrs['code.function.name']
   return typeof f === 'string' && f.includes('.') ? f.replace(/::/g, '.') : null
 }
+/** The class of a method codeAt names: "com.x.Foo" of "com.x.Foo.bar". */
+const classOf = at => at.slice(0, at.lastIndexOf('.'))
 
 /** A route template as the map writes paths: `{id}` for any parameter, no trailing slash. */
 export const normalRoute = p => (p.replace(/:([A-Za-z_]\w*)/g, '{$1}').replace(/<[^>]*>/g, '{p}').replace(/\/+$/, '') || '/')
@@ -182,7 +184,10 @@ export function pruneTree(list) {
 /**
  * Sums spans up per endpoint (method and route template, from server spans) as they arrive: how
  * many requests, their statuses, the tables each read or wrote (from SQL spans under it), the code
- * it went through (spans naming a class and method: handlers, repositories), outgoing calls, the
+ * it went through (codeCalls: for each class a span of code names, as the agent names it, so
+ * com.x.Foo$Inner apart from com.x.Foo, its spans by the class of the nearest span of code above
+ * them, '' when there is none but the request: { 'com.x.Repo': { 'com.x.Ctl': 2 }, 'com.x.Ctl':
+ * { '': 1 } }; observed.mjs decides from it which spans are calls into a file), outgoing calls, the
  * pages a browser made them from (Referer), and with `methods` its call tree (of `own` classes when
  * given). A trace is summed once it has had a root span and no new span for `quietMs` (a JVM exports
  * a span when it ends, a child sometimes after its parent), or once it has had no new span for
@@ -202,20 +207,21 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
     const kids = new Map()
     for (const s of group) if (s.parent && byId.has(s.parent)) { const k = kids.get(s.parent); if (k) k.push(s); else kids.set(s.parent, [s]) }
     for (const k of kids.values()) k.sort((a, b) => a.start - b.start)
-    const below = s => { const out = []; const walk = x => { for (const c of kids.get(x.id) ?? []) { out.push(c); walk(c) } }; walk(s); return out }
+    // Every span under s, each with the class of the nearest span of code above it ('' none).
+    const below = s => { const out = []; const walk = (x, by) => { for (const c of kids.get(x.id) ?? []) { out.push([c, by]); walk(c, codeAt(c) ? classOf(codeAt(c)) : by) } }; walk(s, ''); return out }
     for (const s of group) {
       if (s.kind === 'server' && route(s)) {
         const key = `${method(s)} ${normalRoute(route(s))}`
-        const e = endpoints.get(key) ?? { method: method(s), route: normalRoute(route(s)), count: 0, statuses: new Map(), tables: new Map(), code: new Map(), calls: new Map(), pages: new Map(), at: [], tree: [] }
+        const e = endpoints.get(key) ?? { method: method(s), route: normalRoute(route(s)), count: 0, statuses: new Map(), tables: new Map(), codeCalls: new Map(), calls: new Map(), pages: new Map(), at: [], tree: [] }
         e.count++
         if (pageOf(s)) add(e.pages, pageOf(s))
         // When and from which test file's server: the test is named once the run is over.
         const file = testFileOf(s)
         if (file) e.at.push([s.start, file])
         if (status(s) != null) add(e.statuses, String(status(s)))
-        for (const c of below(s)) {
+        for (const [c, by] of below(s)) {
           if (table(c) && operation(c)) { const ops = e.tables.get(table(c)) ?? new Set(); ops.add(operation(c)); e.tables.set(table(c), ops) }
-          if (codeAt(c)) add(e.code, codeAt(c))
+          if (codeAt(c)) { const cls = classOf(codeAt(c)), m = e.codeCalls.get(cls) ?? new Map(); add(m, by); e.codeCalls.set(cls, m) }
           if (c.kind === 'client' && (c.attrs['url.full'] || c.attrs['server.address']) && !c.attrs['db.system']) add(e.calls, `${method(c)} ${c.attrs['server.address'] ?? new URL(c.attrs['url.full']).host}`)
         }
         if (methods) mergeTrees(e.tree, callTree(s, kids, own))
@@ -264,7 +270,7 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
           return {
             method: e.method, route: e.route, count: e.count, statuses: sorted(e.statuses),
             tables: Object.fromEntries([...e.tables].sort().map(([t, ops]) => [t, [...ops].sort()])),
-            code: sorted(e.code), calls: sorted(e.calls), pages: sorted(e.pages), tests: sorted(named), untimed,
+            codeCalls: Object.fromEntries([...e.codeCalls].sort(([a], [b]) => a.localeCompare(b)).map(([c, by]) => [c, sorted(by)])), calls: sorted(e.calls), pages: sorted(e.pages), tests: sorted(named), untimed,
             ...(methods ? { tree: pruneTree(e.tree) } : {}),
           }
         }),
