@@ -249,12 +249,12 @@ async function main() {
     if (over) frames.push([0, t, Math.min(right, over.left - 8), bottom])
     return frames
   }
-  // `scales`: the layout whose containers' opening scales count. During a live update's move, the
-  // one it ends at, scaled to the card's size now: halfway, a card becoming a container opens from
-  // nothing (a near-zero scale of its own), and a container's scale goes with its size.
-  const frameFor = (i: number, w0: World = world, scales: World = w0) => {
+  // `m`: a live update moving `w0` into place. A container that was open before it has a scale of
+  // its own all the way; one opening from nothing (a card becoming a container) has a near-zero one
+  // halfway, so it takes the scale it ends with, in proportion to its size now.
+  const frameFor = (i: number, w0: World = world, m: typeof morph = null) => {
     const r = w0.rect, W = cam.w, H = cam.h
-    const scaleOf = (k: number) => (scales === w0 ? openScale(w0, k) : openScale(scales, k) * (r[k * 4 + 2] / scales.rect[k * 4 + 2]))
+    const scaleOf = (k: number) => (!m || m.wasOpen[k] ? openScale(w0, k) : openScale(m.to, k) * (r[k * 4 + 2] / m.to.rect[k * 4 + 2]))
     const frames = freeFrames()
     const fill = i === 0 ? 0.96 : tree.children[i].length ? 0.9 : 0.4
     const w = r[i * 4 + 2], h = r[i * 4 + 3]
@@ -296,7 +296,10 @@ async function main() {
    * A live update moving into place (swapModel, stepMorph). With nothing framed, the camera moves
    * from cam0 to cam1 with what it shows, until the reader moves it (handsOff).
    */
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean } | null = null
+  // e: its eased progress. wasOpen: per card, whether it was a container already before the update (frameFor).
+  // gap: how far the camera stood from its framing as the move began (the new version may frame it
+  // otherwise: a container emptied fits where it did not), closed by the end; for that framing only.
+  let morph: { t0: number; dur: number; e: number; from: { rect: Float64Array; content: Float64Array }; to: World; wasOpen: Uint8Array; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; gap: { of: Intent; d: [number, number, number] } | null } | null = null
   /**
    * What the reader asked to see: a card (by id, since a live update may number the cards anew),
    * the whole map, or nothing framed: a camera they moved by hand, or one a jump left somewhere
@@ -370,7 +373,7 @@ async function main() {
   }
   /** Flies to card i (0: the whole map), which becomes what the reader asked to see. */
   const fit = (i = 0) => {
-    const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
+    const f = frameNow(i), vw = cam.w / f.z, vh = cam.h / f.z
     if (i === 0) renderer.wholeZ = f.z
     cam.steer(() => cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1))
     intent = i > 0 ? { kind: 'card', id: tree.els[i].id } : { kind: 'whole' }
@@ -386,13 +389,35 @@ async function main() {
    * they are now: set there, or a flight under way sent there. False when nothing is framed (the
    * camera is the reader's) or the card asked for is gone.
    */
+  /**
+   * The framing of card i now. During a live update's move, framings are worked out only for the
+   * layouts it runs between (halfway, a container's framing would switch from crowded to roomy in
+   * one frame, or open from nothing): how each frames the card, relative to the card (offset and
+   * on-screen size in card widths), is blended by the move's progress and laid on the card where it is.
+   */
+  const frameNow = (i: number) => {
+    const m = morph
+    if (!m) return frameFor(i)
+    const rel = (f: { x: number; y: number; z: number }, r: Float64Array) => { const w = r[i * 4 + 2]; return [(f.x - r[i * 4] - w / 2) / w, (f.y - r[i * 4 + 1] - r[i * 4 + 3] / 2) / w, f.z * w] }
+    const end = frameFor(i, m.to), b = rel(end, m.to.rect)
+    // A card that grows from nothing (added) is framed throughout as it ends.
+    const a = m.from.rect[i * 4 + 2] > 1e-9 ? rel(frameFor(i, { ...m.to, ...m.from }, m), m.from.rect) : b
+    const r = world.rect, w = r[i * 4 + 2], e = m.e
+    if (w <= 1e-9) return end
+    const ox = a[0] + (b[0] - a[0]) * e, oy = a[1] + (b[1] - a[1]) * e, s = Math.exp(Math.log(a[2]) + (Math.log(b[2]) - Math.log(a[2])) * e)
+    return { x: r[i * 4] + w / 2 + ox * w, y: r[i * 4 + 1] + r[i * 4 + 3] / 2 + oy * w, z: s / w }
+  }
   const reframe = () => {
     const i = intended()
     if (i < 0) return false
-    // Where the card is now, mid-move included; how far in it opens, as the move will leave it.
-    const f = frameFor(i, world, morph ? morph.to : world)
+    const f = frameNow(i)
     if (i === 0) renderer.wholeZ = f.z
-    cam.steer(() => { if (!cam.aim(f.x, f.y, f.z)) cam.set(f.x, f.y, f.z) })
+    cam.steer(() => {
+      if (cam.aim(f.x, f.y, f.z)) return
+      // During a move, the gap it began with, closing as it goes: no jump when the new version frames the card otherwise.
+      const g = morph?.gap?.of === intent ? morph.gap.d : null, k = g ? 1 - morph!.e : 0
+      cam.set(f.x + (g ? g[0] * k : 0), f.y + (g ? g[1] * k : 0), f.z * (g ? Math.exp(g[2] * k) : 1))
+    })
     return true
   }
   /**
@@ -404,7 +429,7 @@ async function main() {
     const i = intended()
     if (i < 0) return
     if (cam.flying || morph) { reframe(); return }
-    const f = frameFor(i)
+    const f = frameNow(i)
     if (Math.hypot(f.x - cam.x, f.y - cam.y) * cam.z > 1 || Math.abs(f.z / cam.z - 1) > 1e-3) fit(i)
   }
   const resize = () => {
@@ -1251,6 +1276,14 @@ async function main() {
     const target = placeWorld(next, nextLocal)
     const diff = diffModels(tree, next)
     const start = startRects(world, next, target, diff.oldIndex)
+    // Per card, by id: open before this update (and not still opening from nothing in the last one).
+    const wasOpen = new Uint8Array(next.size)
+    for (let k = 1; k < next.size; k++) { const j = diff.oldIndex[k]; wasOpen[k] = j > 0 && tree.children[j].length > 0 && (!morph || morph.wasOpen[j]) ? 1 : 0 }
+    // The same layout as the move under way ends at: the same cards, each ending where it would have.
+    const sameEnd = !!morph && !diff.added.length && !diff.removed.length && next.els.every((_, k) => {
+      const j = diff.oldIndex[k]
+      return j >= 0 && [0, 1, 2, 3].every(q => Math.abs(morph!.to.rect[j * 4 + q] - target.rect[k * 4 + q]) < 1e-9)
+    })
     const live: World = { rect: start.rect.slice(), content: start.content.slice(), local: nextLocal }
 
     // Keep what you are looking at where it is on screen, the selection if there is one, else
@@ -1341,9 +1374,15 @@ async function main() {
     // leaves it be. So is one they took during the last update's move when this one ends at the
     // same layout (the same update again); an update that lays the map out otherwise moves the
     // camera with what it shows from where the reader left it.
-    const sameEnd = !!morph && morph.to.rect.length === target.rect.length && morph.to.rect.every((v, k) => Math.abs(v - target.rect[k]) < 1e-9)
     const theirs = intended() < 0 && (!cam.settled || (sameEnd && morph!.handsOff))
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: theirs }
+    morph = { t0: t, dur: 700, e: 0, from: start, to: target, wasOpen, cam0, cam1, handsOff: theirs, gap: null }
+    // A camera settled on what the reader asked to see closes any gap to its framing in the new
+    // version over the move (a flight to it is sent there instead, on its own clock).
+    const asked = intended()
+    if (asked >= 0 && cam.settled) {
+      const f0 = frameNow(asked)
+      morph.gap = { of: intent, d: [cam.x - f0.x, cam.y - f0.y, Math.log(cam.z / f0.z)] }
+    }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged + diff.viaChanged > 0
@@ -1364,6 +1403,7 @@ async function main() {
     for (let k = 0; k < r.length; k++) r[k] = fr[k] + (tr[k] - fr[k]) * e
     for (let k = 0; k < c.length; k++) c[k] = fc[k] + (tc[k] - fc[k]) * e
     const [x0, y0, z0] = morph.cam0, [x1, y1, z1] = morph.cam1
+    morph.e = e
     // What the reader asked to see is framed where it now is, or a flight to it sent there. Else the
     // camera moves with what it shows until the reader moves it (a wheel, a pan, a jump): then it is theirs.
     if (!reframe() && !morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {

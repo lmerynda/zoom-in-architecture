@@ -164,4 +164,12 @@ A second Codex round confirmed those five fixed and found seven more. Four came 
 - Closing the code reader on a phone frames the intended card again for the sheet it hid.
 - A sideways scroll records no trip for Back.
 
-Each has a check in `live-test.mjs` that failed on the first-round code: 23 live checks in all. One timing window is left on purpose. A flight aimed somewhere new in its last millisecond or so (eased progress within 10⁻⁶ of the end) lands there in that frame, as a settled framing would on a resize.
+Each has a check in `live-test.mjs` that failed on the first-round code.
+
+A third round confirmed those seven fixed and found two more, both now fixed, each with a check that failed on the second-round code:
+- **"The same update again" compared rect slots, not cards.** An update with its rows reordered counted as a different layout, and the reverse could happen too. It now compares each card's final rect by id, and any card added or removed makes it a different layout.
+- **The final layout's opening scale was applied to a container already open.** A container emptied of most of its cards dropped from zoom 36.9 to 12.7 in one frame, leaving its cards undrawn.
+
+Fixing the second exposed the real rule for a framing during a live update's move. Following `frameFor` on the half-moved layout can never be smooth, because `frameFor` has thresholds: a container switches from "too crowded to open, framed from its corner" to "framed whole" at some point during the move. So `frameFor` now runs only on the two fixed layouts the move goes between. The framing used mid-move (`frameNow`) blends, by the move's progress, how each of the two layouts frames the card relative to the card itself: its offset and its on-screen size in card widths. That blend is laid on the card wherever it is at that moment. Where the camera stood off that framing when the move began, the gap closes linearly over the move. The start layout of a card that opens from nothing takes its opening scale from the end layout. The card's on-screen size therefore always lies between its two endpoint sizes, and the camera never jumps. A flight to the card is aimed at this framing each frame.
+
+Codex's verdicts were land after fixes in all three rounds, and every blocking finding is now fixed: 25 live checks in all. One timing window is left on purpose. A flight aimed somewhere new in its last millisecond or so (eased progress within 10⁻⁶ of the end) lands there in that frame, as a settled framing would on a resize.

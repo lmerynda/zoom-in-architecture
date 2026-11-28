@@ -400,6 +400,63 @@ try {
   const a13 = moved13.after
   check('a drag, then a different update: the selection stays on screen', a13[0] + a13[2] > 0 && a13[0] < moved13.w && a13[1] + a13[3] > 0 && a13[1] < moved13.h && Math.abs(a13[0] - moved13.before[0]) < 200, JSON.stringify(moved13))
 
+  // 13b. The same update again with its rows in another order (its cards numbered anew, each ending
+  // where it would have) is the same update: the camera stays where the drag left it.
+  await openAcme()
+  await page.evaluate(pressCard, orderApi)
+  await still()
+  await page.evaluate(async () => {
+    const s = window.__spike
+    const big = await (await fetch('/models/acme.json')).json()
+    for (let k = 1; k <= 16; k++) big.elements.push({ id: `acme.ordering.svc${k}`, parent: 'acme.ordering', title: `Service ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+    const again = JSON.parse(JSON.stringify(big)), els = again.elements
+    const a = els.findIndex(e => e.id === 'stripe'), b = els.findIndex(e => e.id === 'acme.merchants.portal.listingsUi')
+    ;[els[a], els[b]] = [els[b], els[a]]
+    window.__again = again
+    s.manual(true)
+    await s.swapModel(big)
+    for (let k = 0; k < 15; k++) s.advance(16)
+  })
+  await page.mouse.move(700, 500)
+  await page.mouse.down()
+  for (let k = 1; k <= 8; k++) await page.mouse.move(700 + k * 4, 500 + k * 1.5)
+  await sleep(150)
+  await page.mouse.up()
+  const reordered = await page.evaluate(async () => {
+    const s = window.__spike, c = s.cam, dropped = [c.x, c.y, c.z]
+    await s.swapModel(window.__again)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    s.manual(false)
+    return { dropped, kept: [c.x, c.y, c.z] }
+  })
+  check('the same update again with its rows reordered keeps a drag', Math.hypot(reordered.kept[0] - reordered.dropped[0], reordered.kept[1] - reordered.dropped[1]) * reordered.kept[2] < 2 && Math.abs(reordered.kept[2] / reordered.dropped[2] - 1) < 1e-3, JSON.stringify(reordered))
+
+  // 13c. A container framed open that an update empties of most of its cards: the zoom moves
+  // smoothly, no frame's jump, and the cards left stay on screen.
+  await page.setViewport({ width: 530, height: 844 })
+  await page.goto(`${base}?model=knights-of-darkness`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => { document.querySelector('#welcome .ok')?.click(); const s = window.__spike; s.controls.enterPlace(s.id('backend.market.offers')) })
+  await still()
+  const emptied = await page.evaluate(async () => {
+    const s = window.__spike, c = s.cam
+    const json = await (await fetch('/models/knights-of-darkness.json')).json()
+    const kids = json.elements.filter(e => e.parent === 'backend.market.offers').map(e => e.id)
+    const gone = new Set(kids.slice(3))
+    json.elements = json.elements.filter(e => !gone.has(e.id) && !gone.has(e.parent))
+    json.relations = json.relations.filter(r => !gone.has(r.source) && !gone.has(r.target))
+    s.manual(true)
+    await s.swapModel(json)
+    let jump = 1, z = c.z
+    for (let k = 0; k < 60; k++) { s.advance(16); jump = Math.max(jump, c.z / z, z / c.z); z = c.z }
+    s.manual(false)
+    const left = kids.slice(0, 3).map(id => s.renderer.screenRectOf(s.id(id)).map(Math.round))
+    return { jump, left, w: c.w, h: c.h }
+  })
+  const onScreen = emptied.left.every(r => r[0] + r[2] > 0 && r[0] < emptied.w && r[1] + r[3] > 0 && r[1] < emptied.h)
+  check('a container framed open that an update empties zooms smoothly, its cards left on screen', emptied.jump < 1.25 && onScreen, JSON.stringify(emptied))
+  await page.setViewport({ width: 1600, height: 1000 })
+
   // 14. A sideways scroll during a jump is no trip of its own: one Back returns to where the jump began.
   await openAcme()
   await page.evaluate(() => window.__spike.fly(0))
