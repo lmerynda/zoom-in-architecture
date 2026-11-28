@@ -47,7 +47,9 @@ export interface Api {
 const VERBS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ANY|ALL|WS|WEBSOCKET'
 const TITLE = new RegExp(`^(${VERBS})\\s+((?:\\/|…)\\S*)$`, 'i')
 /** A type as code writes it: a name, qualified or not, with generic or bracketed arguments; no phrase. */
-const TYPE = /^[\p{L}_$][\p{L}\p{N}_$.]*(?:[<[][\p{L}\p{N}_$.,<>[\]?\s]*[>\]])?$/u
+const TYPE = /^[\p{L}_$][\p{L}\p{M}\p{N}_$.]*(?:[<[][\p{L}\p{M}\p{N}_$.,<>[\]?\s]*[>\]])?$/u
+/** A name in a type, qualified or not, in any script: java.util.List, CaféResult. */
+const TYPE_NAME = /[\p{L}_$][\p{L}\p{M}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{M}\p{N}_$]*)*/gu
 /** The order methods are listed in. */
 export const METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 const methodRank = (m: string) => { const k = METHOD_ORDER.indexOf(m); return k < 0 ? METHOD_ORDER.length : k }
@@ -68,7 +70,7 @@ export function endpointOf(e: Pick<ElementJson, 'title' | 'metadata'>, parent = 
 }
 
 /** A route's parameter in any style and script: {id}, {id:int}, :slug, <int:id>. */
-const PARAM = /\{([^}:]+)(?::[^}]*)?\}|:([\p{L}\p{M}\p{N}_]+)|<(?:\w+:)?([\p{L}\p{M}\p{N}_]+)>/gu
+const PARAM = /\{([^}:]+)(?::[^}]*)?\}|:([\p{L}\p{M}\p{N}_]+)|<(?:[^:<>/]+:)?([\p{L}\p{M}\p{N}_]+)>/gu
 /** The names of a route's parameters: "/market/{id}/buy" → id; ":slug" and "<int:id>" too. */
 export function routeParams(route: string): string[] {
   return [...route.matchAll(PARAM)].map(m => m[1] ?? m[2] ?? m[3])
@@ -100,9 +102,11 @@ export function buildApi(model: ModelJson): Api {
     const response = steps.find(s => s.metadata?.role === 'response' && s.metadata.model) ?? steps.find(s => s.metadata?.role === 'response')
     const returns = response?.metadata?.model ?? e.description.match(/ returns (.+?)(?: as \w+)?\.?$/)?.[1] ?? ''
     // Every response's model; in maps built before responses carried one, the type the description
-    // names, when it is a type ("Vets", "list[UserPublic]") and not words ("what the handler returns").
+    // names in "returns Vets as JSON", when it is a type, not words ("what the handler returns") or
+    // a format alone ("returns JSON").
     const models = [...new Set(steps.flatMap(s => (s.metadata?.role === 'response' && s.metadata.model ? [s.metadata.model] : [])))]
-    const answers = models.length ? models : TYPE.test(returns) ? [returns] : []
+    const said = e.description.match(/ returns (.+?) as \w+\.?$/)?.[1] ?? ''
+    const answers = models.length ? models : TYPE.test(said) ? [said] : []
     const seen = traced && e.metadata?.seen != null ? Number(e.metadata.seen) : null
     endpoints.push({
       id: e.id, method: mr.method, route: mr.route, title: `${mr.method} ${mr.route}`,
@@ -291,24 +295,29 @@ const word = (w: string) => [...w].length > 2 && !['and', 'the', 'for', 'with'].
 /** Words of a name, plurals folded, small words dropped: "Find owners" → find, owner. */
 const nameWords = (s: string) => tokens(s).filter(word).map(fold)
 
+/** Words joined as code writes a phrase, the last one's plural folded: market, news → marketnews; sign, ups → signup. */
+const joined = (t: string[]) => t.slice(0, -1).join('') + fold(t[t.length - 1])
+
 /**
  * How many of a feature's words a route names: each word as it stands, or joined with up to two
- * words beside it, as code writes a phrase ("Sign up" is named by /signup, "Log in" by logIn). The
- * route's words are its fixed path and its method's name; a parameter ({user_id}) names a value,
- * not the feature.
+ * words beside it, as code writes a phrase ("Sign up" is named by /signup and /sign-up, "Log in" by
+ * logIn). A phrase named whole counts its short words too, so "Sign up" names /signup better than
+ * /sign-in. The route's words are its fixed path and its method's name; a parameter ({user_id})
+ * names a value, not the feature.
  */
 export function namedWords(feature: string, route: string, method: string): number {
   const ts = tokens(feature), path = route.replace(PARAM, ' ')
   const have = new Set<string>()
-  // Each segment of the path, and the method's name, as words and as their joined runs.
+  // Each segment of the path, and the method's name, as words and as their joined runs; a word
+  // whose own parts are not known (signups) as written and as its singular.
   for (const seg of [...path.split('/'), method]) {
     const t = tokens(seg)
-    for (let i = 0; i < t.length; i++) for (let j = i + 1; j <= Math.min(t.length, i + 3); j++) have.add(fold(t.slice(i, j).join('')))
+    for (let i = 0; i < t.length; i++) for (let j = i + 1; j <= Math.min(t.length, i + 3); j++) { have.add(t.slice(i, j).join('')); have.add(joined(t.slice(i, j))) }
   }
   const hit = new Set<number>()
   for (let i = 0; i < ts.length; i++) for (let j = i + 1; j <= Math.min(ts.length, i + 3); j++) {
-    const run = ts.slice(i, j).join('')
-    if ([...run].length > 2 && have.has(fold(run))) for (let k = i; k < j; k++) if (word(ts[k])) hit.add(k)
+    const run = joined(ts.slice(i, j))
+    if ([...run].length > 2 && have.has(run)) for (let k = i; k < j; k++) if (j - i > 1 || word(ts[k])) hit.add(k)
   }
   return hit.size
 }
@@ -319,8 +328,9 @@ export function namedWords(feature: string, route: string, method: string): numb
  * endpoints touched in tests. A handler that carries several features (one controller for finding,
  * adding and showing owners) gives the feature the endpoints whose route and method name its words
  * best (see namedWords), or whose answer is a type it alone lists, when no other feature of the
- * handler claims them too; the rest are `shared`, said as such, not claimed. A route that renders
- * one of its pages, or that one of its pages calls, is its own.
+ * handler claims them too, by words, answer or page; the rest are `shared`, said as such, not
+ * claimed. A route that renders one of its pages, or that one of its pages calls, is its own, even
+ * when another feature's page makes it theirs too: a page is said in the code, not guessed.
  */
 export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string, calls: Map<string, string[]> = new Map()) {
   const byId = new Map(els.map(e => [e.id, e]))
@@ -341,30 +351,32 @@ export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 
     const best = Math.max(...peers), least = Math.min(...peers)
     return best > 0 && mine === best && (peers.length === 1 ? best >= Math.ceil(nameWords(f).length / 2) : best > least)
   }
-  // The one feature of a shared handler that a route's answer carries, if one: GET /vets returns
-  // Vets, a file only "Vets as JSON or XML" lists. A type counts as a card of the route's own path
-  // whose file it names unambiguously (a qualified name by its folders); the feature is the card's
-  // own, not one of its folders'.
-  const answered = (ep: Endpoint): string | null => {
-    const theirs = handlerFeatures(ep), stems = [...new Set(ep.cards.map(c => c.path))].map(p => [p, p.replace(/\.\w+$/, '')])
+  // The features of a shared handler that a route's answer carries: GET /vets returns Vets, a file
+  // only "Vets as JSON or XML" lists. A type counts as a card of the route's own path whose file it
+  // names whole and unambiguously (a qualified name by its folders; no literal value); the feature
+  // is the card's own, not one of its folders'. Two of them claim it both, so neither has it.
+  const answered = (ep: Endpoint): Set<string> => {
+    const theirs = handlerFeatures(ep), stems = [...new Set(ep.cards.map(c => c.path))].map(p => [p, p.normalize('NFC').replace(/\.\w+$/, '')])
     const found = new Set<string>()
-    for (const t of ep.answers) for (const id of t.match(/[\p{L}_$][\p{L}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{N}_$]*)*/gu) ?? []) {
+    for (const t of ep.answers) for (const id of t.normalize('NFC').replace(/(["'`]).*?\1/g, ' ').match(TYPE_NAME) ?? []) {
       const suffix = id.replace(/\./g, '/'), match = stems.filter(([, s]) => s === suffix || s.endsWith(`/${suffix}`))
       if (match.length !== 1) continue
       for (const f of byId.get(files.get(match[0][0]) ?? '')?.features ?? []) if (theirs.has(f)) found.add(f)
     }
-    return found.size === 1 ? [...found][0] : null
+    return found
+  }
+  // A route whose path renders one of a feature's pages, or that one of its pages calls (`calls`:
+  // endpoint id → the page cards whose code calls it), serves that feature, whoever else its handler serves.
+  const pagesOf = (f: string) => els.filter(e => e.features?.includes(f) && isPage(e.metadata?.path ?? ''))
+  const byPage = (f: string, ep: Endpoint) => {
+    const ps = pagesOf(f), paths = new Set(ps.map(e => e.metadata!.path)), ids = new Set(ps.map(e => e.id))
+    return ep.cards.some(c => paths.has(c.path)) || (calls.get(ep.id) ?? []).some(p => ids.has(p))
   }
   // A shared handler's route is the feature's when its words or its answer point at it, and at none
-  // of the handler's other features: a route two features claim alike is listed apart.
-  const claims = (f: string, ep: Endpoint) => named(f, ep) || answered(ep) === f
-  const own = (ep: Endpoint) => claims(name, ep) && ![...handlerFeatures(ep)].some(g => g !== name && claims(g, ep))
-  // A route whose path renders a page that carries the feature serves it, whoever else its handler serves.
-  const pagePaths = new Set(carriers.flatMap(e => (e.metadata?.path && isPage(e.metadata.path) ? [e.metadata.path] : [])))
-  const renders = (ep: Endpoint) => ep.cards.some(c => pagePaths.has(c.path))
-  // A route one of its pages calls (`calls`: endpoint id → the page cards whose code calls it) serves it too.
-  const called = (ep: Endpoint) => (calls.get(ep.id) ?? []).some(p => pages.includes(p))
-  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || own(ep))) || renders(ep) || called(ep))
+  // of the handler's other features, nor is it another's by a page: a route claimed two ways is listed apart.
+  const claims = (f: string, ep: Endpoint) => answered(ep).has(f) || named(f, ep)
+  const own = (ep: Endpoint) => claims(name, ep) && ![...handlerFeatures(ep)].some(g => g !== name && (claims(g, ep) || byPage(g, ep)))
+  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || own(ep))) || byPage(name, ep))
   const shared = carried.filter(ep => !endpoints.includes(ep))
   return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, shared, tables: mergeTables(endpoints.map(ep => ep.tables)) }
 }

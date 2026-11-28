@@ -255,9 +255,12 @@ describe('featureFacts', () => {
   const own = (f: ReturnType<typeof featureFacts>) => f.endpoints.map(e => e.title)
   const apart = (f: ReturnType<typeof featureFacts>) => f.shared.map(e => e.title)
   it('names a route by a feature’s words joined as code writes them, and by none of its parameters', () => {
-    expect(namedWords('Sign up', '/api/v1/users/signup', 'register_user')).toBe(1)
+    // A phrase named whole counts its short words too; one word of it alone counts that word.
+    expect(namedWords('Sign up', '/api/v1/users/signup', 'register_user')).toBe(2)
+    expect(namedWords('Sign up', '/sign-in', '')).toBe(1)
     expect(namedWords('Signup', '/sign-up', '')).toBe(1)
-    expect(namedWords('Log in', '/auth', 'logIn')).toBe(1)
+    expect(namedWords('Log in', '/auth', 'logIn')).toBe(2)
+    expect(namedWords('Log in', '/in', '')).toBe(0)
     expect(namedWords('Find owners', '/owners/find', 'initFindForm')).toBe(2)
     // Up to three words joined: four are not read as one.
     expect(namedWords('Reset user password', '/resetuserpassword', '')).toBe(3)
@@ -266,6 +269,7 @@ describe('featureFacts', () => {
     expect(namedWords('Owner', '/{owner}', '')).toBe(0)
     expect(namedWords('Owner', '/:owner/<int:owner>/{owner:int}', 'show')).toBe(0)
     expect(namedWords('Übung', '/:Übung', '')).toBe(0)
+    expect(namedWords('Date', '/<date_étendue:slug>', '')).toBe(0)
     expect(namedWords('Show article', '/{slug}', 'showArticle')).toBe(2)
     // No words of its own: nothing to name.
     expect(namedWords('', '/a', 'b')).toBe(0)
@@ -287,6 +291,7 @@ describe('featureFacts', () => {
   })
   it('names the parameters of a route in any script', () => {
     expect(routeParams('/:Übung/<int:größe>')).toEqual(['Übung', 'größe'])
+    expect(routeParams('/<date_étendue:slug>')).toEqual(['slug'])
   })
   it('gives Sign up its signup route and leaves the users file’s others apart', () => {
     const { arch, api } = handler('users.py', ['User administration', 'Sign up', 'User settings'], [['GET /users', 'read_users'], ['POST /users/signup', 'register_user'], ['PATCH /users/me', 'update_user_me']])
@@ -368,6 +373,52 @@ describe('featureFacts', () => {
     it('lists apart a route one feature’s words claim and another’s answer does', () => {
       expect(owns(handler('C.java', ['A list', 'B view'], [['GET /list', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], thing(['B view'])))).toEqual([[], []])
     })
+    it('lists apart a route whose answers carry two features, whatever a third feature’s words say', () => {
+      const types = [el('app.i', 'app', { features: ['Invoices'], metadata: { path: 'Invoice.java' } }), el('app.r', 'app', { features: ['Receipts'], metadata: { path: 'Receipt.java' } })]
+      const h = handler('C.java', ['Invoices', 'Receipts', 'Export'], [['GET /export', 'export', '', ['Invoice.java', 'Receipt.java'], ['Invoice', 'Receipt']], ['GET /health', 'health']], types)
+      expect(['Invoices', 'Receipts', 'Export'].map(f => own(featureFacts(h.arch, h.api, f)))).toEqual([[], [], []])
+    })
+    it('reads no type from a format alone, a part of a name, or a literal value', () => {
+      // "returns JSON." names a format, not a type: a JSON.js card is not the route's answer.
+      const api = buildApi({ name: 'r', relations: [], elements: [el('api', null), el('api.e', 'api', { title: 'GET /audit', description: 'GET /audit: C.audit returns JSON.' }), el('api.e.s1', 'api.e', { title: '1 · audit()', metadata: { path: 'C.java' } }), el('api.e.s2', 'api.e', { title: '2 · JSON', metadata: { path: 'lib/JSON.js' } }), el('api.y', 'api', { title: 'GET /y' }), el('api.y.s1', 'api.y', { title: '1 · y()', metadata: { path: 'C.java' } })] })
+      expect(api.endpoints.map(e => e.answers)).toEqual([[], []])
+      const audit = [el('app', null), el('app.c', 'app', { features: ['Auditing', 'Other'], metadata: { path: 'C.java' } }), el('app.j', 'app', { features: ['Auditing'], metadata: { path: 'lib/JSON.js' } })]
+      expect(own(featureFacts(audit, api, 'Auditing'))).toEqual([])
+      // CaféResult (with a combining accent) is one name, not Result; Literal["pending"] names no pending.py.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['Result.java'], ['List<CaféResult>']], ['GET /y', 'y']], thing(['A list'], 'Result.java')))).toEqual([[], []])
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['pending.py'], ['Literal["pending"]']], ['GET /y', 'y']], thing(['A list'], 'pending.py')))).toEqual([[], []])
+      // The same names whole do point at their files.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['CaféResult.java'], ['List<CaféResult>']], ['GET /y', 'y']], thing(['A list'], 'CaféResult.java')))).toEqual([['GET /x'], []])
+    })
+  })
+  describe('a page says whose a route is', () => {
+    const reg = el('app.p', 'app', { features: ['Registration screen'], metadata: { path: 'templates/register.html' } })
+    it('keeps a route another feature’s page renders or calls from a feature whose words name it', () => {
+      const renders = handler('C.java', ['Sign up', 'Registration screen'], [['GET /signup', 'show', '', ['templates/register.html']], ['GET /health', 'health']], [reg])
+      expect(['Sign up', 'Registration screen'].map(f => own(featureFacts(renders.arch, renders.api, f)))).toEqual([[], ['GET /signup']])
+      const calls = handler('C.java', ['Sign up', 'Registration screen'], [['POST /signup', 'register'], ['GET /health', 'health']], [reg])
+      const byCall = new Map([[calls.api.endpoints.find(e => e.route === '/signup')!.id, ['app.p']]])
+      expect(['Sign up', 'Registration screen'].map(f => own(featureFacts(calls.arch, calls.api, f, byCall)))).toEqual([[], ['POST /signup']])
+    })
+    it('gives a route to every feature whose own page renders it', () => {
+      const two = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['templates/a.html', 'templates/b.html']], ['GET /y', 'y']], [el('app.a', 'app', { features: ['A list'], metadata: { path: 'templates/a.html' } }), el('app.b', 'app', { features: ['B view'], metadata: { path: 'templates/b.html' } })])
+      expect(['A list', 'B view'].map(f => own(featureFacts(two.arch, two.api, f)))).toEqual([['GET /x'], ['GET /x']])
+    })
+  })
+  it('tells a whole phrase from one shared word: Sign up from Sign in', () => {
+    for (const [up, inn] of [['/signup', '/sign-in'], ['/sign-up', '/sign-in'], ['/signup', '/signin']]) {
+      const h = handler('auth.py', ['Sign up', 'Sign in'], [[`POST ${up}`, 'a'], [`POST ${inn}`, 'b']])
+      expect([own(featureFacts(h.arch, h.api, 'Sign up')), own(featureFacts(h.arch, h.api, 'Sign in'))]).toEqual([[`POST ${up}`], [`POST ${inn}`]])
+    }
+  })
+  it('folds a plural only at a word’s end: Market news is not /market-new', () => {
+    expect(namedWords('Market news', '/market-new', '')).toBe(1)
+    expect(namedWords('Market news', '/market-old', '')).toBe(1)
+    expect(namedWords('Market news', '/marketnews', '')).toBe(2)
+    expect(namedWords('Market items', '/market-item', '')).toBe(2)
+    expect(namedWords('Sign up', '/signups', '')).toBe(2)
+    const h = handler('m.py', ['Market news', 'Market prices'], [['GET /market-new', 'a'], ['GET /market-old', 'b']])
+    expect(['Market news', 'Market prices'].map(f => own(featureFacts(h.arch, h.api, f)))).toEqual([[], []])
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
     expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], shared: [], tables: '' })

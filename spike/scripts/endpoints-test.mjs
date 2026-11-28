@@ -48,6 +48,19 @@ const featureRoutes = () => page.evaluate(() => {
   return { own: rows('#details .d-serves:not(.d-shared) .d-ep'), shared: rows('#details .d-shared .d-ep') }
 })
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+// Source reads in flight: a feature's panel is drawn again once its pages' code is read.
+let reading = 0
+const isSource = r => new URL(r.url()).pathname.startsWith('/source/')
+page.on('request', r => { if (isSource(r)) reading++ })
+for (const ev of ['requestfinished', 'requestfailed']) page.on(ev, r => { if (isSource(r)) reading-- })
+/** Opens a feature and waits until its pages' code is read and its panel, drawn again then, stops changing. */
+const showFeature = async name => {
+  await page.evaluate(f => window.__spike.controls.feature(f), name)
+  await page.waitForFunction(f => document.querySelector('#details h2')?.textContent === f, { timeout: 10000 }, name)
+  for (let k = 0; k < 60 && reading > 0; k++) await sleep(250)
+  let last = ''
+  for (let k = 0; k < 40; k++) { const now = await page.evaluate(() => document.getElementById('details').innerHTML); if (now === last) return; last = now; await sleep(250) }
+}
 const clickText = (sel, text) => page.evaluate((sel, text) => { const b = [...document.querySelectorAll(sel)].find(x => x.textContent.startsWith(text)); b?.click(); return !!b }, sel, text)
 const crossed = async view => { await page.waitForFunction(v => (new URLSearchParams(location.search).get('view') ?? '') === v && window.__spike?.ready, { timeout: 60000 }, view); await ready() }
 
@@ -346,13 +359,11 @@ try {
   const oi = await page.evaluate(() => ({ claimed: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: document.querySelectorAll('#details .d-shared .d-ep').length }))
   check('a feature its words cannot place claims none of a shared controller\'s routes, and says they are shared', !oi.claimed.includes('POST /owners/new') && oi.shared > 0, JSON.stringify(oi))
   // A route whose answer is a type the feature lists is its own: GET /vets returns Vets, which only Vets as JSON or XML carries.
-  await page.evaluate(() => window.__spike.controls.feature('Vets as JSON or XML'))
-  await sleep(400)
+  await showFeature('Vets as JSON or XML')
   const vj = await featureRoutes()
   await shot('09-feature-vets-json')
   check('Vets as JSON or XML owns GET /vets, the route that returns Vets, and leaves the vet list page\'s route apart', same(vj, { own: ['GET /vets'], shared: ['GET /vets.html'] }), JSON.stringify(vj))
-  await page.evaluate(() => window.__spike.controls.feature('Veterinarians'))
-  await sleep(400)
+  await showFeature('Veterinarians')
   const vl = await featureRoutes()
   check('Veterinarians keeps GET /vets.html, the route that renders its page, and leaves the JSON route apart', same(vl, { own: ['GET /vets.html'], shared: ['GET /vets'] }), JSON.stringify(vl))
   // An older map's handler with no line opens where it is declared.
@@ -382,14 +393,12 @@ try {
   }
   // A route word that joins the feature's words ("signup" for "Sign up") names it; the users file's other routes stay shared.
   await open('model=fastapi-cold')
-  await page.evaluate(() => window.__spike.controls.feature('Sign up'))
-  await sleep(600)
+  await showFeature('Sign up')
   const su = await featureRoutes()
   await shot('10-feature-sign-up')
   const users = ['GET /api/v1/users', 'POST /api/v1/users', 'GET /api/v1/users/me', 'PATCH /api/v1/users/me', 'DELETE /api/v1/users/me', 'PATCH /api/v1/users/me/password', 'POST /api/v1/users/signup', 'GET /api/v1/users/{user_id}', 'PATCH /api/v1/users/{user_id}', 'DELETE /api/v1/users/{user_id}']
   check('Sign up owns POST /api/v1/users/signup and only that; the users file\'s other routes are listed apart', same(su, { own: ['POST /api/v1/users/signup'], shared: users.filter(r => r !== 'POST /api/v1/users/signup') }), JSON.stringify(su))
-  await page.evaluate(() => window.__spike.controls.feature('User settings'))
-  await sleep(400)
+  await showFeature('User settings')
   const us = await featureRoutes()
   check('User settings, whose words name every users route alike, claims none of them', same(us, { own: [], shared: users }), JSON.stringify(us))
   // A switch back before the Requests model arrives still returns to the card left.
