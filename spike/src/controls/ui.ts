@@ -379,7 +379,7 @@ export class Help {
       ['Amber / cyan', 'With a selection: what it uses / what uses it'],
       ['Violet arrow', 'A call at runtime: HTTP, a store, a queue'],
       ['Dashed arrow', 'A call no test made, or an import of types only'],
-      ['Seen in tests', 'The project’s own end-to-end tests made this call'],
+      ['Seen in tests', 'The project’s own end-to-end tests called its endpoint, or the code that makes it'],
       ['Grey outline', 'An external system, outside the mapped code'],
     ]
     this.root.setAttribute('role', 'dialog')

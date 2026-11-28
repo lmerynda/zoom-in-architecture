@@ -115,6 +115,10 @@ const codeAt = s => {
   const f = s.attrs['code.function.name']
   return typeof f === 'string' && f.includes('.') ? f.replace(/::/g, '.') : null
 }
+/** The class of a method codeAt names: "com.x.Foo" of "com.x.Foo.bar". */
+const classOf = at => at.slice(0, at.lastIndexOf('.'))
+/** A request to an endpoint: a server span with a route. */
+const routed = s => s.kind === 'server' && route(s)
 
 /** A route template as the map writes paths: `{id}` for any parameter, no trailing slash. */
 export const normalRoute = p => (p.replace(/:([A-Za-z_]\w*)/g, '{$1}').replace(/<[^>]*>/g, '{p}').replace(/\/+$/, '') || '/')
@@ -144,16 +148,26 @@ const TREE_HOLD = 200
  * that, in the order they started. Named are the methods of `own` classes (the project's, when given)
  * and the tables touched; any other span passes its children up. A span that is its caller's only
  * child and names the same method is the same call seen twice (the agent's controller span over the
- * method's own span) and is folded into it; a method calling itself among other calls is kept.
+ * method's own span) and is folded into it; a method calling itself among other calls is kept. A
+ * server span that names its handler itself is the tree's first call. A request to another endpoint
+ * below (a routed server span) is that endpoint's tree, not this one's.
  */
 export function callTree(root, kids, own = null, depth = 0) {
   if (depth >= TREE_DEPTH) return []
   const name = s => { const c = codeAt(s); if (c) return !own || own.has(c.slice(0, c.lastIndexOf('.'))) ? c : null; return table(s) && operation(s) ? `${operation(s)} ${table(s)}` : null }
-  const named = s => (kids.get(s.id) ?? []).flatMap(c => {
-    const n = name(c)
-    if (n && !(n === name(s) && (kids.get(s.id) ?? []).length === 1)) return [c]
-    return named(c)
-  })
+  if (depth === 0 && name(root)) return [{ at: name(root), count: 1, kids: callTree(root, kids, own, 1) }]
+  // The named spans under s, nearest first: a stack, as one call can be seen thousands of times over itself.
+  const named = s => {
+    const out = [], todo = [[s, null]]
+    while (todo.length) {
+      const [c, p] = todo.pop()
+      const n = p && name(c)
+      if (n && !(n === name(p) && kids.get(p.id).length === 1)) { out.push(c); continue }
+      const ks = (kids.get(c.id) ?? []).filter(k => !routed(k))
+      for (let k = ks.length - 1; k >= 0; k--) todo.push([ks[k], c])
+    }
+    return out
+  }
   return named(root).map(c => ({ at: name(c), count: 1, kids: callTree(c, kids, own, depth + 1) }))
 }
 
@@ -182,9 +196,14 @@ export function pruneTree(list) {
 /**
  * Sums spans up per endpoint (method and route template, from server spans) as they arrive: how
  * many requests, their statuses, the tables each read or wrote (from SQL spans under it), the code
- * it went through (spans naming a class and method: handlers, repositories), outgoing calls, the
+ * it went through (codeCalls: for each class a span of code names, the server span's own included,
+ * as the agent names it, so com.x.Foo$Inner apart from com.x.Foo, its spans by the class of the
+ * nearest span of code above them, '' when there is none but the request: { 'com.x.Repo':
+ * { 'com.x.Ctl': 2 }, 'com.x.Ctl': { '': 1 } }; observed.mjs decides from it which spans are calls
+ * into a file), outgoing calls, the
  * pages a browser made them from (Referer), and with `methods` its call tree (of `own` classes when
- * given). A trace is summed once it has had a root span and no new span for `quietMs` (a JVM exports
+ * given). A span is its nearest request's: what a request to another endpoint below it ran is that
+ * endpoint's. A trace is summed once it has had a root span and no new span for `quietMs` (a JVM exports
  * a span when it ends, a child sometimes after its parent), or once it has had no new span for
  * `staleMs` whatever came (a root in another process never comes here), and then dropped, so a long
  * run with method spans does not hold them all. Spans outside any request (startup, schedules) are
@@ -202,20 +221,31 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
     const kids = new Map()
     for (const s of group) if (s.parent && byId.has(s.parent)) { const k = kids.get(s.parent); if (k) k.push(s); else kids.set(s.parent, [s]) }
     for (const k of kids.values()) k.sort((a, b) => a.start - b.start)
-    const below = s => { const out = []; const walk = x => { for (const c of kids.get(x.id) ?? []) { out.push(c); walk(c) } }; walk(s); return out }
+    // The spans of s's request, s first, each with the class of the nearest span of code above it
+    // ('' none), in the order they started. A routed server span below s is a request of its own (one
+    // endpoint calling another) and is summed as that one. A stack, not recursion: methods nest deep.
+    function* request(s) {
+      const todo = [[s, '']]
+      while (todo.length) {
+        const [x, by] = todo.pop()
+        yield [x, by]
+        const next = codeAt(x) ? classOf(codeAt(x)) : by, ks = kids.get(x.id) ?? []
+        for (let k = ks.length - 1; k >= 0; k--) if (!routed(ks[k])) todo.push([ks[k], next])
+      }
+    }
     for (const s of group) {
-      if (s.kind === 'server' && route(s)) {
+      if (routed(s)) {
         const key = `${method(s)} ${normalRoute(route(s))}`
-        const e = endpoints.get(key) ?? { method: method(s), route: normalRoute(route(s)), count: 0, statuses: new Map(), tables: new Map(), code: new Map(), calls: new Map(), pages: new Map(), at: [], tree: [] }
+        const e = endpoints.get(key) ?? { method: method(s), route: normalRoute(route(s)), count: 0, statuses: new Map(), tables: new Map(), codeCalls: new Map(), calls: new Map(), pages: new Map(), at: [], tree: [] }
         e.count++
         if (pageOf(s)) add(e.pages, pageOf(s))
         // When and from which test file's server: the test is named once the run is over.
         const file = testFileOf(s)
         if (file) e.at.push([s.start, file])
         if (status(s) != null) add(e.statuses, String(status(s)))
-        for (const c of below(s)) {
+        for (const [c, by] of request(s)) {
           if (table(c) && operation(c)) { const ops = e.tables.get(table(c)) ?? new Set(); ops.add(operation(c)); e.tables.set(table(c), ops) }
-          if (codeAt(c)) add(e.code, codeAt(c))
+          if (codeAt(c)) { const cls = classOf(codeAt(c)), m = e.codeCalls.get(cls) ?? new Map(); add(m, by); e.codeCalls.set(cls, m) }
           if (c.kind === 'client' && (c.attrs['url.full'] || c.attrs['server.address']) && !c.attrs['db.system']) add(e.calls, `${method(c)} ${c.attrs['server.address'] ?? new URL(c.attrs['url.full']).host}`)
         }
         if (methods) mergeTrees(e.tree, callTree(s, kids, own))
@@ -264,7 +294,7 @@ export function observer({ methods = false, own = null, now = Date.now, quietMs 
           return {
             method: e.method, route: e.route, count: e.count, statuses: sorted(e.statuses),
             tables: Object.fromEntries([...e.tables].sort().map(([t, ops]) => [t, [...ops].sort()])),
-            code: sorted(e.code), calls: sorted(e.calls), pages: sorted(e.pages), tests: sorted(named), untimed,
+            codeCalls: Object.fromEntries([...e.codeCalls].sort(([a], [b]) => a.localeCompare(b)).map(([c, by]) => [c, sorted(by)])), calls: sorted(e.calls), pages: sorted(e.pages), tests: sorted(named), untimed,
             ...(methods ? { tree: pruneTree(e.tree) } : {}),
           }
         }),
@@ -287,7 +317,8 @@ const JAVA_WORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'synchroniz
 
 /** Java source with comments, text blocks, strings and characters blanked out (same length, lines kept). */
 export function javaCode(text) {
-  return text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"""[\s\S]*?(?<!\\)"""|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, m => m.replace(/[^\n]/g, ' '))
+  // A text block ends at """ after an even run of backslashes: \""" is a quote inside it, \\""" its end.
+  return text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*|"""[\s\S]*?(?<!\\)(?:\\\\)*"""|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'/g, m => m.replace(/[^\n]/g, ' '))
 }
 
 /** An identifier the agent's method list takes: plain ASCII Java names only, or it drops the whole list. */

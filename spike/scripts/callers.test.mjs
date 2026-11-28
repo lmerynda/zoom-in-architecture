@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markCallers, pageFor, pageRoutes, placeTree, TESTS_KEPT } from './observed.mjs'
+import { declaredTypes, markCallers, pageFor, pageRoutes, placeTree, TESTS_KEPT } from './observed.mjs'
 
 const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code', metadata: { path } })
 
@@ -108,7 +108,7 @@ describe('markCallers', () => {
 
   it('lists an endpoint’s pages, two addresses of one route as one page, and the tests that made it; an address no route names is only counted', () => {
     const { model, requests } = models()
-    expect(markCallers(model, requests, observed, sources)).toEqual({ pages: 2 })
+    expect(markCallers(model, requests, observed, sources, declaredTypes(sources))).toEqual({ pages: 2 })
     const ep = requests.elements[0].metadata
     expect(JSON.parse(ep.pages)).toEqual([
       { page: '/shop/:id', path: 'web/Shop.tsx', count: 3 },
@@ -127,7 +127,7 @@ describe('markCallers', () => {
 
   it('lists a page’s endpoints on its file, with the file that serves each', () => {
     const { model, requests } = models()
-    markCallers(model, requests, observed, sources)
+    markCallers(model, requests, observed, sources, declaredTypes(sources))
     const shop = model.elements.find(e => e.id === 'web.shop').metadata
     expect(shop.page).toBe('/shop/:id')
     expect(JSON.parse(shop.pageCalls)).toEqual([{ endpoint: 'POST /market/{id}/buy', count: 3, path: 'src/shop/MarketController.java' }])
@@ -140,7 +140,7 @@ describe('markCallers', () => {
   it('keeps the busiest tests by name and counts them all', () => {
     const { model, requests } = models()
     const tests = Object.fromEntries(Array.from({ length: TESTS_KEPT + 5 }, (_, k) => [`t${String(k).padStart(2, '0')}`, k + 1]))
-    markCallers(model, requests, { endpoints: [{ method: 'GET', route: '/market', count: 1, pages: {}, tests }] }, sources)
+    markCallers(model, requests, { endpoints: [{ method: 'GET', route: '/market', count: 1, pages: {}, tests }] }, sources, declaredTypes(sources))
     const m = requests.elements[2].metadata
     expect(JSON.parse(m.tests)).toHaveLength(TESTS_KEPT)
     expect(JSON.parse(m.tests)[0]).toEqual({ test: `t${TESTS_KEPT + 4}`, count: TESTS_KEPT + 5 })
@@ -149,7 +149,7 @@ describe('markCallers', () => {
 
   it('does nothing without a requests view', () => {
     const { model } = models()
-    expect(markCallers(model, null, observed, sources)).toEqual({ pages: 0 })
+    expect(markCallers(model, null, observed, sources, declaredTypes(sources))).toEqual({ pages: 0 })
     expect(model.elements.every(e => !e.metadata?.pageCalls)).toBe(true)
   })
 })
@@ -158,15 +158,57 @@ describe('placeTree', () => {
   it('places each method of a call tree at its file and the line it is declared on; tables and "more" stay as they are', () => {
     const sources = { 'src/shop/OrderService.java': 'package shop;\nclass OrderService {\n  // list() is called below\n  public List<Order> list() {\n    return repo.findAll();\n  }\n}\n' }
     const tree = [{ at: 'shop.OrderService.list', count: 2, kids: [{ at: 'SELECT orders', count: 2, kids: [] }, { at: 'shop.Missing.run', count: 1, kids: [] }, { at: '3 more', count: 4 }] }]
-    expect(placeTree(tree, Object.keys(sources), sources)).toEqual([{ at: 'shop.OrderService.list', count: 2, path: 'src/shop/OrderService.java', line: 4, kids: [
+    expect(placeTree(tree, declaredTypes(sources), sources)).toEqual([{ at: 'shop.OrderService.list', count: 2, path: 'src/shop/OrderService.java', line: 4, kids: [
       { at: 'SELECT orders', count: 2 }, { at: 'shop.Missing.run', count: 1 }, { at: '3 more', count: 4 },
     ] }])
-    expect(placeTree([], [], {})).toEqual([])
+    expect(placeTree([], new Map(), {})).toEqual([])
+  })
+
+  it('finds a method in its own class: two classes of one file, and a nested class, each with a method of one name', () => {
+    const sources = { 'src/shop/OrderController.java': [
+      'package shop;', '', 'public class OrderController {', '  static class Page {', '    List<Order> all() { return List.of(); }', '  }', '', '  public List<Order> all() {', '    return helper.all();', '  }', '}', '', 'class Helper {', '  List<Order> all() { return List.of(); }', '}', '',
+    ].join('\n') }
+    const tree = [{ at: 'shop.OrderController.all', count: 1, kids: [{ at: 'shop.Helper.all', count: 1, kids: [{ at: 'shop.OrderController$Page.all', count: 1 }, { at: 'shop.Helper.gone', count: 1 }] }] }]
+    expect(placeTree(tree, declaredTypes(sources), sources)).toEqual([{ at: 'shop.OrderController.all', count: 1, path: 'src/shop/OrderController.java', line: 8, kids: [
+      { at: 'shop.Helper.all', count: 1, path: 'src/shop/OrderController.java', line: 14, kids: [
+        { at: 'shop.OrderController$Page.all', count: 1, path: 'src/shop/OrderController.java', line: 5 },
+        // A method its class does not declare there has no line: never another class's.
+        { at: 'shop.Helper.gone', count: 1, path: 'src/shop/OrderController.java' },
+      ] },
+    ] }])
+  })
+
+  it('finds a method where its class declares it: not in an anonymous class, a call, an escaped comment, or a top-level class whose name has a "$"', () => {
+    const sources = {
+      'src/p/Work.java': [
+        'package p;', 'class Work {', '  Runnable r = new Runnable() {', '    public void run() { }', '  };', '  public void run() {', '    assert ready();', '  }', '  boolean ready() { return true; }', '  \\u002f\\u002f void list() { }', '  void list() { }', '}', '',
+      ].join('\n'),
+      'src/p/Cash$Box.java': ['package p;', 'class Cash$Box {', '  int get() { return 1; }', '  static class Inner {', '    int get() { return 2; }', '  }', '}', ''].join('\n'),
+    }
+    const tree = [{ at: 'p.Work.run', count: 1, kids: [{ at: 'p.Work.ready', count: 1 }, { at: 'p.Work.list', count: 1 }, { at: 'p.Work$1.run', count: 1 }, { at: 'p.Cash$Box$Inner.get', count: 1 }, { at: 'p.Cash$Box.get', count: 1 }] }]
+    const at = placeTree(tree, declaredTypes(sources), sources)
+    // Work$1 is the anonymous Runnable: its file is Work's, but which of Work's bodies it is the trace does not say, so no line.
+    expect([at[0].line, ...at[0].kids.map(k => k.line)]).toEqual([6, 9, 11, undefined, 5, 3])
+    expect(at[0].kids[2].path).toBe('src/p/Work.java')
+  })
+
+  it('gives no line it cannot be sure of: a lambda calling the method above it, or an overloaded name', () => {
+    const sources = { 'src/p/Work.java': ['package p;', 'class Work {', '  BooleanSupplier probe = () -> ready();', '  boolean ready() { return true; }', '  void list(int a) { }', '  void list(String a) { }', '  ResponseEntity<Order> find(long id) { }', '  ResponseEntity<?> find(String q) { }', '  byte[] raw(long id) { }', '  byte[] raw(String q) { }', '  List<Map<String, Order>> all() { }', '}', ''].join('\n') }
+    const at = placeTree(['ready', 'list', 'find', 'raw', 'all'].map(m => ({ at: `p.Work.${m}`, count: 1 })), declaredTypes(sources), sources)
+    // Overloads whatever their return types (a wildcard, an array): no line, as the trace does not say which.
+    expect(at.map(n => n.line)).toEqual([4, undefined, undefined, undefined, 11])
+    expect(at[1].path).toBe('src/p/Work.java')
+  })
+
+  it('counts a record’s components as its accessors: one overloaded in the body has no line, one alone is on the header', () => {
+    const sources = { 'src/p/Attachment.java': ['package p;', 'record Attachment(byte[] content,', '    Map<String, List<Integer>> parts) {', '  byte[] content(int maxBytes) { return content; }', '}', ''].join('\n') }
+    const at = placeTree(['content', 'parts'].map(m => ({ at: `p.Attachment.${m}`, count: 1 })), declaredTypes(sources), sources)
+    expect(at.map(n => [n.path, n.line])).toEqual([['src/p/Attachment.java', undefined], ['src/p/Attachment.java', 3]])
   })
 
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
-    markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {})
+    markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())
     expect(JSON.parse(requests.elements[0].metadata.callTree)).toEqual([{ at: 'a.B.c', count: 1 }])
   })
 })

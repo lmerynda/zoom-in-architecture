@@ -44,7 +44,7 @@ export interface RelationJson {
    * seen, or not traced. Never a count of calls across this one link: `seenOf` says what it counts.
    */
   seen?: number
-  /** What `seen` counts: `code`, how often the source file's code ran; `requests`, the requests of the endpoint the call serves. */
+  /** What `seen` counts: `code`, the calls into the source file's code (from a request or another file, not inside it); `requests`, the requests of the endpoint the call serves. */
   seenOf?: 'code' | 'requests'
   /** On a store call in the Requests view: what its endpoint's requests did to which tables ("updates kingdom_entity · reads user_entity"). */
   tables?: string

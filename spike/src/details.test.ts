@@ -55,7 +55,7 @@ describe('seenText', () => {
   })
   it('never gives a step its endpoint’s count', () => {
     const t = traced([el('ep', null, { metadata: { method: 'POST', route: '/buy', seen: '3' } }), el('ep.s', 'ep', { metadata: { role: 'step', step: '4', path: 'r.java', seen: '3' } })])
-    expect(seenText(t, t.byId.get('ep.s')!).lines).toEqual(['Ran in tests: its code ran during this endpoint’s tested requests'])
+    expect(seenText(t, t.byId.get('ep.s')!).lines).toEqual(['Seen in tests: its code was called during this endpoint’s tested requests'])
   })
   it('says an endpoint no test called, and nothing on an untraced map', () => {
     const t = traced([el('ep', null, { metadata: { method: 'GET', route: '/x', seen: '0' } })])
@@ -64,7 +64,7 @@ describe('seenText', () => {
   })
   it('counts calls into a file’s code, one and many', () => {
     const t = traced([el('f', null, { metadata: { path: 'f.ts', seen: '1' } }), el('g', null, { metadata: { path: 'g.ts', seen: '1200' } })])
-    expect([seenText(t, t.byId.get('f')!).lines, seenText(t, t.byId.get('g')!).lines]).toEqual([['Ran in tests: 1 call into its code'], ['Ran in tests: 1,200 calls into its code']])
+    expect([seenText(t, t.byId.get('f')!).lines, seenText(t, t.byId.get('g')!).lines]).toEqual([['Seen in tests: 1 call into its code'], ['Seen in tests: 1,200 calls into its code']])
   })
 })
 
@@ -137,7 +137,9 @@ describe('store arrows: a mapped relation apart from what the trace measured', (
   it('says a count in its unit, and that the call itself was not measured', () => {
     expect(measureText(3, 'requests')).toBe('3 requests of its endpoint · this call not measured')
     expect(measureText(1, 'requests')).toBe('1 request of its endpoint · this call not measured')
-    expect(measureText(48872, 'code')).toBe('its code ran 48,872 times · this call not measured')
+    // The unit a file's panel says too: calls into its code.
+    expect(measureText(48872, 'code')).toBe('48,872 calls into its code · this call not measured')
+    expect(measureText(1, 'code')).toBe('1 call into its code · this call not measured')
     // Unseen, or a count that does not say what it counts: nothing to say.
     expect(measureText(0, 'requests')).toBe('')
     expect(measureText(5, '')).toBe('')

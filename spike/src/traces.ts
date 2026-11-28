@@ -114,7 +114,7 @@ export const shortCall = (at: string) => { const p = at.split('.'); return !/\s/
  */
 function callTreeSection(nodes: CallNode[], shown: (path: string) => boolean, open: (path: string, line: number) => void): HTMLElement {
   const box = el('section', 'd-outline d-calltree')
-  box.append(el('h3', '', 'Call tree in tests'), el('p', 'd-hint', 'The project’s own methods its tested requests ran, as they called each other, with how often.'))
+  box.append(el('h3', '', 'Call tree in tests'), el('p', 'd-hint', 'The project’s own methods its tested requests called, as they called each other, with how often.'))
   const list = (ns: CallNode[], depth: number): HTMLElement => {
     const ul = el('ul')
     if (depth === 0) ul.setAttribute('aria-label', 'Call tree in tests')

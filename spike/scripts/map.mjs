@@ -8,7 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, posix, resolve } from 'node:path'
 import { buildGraph } from './graph.mjs'
 import { buildRequests } from './requests.mjs'
-import { markCallers, markObserved } from './observed.mjs'
+import { declaredTypes, markCallers, markObserved } from './observed.mjs'
 import { isName } from './store.mjs'
 
 /** Node kinds a map may use, and how the viewer draws them. */
@@ -360,10 +360,13 @@ export function bundle(repo, map, { name = toName(repo), loose = false, observed
     if (statSync(file).size <= MAX_SOURCE) sources[p] = readFileSync(file, 'utf8')
   }
   const requests = buildRequests(graph, map, built.model)
+  // The model's Java types, so the classes a trace names find their files; a file too large to upload is still read.
+  const java = observed ? built.model.elements.map(e => e.metadata?.path).filter(p => p?.endsWith('.java')) : []
+  const types = declaredTypes(Object.fromEntries(java.map(p => [p, sources[p] ?? readFileSync(join(graph.repo, p), 'utf8')])))
   // What the project's own end-to-end tests ran (zoom trace): seen versus only inferred.
-  const coverage = observed ? markObserved(built.model, requests, observed) : null
+  const coverage = observed ? markObserved(built.model, requests, observed, types) : null
   // Which pages and tests made each request, when the trace says.
-  if (observed) markCallers(built.model, requests, observed, sources)
+  if (observed) markCallers(built.model, requests, observed, sources, types)
   const ms = Date.now() - t0
   return {
     name, ...built, ms,

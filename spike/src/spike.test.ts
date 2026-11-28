@@ -5,7 +5,7 @@ import { aggregateEdges, arrowLabel, plainDoc, ranInTests, Tree, type ModelJson 
 import { citedLines, codeBox, codeLayout, holdMinimap, lineHtml, linePoint, parseMarks, splitLines, viewWindow } from './code'
 import { langOf, tokenize, type LineState } from './syntax'
 import { glyphOf } from './icons'
-import { breaks, clipToScreen, dashes, fitText, junctions, repeatsNearby, shortText, titlePx, weightTier } from './render'
+import { breaks, clipToScreen, dashes, fitText, junctions, repeatsNearby, seenText as cardSeen, shortText, titlePx, weightTier } from './render'
 import { synthetic } from './synthetic'
 
 const el = (id: string, parent: string | null) => ({
@@ -465,6 +465,15 @@ describe('flight (van Wijk–Nuij)', () => {
   it('pulls back while crossing a long distance', () => {
     const f = flight(0, 0, 100, 100000, 0, 100)
     expect(f.at(f.S / 2)[2]).toBeGreaterThan(5000)
+  })
+})
+
+describe('a card’s trace badge', () => {
+  it('says what the trace saw, not that code ran: a step seen, a file’s calls, nothing untraced', () => {
+    expect(cardSeen({ metadata: { role: 'step', seen: '3' } }, true)).toBe('seen in tests')
+    expect(cardSeen({ metadata: { role: 'step', seen: '0' } }, true)).toBe('')
+    expect([cardSeen({ metadata: { seen: '1' } }, true), cardSeen({ metadata: { seen: '1200' } }, true)]).toEqual(['1 call in tests', '1,200 calls in tests'])
+    expect(cardSeen({ metadata: { seen: '3' } }, false)).toBe('')
   })
 })
 

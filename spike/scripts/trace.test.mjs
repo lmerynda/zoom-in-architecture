@@ -34,7 +34,8 @@ describe('observe', () => {
       method: 'POST', route: '/market/{id}/buy', count: 2,
       statuses: { 200: 1, 401: 1 },
       tables: { offers: ['SELECT', 'UPDATE'] },
-      code: { 'shop.MarketController.buy': 1, 'shop.OfferRepository.findById': 1 },
+      // Each class's spans by the class whose span they ran under: the handler under the request itself ('').
+      codeCalls: { 'shop.MarketController': { '': 1 }, 'shop.OfferRepository': { 'shop.MarketController': 1 } },
       calls: { 'GET payments.example': 1 }, pages: {}, tests: {}, untimed: 0,
     }])
     // Work outside any request is kept apart: startup and schedules.
@@ -81,8 +82,68 @@ describe('observe', () => {
     expect(testRuns('')).toEqual([])
   })
 
+  it('says under which class each span of code ran: one call seen as two spans, a call inside a class, a class nested in another, a library between', () => {
+    const a = span('server', 'GET /offers', { 'http.request.method': 'GET', 'http.route': '/offers' })
+    // The agent's controller span over the method's own span: one call, two spans of one class.
+    const ctl = span('internal', 'OfferController.list', { 'code.namespace': 'shop.OfferController', 'code.function': 'list' }, a.id)
+    const own = span('internal', 'OfferController.list', { 'code.namespace': 'shop.OfferController', 'code.function': 'list' }, ctl.id)
+    // A span the trace names no class for (a transaction) passes its caller through.
+    const tx = span('internal', 'Transaction', {}, own.id)
+    const page = span('internal', 'Offer$Page.of', { 'code.function.name': 'shop.Offer$Page::of' }, tx.id)
+    const inner = span('internal', 'Offer.sort', { 'code.namespace': 'shop.Offer', 'code.function': 'sort' }, page.id)
+    // A library's class with a span of its own is a caller like any other.
+    const lib = span('internal', 'Cache.get', { 'code.namespace': 'lib.Cache', 'code.function': 'get' }, own.id)
+    const back = span('internal', 'Offer.load', { 'code.namespace': 'shop.Offer', 'code.function': 'load' }, lib.id)
+    // Names in any script.
+    const ü = span('internal', 'Größe.maß', { 'code.namespace': 'läden.Größe', 'code.function': 'maß' }, own.id)
+    const o = observe([a, ctl, own, tx, page, inner, lib, back, ü])
+    expect(o.endpoints[0].codeCalls).toEqual({
+      'lib.Cache': { 'shop.OfferController': 1 },
+      'läden.Größe': { 'shop.OfferController': 1 },
+      'shop.Offer': { 'lib.Cache': 1, 'shop.Offer$Page': 1 },
+      'shop.Offer$Page': { 'shop.OfferController': 1 },
+      'shop.OfferController': { '': 1, 'shop.OfferController': 1 },
+    })
+  })
+
+  it('gives each span to the request it ran in: a request one endpoint makes to another is that one’s, its code and tables too', () => {
+    const front = span('server', 'GET /front', { 'http.request.method': 'GET', 'http.route': '/front' })
+    const f = span('internal', 'Front.handle', { 'code.namespace': 'shop.Front', 'code.function': 'handle' }, front.id)
+    const out = span('client', 'GET', { 'http.request.method': 'GET', 'server.address': 'localhost', 'url.full': 'http://localhost/back' }, f.id)
+    // The server span names its handler itself (code.function.name on it, as some instrumentations do).
+    const back = span('server', 'GET /back', { 'http.request.method': 'GET', 'http.route': '/back', 'code.function.name': 'shop.Back.handle' }, out.id)
+    const b = span('internal', 'BackRepository.find', { 'code.namespace': 'shop.BackRepository', 'code.function': 'find' }, back.id)
+    const q = span('client', 'SELECT shop.back', { 'db.system': 'h2', 'db.sql.table': 'back', 'db.operation': 'SELECT' }, b.id)
+    const o = observe([front, f, out, back, b, q])
+    const at = r => o.endpoints.find(e => e.route === r)
+    expect([at('/front').codeCalls, at('/front').tables, at('/front').calls]).toEqual([{ 'shop.Front': { '': 1 } }, {}, { 'GET localhost': 1 }])
+    expect([at('/back').codeCalls, at('/back').tables]).toEqual([{ 'shop.Back': { '': 1 }, 'shop.BackRepository': { 'shop.Back': 1 } }, { back: ['SELECT'] }])
+  })
+
+  it('sums a request whose method spans nest thousands deep', () => {
+    const s = span('server', 'GET /deep', { 'http.request.method': 'GET', 'http.route': '/deep' })
+    const spans = [s]
+    for (let k = 0; k < 20000; k++) spans.push(span('internal', 'Walker.step', { 'code.namespace': 'shop.Walker', 'code.function': 'step' }, spans[spans.length - 1].id))
+    expect(observe(spans).endpoints[0].codeCalls).toEqual({ 'shop.Walker': { '': 1, 'shop.Walker': 19999 } })
+  })
+
+  it('adds up the spans of many requests per class and caller, the busiest caller first', () => {
+    const spans = []
+    for (let k = 0; k < 12; k++) {
+      const s = span('server', 'GET /offers', { 'http.request.method': 'GET', 'http.route': '/offers' })
+      const c = span('internal', 'OfferController.list', { 'code.namespace': 'shop.OfferController', 'code.function': 'list' }, s.id)
+      const r = span('internal', 'OfferRepository.find', { 'code.namespace': 'shop.OfferRepository', 'code.function': 'find' }, c.id)
+      spans.push({ ...s, trace: `t${k}` }, { ...c, trace: `t${k}` }, { ...r, trace: `t${k}` })
+      if (k < 2) spans.push({ ...span('internal', 'OfferRepository.find', { 'code.namespace': 'shop.OfferRepository', 'code.function': 'find' }, s.id), trace: `t${k}` })
+    }
+    const { codeCalls } = observe(spans).endpoints[0]
+    expect(codeCalls).toEqual({ 'shop.OfferController': { '': 12 }, 'shop.OfferRepository': { 'shop.OfferController': 12, '': 2 } })
+    expect(Object.keys(codeCalls['shop.OfferRepository'])).toEqual(['shop.OfferController', ''])
+  })
+
   it('observes nothing in no spans, and skips server spans with no route (static files, 404s)', () => {
     expect(observe([]).endpoints).toEqual([])
+    expect(observe([span('server', 'GET /x', { 'http.request.method': 'GET', 'http.route': '/x' })]).endpoints[0].codeCalls).toEqual({})
     expect(observe([span('server', 'GET', { 'http.request.method': 'GET' })]).endpoints).toEqual([])
   })
 })
