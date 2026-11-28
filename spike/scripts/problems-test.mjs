@@ -537,8 +537,9 @@ try {
   st = await state()
   check('there ] with nothing selected says to select a card', /Select a card first/.test(st.toast), JSON.stringify(st))
 
-  // This repo's own map: nothing to flag says so and how it was judged; the search command keeps the selection.
-  await open('model=zoom-in-architecture')
+  // A code map with nothing to flag (RealWorld on Express) says so and how it was judged; the search
+  // command keeps the selection. This repo's own map is not one: it lists its own cycles.
+  await open('model=rw-node-express')
   await page.click('.d-problems > summary')
   await sleep(300)
   const none = await page.evaluate(() => ({ summary: document.querySelector('.d-problems > summary')?.textContent, text: document.querySelector('.d-problems .d-hint')?.textContent, warn: window.__spike.renderer.warn, legend: !!document.querySelector('#arrows .a-problem') }))
@@ -546,8 +547,8 @@ try {
   await key(']')
   st = await state()
   check('there ] with nothing selected falls back to its usual hint', /Select a card first/.test(st.toast) && st.note === null, JSON.stringify(st))
-  await shot('zia-none')
-  await page.evaluate(() => window.__spike.select(window.__spike.id('developer')))
+  await shot('rw-none')
+  const picked = await page.evaluate(() => { const s = window.__spike; s.select(s.tree.children[0][0]); return s.renderer.selected })
   await focusMap()
   await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control')
   await page.keyboard.type('>problems')
@@ -555,7 +556,7 @@ try {
   await page.keyboard.press('Enter')
   await sleep(300)
   st = await state()
-  check('the search command on a map with none says so and keeps the selection', /No problems found/.test(st.toast) && st.selected === await page.evaluate(() => window.__spike.id('developer')), JSON.stringify(st))
+  check('the search command on a map with none says so and keeps the selection', /No problems found/.test(st.toast) && picked > 0 && st.selected === picked, JSON.stringify(st))
 
   // Galaxy Wars: a larger map with uses against the grain; stepping works there and the mark holds.
   await open('model=galaxy-wars')

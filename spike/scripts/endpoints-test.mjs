@@ -143,12 +143,16 @@ try {
     }
   })
   await shot('04-buy-effects')
+  // The counts are the published trace's: KoD's simulation tests make a different number of calls
+  // each run, so the expected text is read from the model the viewer was given, in its grouping.
+  const traced = (await fetch(new URL('models/knights-of-darkness.requests.json', base)).then(r => r.json())).elements.find(e => e.id === 'backend.market.e1').metadata
+  const grouped = s => s.replace(/\d+/g, n => Number(n).toLocaleString('en-US'))
   check('buy leads with takes, reads and writes, returns and callers, steps after', buy.order.slice(0, 5).join() === 'Takes,Reads and writes,Returns,Called by,Implementation steps', JSON.stringify(buy.order))
   check('buy takes its id from the path and the DTO it is sent', buy.takes.includes('id') && buy.takes.includes('BuyMarketOfferDto') && !buy.takes.includes('MarketPurchaseDto'), JSON.stringify(buy.takes))
-  check('buy returns ActionResult<MarketPurchaseDto>, with the statuses the tests saw', buy.returns === 'ActionResult<MarketPurchaseDto>' && /200 ×6,654 · 400 ×11 · 401 ×5 · 409 ×5/.test(buy.statuses), JSON.stringify(buy))
+  check('buy returns ActionResult<MarketPurchaseDto>, with the statuses the tests saw', buy.returns === 'ActionResult<MarketPurchaseDto>' && buy.statuses === `Statuses in tests: ${grouped(traced.statuses)}`, JSON.stringify(buy))
   check('buy names the tables it writes in tests, apart from the store call on its code path, and says they differ', buy.writes.some(w => w.startsWith('market_offer_entity') && w.endsWith('deletes, updates')) && buy.writes.length === 4 && buy.code === 'Game database' && /^4 of the 5 tables the tests saw are not on the code path the map follows \(market_offer_entity, market_transaction_entity, notification_entity, user_entity\)/.test(buy.note), JSON.stringify(buy))
   check('buy is called by the game client (outside the trace) and the development tools', buy.callers.some(c => c.startsWith('Game client|outside the trace')) && buy.callers.some(c => c.startsWith('Development tools|')), JSON.stringify(buy.callers))
-  check('buy says it was seen in tests and who handles it; its steps are one expand away', /Seen in tests: 6,675 HTTP requests/.test(buy.seen) && buy.handler === 'Handled by MarketController.buyOffer' && buy.folded, JSON.stringify(buy))
+  check('buy says it was seen in tests and who handles it; its steps are one expand away', buy.seen === `Seen in tests: ${grouped(traced.seen)} HTTP requests · ${grouped(traced.statuses)}` && buy.handler === 'Handled by MarketController.buyOffer' && buy.folded, JSON.stringify(buy))
   await clickText('#details .d-impl .d-more', 'Implementation steps')
   check('Implementation steps opens the request in order', await page.evaluate(() => !document.querySelector('.d-impl > div').hidden && document.querySelector('.d-impl .d-steps h3')?.textContent === 'The request, in order'))
   const response = await page.evaluate(() => { const s = window.__spike; return s.tree.els[s.id('backend.market.e1.response')].description })
