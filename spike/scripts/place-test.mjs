@@ -144,7 +144,7 @@ try {
     return { steps: steps.length, ordered, span, at: document.querySelector('.reader pre .at i')?.textContent.trim() }
   })
   check('an endpoint’s steps read in order', lane.steps > 1 && lane.ordered, JSON.stringify(lane))
-  check('a handler opens at its method, not the route line', lane.span?.startsWith('166-') && lane.at === '166', JSON.stringify(lane))
+  check('a handler opens at its method, not the route line', lane.span?.startsWith('157-') && lane.at === '157', JSON.stringify(lane))
   await shot('03-request-step')
   await page.keyboard.press('Escape')
   await open('model=knights-of-darkness')

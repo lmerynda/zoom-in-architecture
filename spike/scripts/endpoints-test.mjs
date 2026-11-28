@@ -67,7 +67,7 @@ try {
   await page.goto(`${base}?${map}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.__spike?.ready && document.querySelector('#welcome button.api'), { timeout: 60000 })
   const welcome = await page.evaluate(() => document.getElementById('welcome').textContent)
-  check('the welcome counts apps, a database and the endpoints, with See the API', /2 apps, 1 database, 2 people, 1 system, 67 endpoints, 19 features/.test(welcome) && /See the API · 67/.test(welcome), welcome)
+  check('the welcome counts apps, a database and the endpoints, with See the API', /2 apps, 1 database, 2 people, 1 system, 67 endpoints, 21 features/.test(welcome) && /See the API · 67/.test(welcome), welcome)
   await shot('01-welcome')
   await page.click('#welcome button.api')
   await sleep(300)
