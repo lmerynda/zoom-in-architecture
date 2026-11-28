@@ -200,6 +200,12 @@ describe('placeTree', () => {
     expect(at[1].path).toBe('src/p/Work.java')
   })
 
+  it('counts a record’s components as its accessors: one overloaded in the body has no line, one alone is on the header', () => {
+    const sources = { 'src/p/Attachment.java': ['package p;', 'record Attachment(byte[] content,', '    Map<String, List<Integer>> parts) {', '  byte[] content(int maxBytes) { return content; }', '}', ''].join('\n') }
+    const at = placeTree(['content', 'parts'].map(m => ({ at: `p.Attachment.${m}`, count: 1 })), declaredTypes(sources), sources)
+    expect(at.map(n => [n.path, n.line])).toEqual([['src/p/Attachment.java', undefined], ['src/p/Attachment.java', 3]])
+  })
+
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
     markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())

@@ -31,7 +31,7 @@ function typeAt(code, i) {
   let depth = 0
   const head = code.slice(j + 1, i).split('').map(c => { if (c === '(') depth++; const out = depth ? ' ' : c; if (c === ')') depth--; return out }).join('')
   const name = TYPE_DECL.exec(head)?.[1]
-  return name ? ignorable(name) : null
+  return name ? { name: ignorable(name), head: j + 1 } : null
 }
 
 /**
@@ -47,9 +47,9 @@ function javaTypes(code) {
     if (code[i] === '{') {
       // A type is declared at the top or straight in a type's body.
       const parent = open.length ? open[open.length - 1] : { name: '', binary: '' }
-      const own = parent.name !== null ? typeAt(code, i) : null
+      const decl = parent.name !== null ? typeAt(code, i) : null, own = decl?.name
       const block = own
-        ? { name: parent.name ? `${parent.name}.${own}` : own, binary: parent.binary ? `${parent.binary}$${own}` : own, open: i, close: code.length }
+        ? { name: parent.name ? `${parent.name}.${own}` : own, binary: parent.binary ? `${parent.binary}$${own}` : own, head: decl.head, open: i, close: code.length }
         : { name: null, binary: null, open: i, close: code.length }
       open.push(block)
       if (own) types.push(block)
@@ -408,6 +408,21 @@ function methodLines(file, cls) {
   let depth = 0
   const own = file.code.slice(t.open + 1, t.close).split('').map(c => { if (c === '}') depth--; const out = depth > 0 && c !== '\n' ? ' ' : c; if (c === '{') depth++; return out }).join('')
   const lines = new Map()
+  // A record's components are accessors it declares, each on its component's line.
+  const rec = new RegExp(`(?<![${ID_PART}])record\\s+[${ID_START}][${ID_PART}]*\\s*(?:<[^(]*>)?\\s*\\(`, 'u').exec(file.code.slice(t.head, t.open))
+  if (rec) {
+    let depth = 0, part = t.head + rec.index + rec[0].length
+    for (let k = part; k < t.open && depth >= 0; k++) {
+      const c = file.code[k]
+      if ('(<['.includes(c)) depth++
+      else if (')>]'.includes(c)) depth--
+      if ((c === ',' && depth === 0) || depth < 0) {
+        const m = new RegExp(`([${ID_START}][${ID_PART}]*)\\s*$`, 'u').exec(file.code.slice(part, k))
+        if (m) { const name = m[1], from = part + m.index; lines.set(name, lines.has(name) ? null : file.code.slice(0, from).split('\n').length) }
+        part = k + 1
+      }
+    }
+  }
   let line = file.code.slice(0, t.open + 1).split('\n').length, at = 0
   for (const m of own.matchAll(new RegExp(`(?<![${ID_PART}.])([${ID_START}][${ID_PART}]*)\\s*\\(`, 'gu'))) {
     for (; at < m.index; at++) if (own[at] === '\n') line++
