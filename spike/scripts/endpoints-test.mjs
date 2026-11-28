@@ -397,7 +397,8 @@ try {
   check('User settings, whose words name every users route alike, claims none of them', same(us, { own: [], shared: users }), JSON.stringify(us))
   // A switch back before the Requests model arrives still returns to the card left.
   await open(`${map}&view=requests&at=backend.market.e1.response`)
-  await sleep(500)
+  // The view links carry the request once the place is written: wait for that, not a fixed time.
+  await page.waitForFunction(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture')?.href.includes('req='), { timeout: 30000 })
   const toA = await page.evaluate(() => [...document.querySelectorAll('#views a')].find(a => a.textContent === 'Architecture').href)
   await page.setRequestInterception(true)
   const hold = r => { if (r.url().includes('knights-of-darkness.requests.json')) setTimeout(() => r.continue(), 4000); else r.continue() }
