@@ -192,6 +192,13 @@ describe('placeTree', () => {
     expect(at[0].kids[2].path).toBe('src/p/Work.java')
   })
 
+  it('gives no line it cannot be sure of: a lambda calling the method above it, or an overloaded name', () => {
+    const sources = { 'src/p/Work.java': ['package p;', 'class Work {', '  BooleanSupplier probe = () -> ready();', '  boolean ready() { return true; }', '  void list(int a) { }', '  void list(String a) { }', '}', ''].join('\n') }
+    const at = placeTree([{ at: 'p.Work.ready', count: 1 }, { at: 'p.Work.list', count: 1 }], declaredTypes(sources), sources)
+    expect(at.map(n => n.line)).toEqual([4, undefined])
+    expect(at[1].path).toBe('src/p/Work.java')
+  })
+
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
     markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())

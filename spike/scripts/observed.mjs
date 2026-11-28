@@ -7,9 +7,12 @@ import { javaCode, normalRoute } from './trace.mjs'
 
 /**
  * Java source with its Unicode escapes read (A is A), as the compiler reads them before anything
- * else. An escaped line break stays escaped, so every line keeps its number.
+ * else. With `keepLines`, an escaped line break stays escaped, so every line keeps its number (for
+ * placing a method on its line; what it may hide is then not placed).
  */
-const unescapeJava = text => text.replace(/(?<!\\)((?:\\\\)*)\\u+([0-9a-fA-F]{4})/g, (m, run, hex) => (/^000[aAdD]$/.test(hex) ? m : run + String.fromCharCode(parseInt(hex, 16))))
+const unescapeJava = (text, keepLines = false) => text.replace(/(?<!\\)((?:\\\\)*)\\u+([0-9a-fA-F]{4})/g, (m, run, hex) => (keepLines && /^000[aAdD]$/.test(hex) ? m : run + String.fromCharCode(parseInt(hex, 16))))
+/** What Java leaves out of a name (JLS 3.8, Character.isIdentifierIgnorable): format and some control characters. */
+const ignorable = name => name.replace(/[\u0000-\u0008\u000E-\u001B\u007F-\u009F\p{Cf}]/gu, '')
 
 /** A Java identifier's characters (JLS 3.8): letters, currency signs, connectors, then also digits and combining marks. */
 const ID_START = '\\p{L}\\p{Nl}\\p{Sc}\\p{Pc}', ID_PART = `${ID_START}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Cf}`
@@ -27,7 +30,8 @@ function typeAt(code, i) {
   // What is in parentheses (annotations' values, a record's components) is never the declaration.
   let depth = 0
   const head = code.slice(j + 1, i).split('').map(c => { if (c === '(') depth++; const out = depth ? ' ' : c; if (c === ')') depth--; return out }).join('')
-  return TYPE_DECL.exec(head)?.[1] ?? null
+  const name = TYPE_DECL.exec(head)?.[1]
+  return name ? ignorable(name) : null
 }
 
 /**
@@ -55,7 +59,7 @@ function javaTypes(code) {
 }
 
 /** A Java source's code as javaTypes and placeTree read it: escapes read, comments and strings blanked. */
-const javaRead = text => javaCode(unescapeJava(text))
+const javaRead = (text, keepLines = false) => javaCode(unescapeJava(text, keepLines))
 
 /**
  * The types the Java files of `texts` ({ path: source }) declare: a Map of each type's full name to
@@ -80,21 +84,24 @@ export function declaredTypes(texts) {
 /**
  * Each class's file, among `types` (declaredTypes): the file that declares a type of that very name.
  * The agent names an anonymous or local class com.x.Foo$1 or com.x.Foo$1Local, a lambda
- * com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0: with no type of its name, it is cut at
- * its "$"s from the end until one is declared; a "$" with a dot after it is in a package's name,
- * never cut. A class no file declares (a library's), or two files do, has none: which file ran is
- * not known.
+ * com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0: such a class is also its enclosing
+ * type's, found by cutting the name at a "$" followed by a digit or another "$" (never at a named
+ * member, Foo$Codec, which must be declared as it is, nor at a "$" with a dot after it, in a
+ * package's name). A class no file declares (a library's), or more than one file may hold (two
+ * modules declare it, or one declares Foo$1 and another the Foo it could be anonymous in), has none:
+ * which file ran is not known.
  */
 export function classFiles(types, classes) {
   const out = new Map()
   for (const c of classes) {
-    for (let k = c.length; k > 0; k = c.lastIndexOf('$', k - 1)) {
+    const files = new Set(types.get(c) ?? [])
+    for (let k = c.lastIndexOf('$'); k > 0; k = c.lastIndexOf('$', k - 1)) {
       if (c.slice(k).includes('.')) break
-      const hits = types.get(c.slice(0, k))
-      if (!hits) continue
-      if (hits.length === 1) out.set(c, hits[0])
+      if (!/^\$(?:\$|\d|$)/.test(c.slice(k)) || !types.has(c.slice(0, k))) continue
+      for (const f of types.get(c.slice(0, k))) files.add(f)
       break
     }
+    if (files.size === 1) out.set(c, [...files][0])
   }
   return out
 }
@@ -387,10 +394,10 @@ export const TESTS_KEPT = 40
 
 /**
  * Where each method a Java source's type declares is: for the type `cls` (its full binary or dotted
- * name), the line of each method name declared straight in its body, the first of a name. Bodies of
- * methods, initializers and the types inside it do not count, so neither does a call, an anonymous
- * class's method or another class's of the file. Its name after a type (on this line or the one
- * before), not after "return", "new" or a dot. Null when the file declares no type of that name: an
+ * name), the line of each method name declared straight in its body once; an overloaded name has
+ * none, as the trace does not say which. Bodies of methods, initializers and the types inside it do
+ * not count, so neither does a call, an anonymous class's method or another class's of the file. Its
+ * name after a type (on this line or the one before), not after "return", "new", "->" or a dot. Null when the file declares no type of that name: an
  * anonymous or local class (Foo$1) is in its file, but which body it is the trace does not say.
  */
 function methodLines(file, cls) {
@@ -405,8 +412,9 @@ function methodLines(file, cls) {
   for (const m of own.matchAll(new RegExp(`(?<![${ID_PART}.])([${ID_START}][${ID_PART}]*)\\s*\\(`, 'gu'))) {
     for (; at < m.index; at++) if (own[at] === '\n') line++
     const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(own.slice(Math.max(0, m.index - 200), m.index))
-    if (!before || !/\s/.test(own[m.index - 1] ?? '') || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
-    if (!lines.has(m[1])) lines.set(m[1], line)
+    if (!before || !/[\p{L}_$]/u.test(before[1]) || !/\s/.test(own[m.index - 1] ?? '') || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
+    // A name declared twice (overloads) gets no line.
+    lines.set(m[1], lines.has(m[1]) ? null : line)
   }
   return lines
 }
@@ -423,7 +431,7 @@ export function placeTree(tree, types, sources, placed = new Map()) {
   walk(tree)
   const fileOf = classFiles(types, [...classes])
   const lineOf = (path, cls, name) => {
-    if (!placed.has(path)) { const code = javaRead(sources[path] ?? ''); placed.set(path, { code, ...javaTypes(code), lines: new Map() }) }
+    if (!placed.has(path)) { const code = javaRead(sources[path] ?? '', true); placed.set(path, { code, ...javaTypes(code), lines: new Map() }) }
     const file = placed.get(path)
     if (!file.lines.has(cls)) file.lines.set(cls, methodLines(file, cls))
     return file.lines.get(cls)?.get(name) ?? null

@@ -42,6 +42,25 @@ describe('declaredTypes', () => {
     expect([...types.keys()].sort()).toEqual(['p.A', 'p.Café', 'p.X$class'])
   })
 
+  it('reads an escaped line break as one, and leaves out what Java ignores in a name', () => {
+    const types = declaredTypes({
+      'src/p/Handlers.java': java('p', '// header\\u000a class Outer$Handler { }'),
+      'src/p/Cafe.java': java('p', 'class Ca​fe { }'),
+    })
+    expect([...types.keys()].sort()).toEqual(['p.Cafe', 'p.Outer$Handler'])
+  })
+
+  it('cuts a binary name only at an anonymous, local or generated class, and places none a named class elsewhere could be', () => {
+    const types = declaredTypes({
+      'a/p/Price.java': java('p', 'class Price { }'),
+      'a/p/Outer.java': java('p', 'class Outer { }'), 'b/p/Outer$1.java': java('p', 'class Outer$1 { }'),
+    })
+    // A dependency's Price$Codec is no member Price.java declares; Outer$1 may be a's anonymous class or b's class of that name.
+    expect(classFiles(types, ['p.Price$Codec', 'p.Price$1', 'p.Price$1Local', 'p.Price$$Lambda/0x01', 'p.Outer$1', 'p.Outer$2'])).toEqual(new Map([
+      ['p.Price$1', 'a/p/Price.java'], ['p.Price$1Local', 'a/p/Price.java'], ['p.Price$$Lambda/0x01', 'a/p/Price.java'], ['p.Outer$2', 'a/p/Outer.java'],
+    ]))
+  })
+
   it('lists a member type under its binary name too, so a top-level class of that name elsewhere makes it ambiguous', () => {
     const types = declaredTypes({ 'a/p/Outer.java': java('p', 'class Outer { class Inner { } }'), 'b/p/Outer$Inner.java': java('p', 'class Outer$Inner { }') })
     expect(types).toEqual(new Map([['p.Outer', ['a/p/Outer.java']], ['p.Outer$Inner', ['a/p/Outer.java', 'b/p/Outer$Inner.java']], ['p.Outer.Inner', ['a/p/Outer.java']]]))
