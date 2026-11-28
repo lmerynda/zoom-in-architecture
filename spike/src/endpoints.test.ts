@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { searchMap } from './controls/logic'
-import { buildApi, callsIn, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
+import { buildApi, callsIn, clientParts, endpointOf, featureFacts, filterApi, groupApi, declLine, handlerParams, isPage, markedEntries, mergeTables, methodCounts, namedWords, routeParams, servedBy, takenTypes, topCounts } from './endpoints'
 import type { ElementJson, EntryPointJson, ModelJson } from './model'
 import { placeUrl } from './places'
 
@@ -237,6 +237,77 @@ describe('featureFacts', () => {
     const shown = [...shared, el('app.owner.d', 'app.owner', { features: ['Owner information'], metadata: { path: 'templates/owners/ownerDetails.html' } })]
     const api2 = buildApi({ name: 'p', elements: [el('app', null), ...ep('app.e1', 'GET /owners/{ownerId}', 'showOwner'), el('app.e1.v', 'app.e1', { title: '2 · ownerDetails', metadata: { path: 'templates/owners/ownerDetails.html' } }), ...ep('app.e2', 'POST /owners/new', 'processCreationForm')], relations: [] })
     expect(featureFacts(shown, api2, 'Owner information').endpoints.map(e => e.title)).toEqual(['GET /owners/{ownerId}'])
+  })
+  /** A handler file `path` carrying `features`, and its routes: [title, method, returns, extra card paths]. */
+  const handler = (path: string, features: string[], routes: [string, string, string?, string[]?][], more: ElementJson[] = []) => {
+    const arch = [el('app', null, { kind: 'app' }), el('app.c', 'app', { features, metadata: { path } }), ...more]
+    const elements = [el('api', null), ...routes.flatMap(([title, m, ret, cards], k) => [
+      el(`api.e${k}`, 'api', { title, description: ret ? `${title}: C.${m} returns ${ret} as JSON.` : '' }),
+      el(`api.e${k}.s1`, `api.e${k}`, { title: `1 · ${m}()`, metadata: { path } }),
+      ...(cards ?? []).map((p, j) => el(`api.e${k}.s${j + 2}`, `api.e${k}`, { title: `${j + 2} · ${p}`, metadata: { path: p } })),
+    ])]
+    return { arch, api: buildApi({ name: 'r', elements, relations: [] }) }
+  }
+  const own = (f: ReturnType<typeof featureFacts>) => f.endpoints.map(e => e.title)
+  it('names a route by a feature’s words joined as code writes them, and by none of its parameters', () => {
+    expect(namedWords('Sign up', '/api/v1/users/signup', 'register_user')).toBe(1)
+    expect(namedWords('Signup', '/sign-up', '')).toBe(1)
+    expect(namedWords('Log in', '/auth', 'logIn')).toBe(1)
+    expect(namedWords('Find owners', '/owners/find', 'initFindForm')).toBe(2)
+    // A route of parameters only is named by its method alone.
+    expect(namedWords('Owner', '/{owner}', '')).toBe(0)
+    expect(namedWords('Owner', '/:owner/<int:owner>', 'show')).toBe(0)
+    expect(namedWords('Show article', '/{slug}', 'showArticle')).toBe(2)
+    // Any script: Página is a word, not "gina"; a plural folds.
+    expect(namedWords('Página de pedidos', '/pedidos/{id}', 'verPágina')).toBe(2)
+    expect(namedWords('Zélan', '/zélan/{slug}', '')).toBe(1)
+    expect(namedWords('Zélan', '/lan', '')).toBe(0)
+    // No words of its own: nothing to name.
+    expect(namedWords('', '/a', 'b')).toBe(0)
+    expect(namedWords('UI', '/ui', 'ui')).toBe(0)
+  })
+  it('gives Sign up its signup route and leaves the users file’s others apart', () => {
+    const { arch, api } = handler('users.py', ['User administration', 'Sign up', 'User settings'], [['GET /users', 'read_users'], ['POST /users/signup', 'register_user'], ['PATCH /users/me', 'update_user_me']])
+    const up = featureFacts(arch, api, 'Sign up')
+    expect(own(up)).toEqual(['POST /users/signup'])
+    expect(up.shared.map(e => e.title)).toEqual(['GET /users', 'PATCH /users/me'])
+    // "user" names every route alike: User settings claims none.
+    expect(own(featureFacts(arch, api, 'User settings'))).toEqual([])
+  })
+  it('claims nothing for a feature with no words, even a handler’s only route', () => {
+    const one = handler('ui.py', ['UI', 'Admin'], [['GET /ui', 'ui']])
+    expect(own(featureFacts(one.arch, one.api, 'UI'))).toEqual([])
+    expect(featureFacts(one.arch, one.api, 'UI').shared.length).toBe(1)
+    const two = handler('ui.py', ['UI', 'Admin'], [['GET /x', 'x'], ['GET /y', 'y']])
+    expect(own(featureFacts(two.arch, two.api, 'UI'))).toEqual([])
+  })
+  it('lists apart a route whose word matches two features, giving it to the one that tells it from the rest', () => {
+    const { arch, api } = handler('orders.py', ['Export orders', 'Order history'], [['GET /orders', 'list_orders'], ['GET /orders/export', 'export_orders']])
+    expect(own(featureFacts(arch, api, 'Export orders'))).toEqual(['GET /orders/export'])
+    const hist = featureFacts(arch, api, 'Order history')
+    expect(own(hist)).toEqual([])
+    expect(hist.shared.map(e => e.title)).toEqual(['GET /orders', 'GET /orders/export'])
+  })
+  it('gives non-ASCII features the routes their words name', () => {
+    const { arch, api } = handler('Reservas.java', ['Página de reservas', 'Anulación'], [['GET /reservas', 'verPágina'], ['POST /anulación/{id}', 'anular']])
+    expect(own(featureFacts(arch, api, 'Página de reservas'))).toEqual(['GET /reservas'])
+    expect(own(featureFacts(arch, api, 'Anulación'))).toEqual(['POST /anulación/{id}'])
+  })
+  it('gives a feature the route whose answer is a type only it carries among the handler’s features', () => {
+    const vets = 'vet/Vets.java', page = 'templates/vets/vetList.html'
+    const more = [el('app.v', 'app', { features: ['Vets as JSON or XML'], metadata: { path: vets } }), el('app.l', 'app', { features: ['Veterinarians'], metadata: { path: page } })]
+    const { arch, api } = handler('vet/VetController.java', ['Veterinarians', 'Vets as JSON or XML'], [['GET /vets', 'showResourcesVetList', 'Vets', [vets]], ['GET /vets.html', 'showVetList', '', [vets, page]]], more)
+    const json = featureFacts(arch, api, 'Vets as JSON or XML')
+    expect(own(json)).toEqual(['GET /vets'])
+    expect(json.shared.map(e => e.title)).toEqual(['GET /vets.html'])
+    expect(own(featureFacts(arch, api, 'Veterinarians'))).toEqual(['GET /vets.html'])
+    // A type in a generic counts; a type both features carry tells nothing; one only named, not a card of the route, neither.
+    const both = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'List<Thing>', ['Thing.java']], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list'], metadata: { path: 'Thing.java' } })])
+    expect(own(featureFacts(both.arch, both.api, 'A list'))).toEqual(['GET /x'])
+    const shared = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list', 'B view'], metadata: { path: 'Thing.java' } })])
+    expect(own(featureFacts(shared.arch, shared.api, 'A list'))).toEqual([])
+    const named = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing'], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list'], metadata: { path: 'Thing.java' } })])
+    expect(own(featureFacts(named.arch, named.api, 'A list'))).toEqual([])
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
     expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], shared: [], tables: '' })

@@ -339,6 +339,17 @@ try {
   await sleep(400)
   const oi = await page.evaluate(() => ({ claimed: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: document.querySelectorAll('#details .d-shared .d-ep').length }))
   check('a feature its words cannot place claims none of a shared controller\'s routes, and says they are shared', !oi.claimed.includes('POST /owners/new') && oi.shared > 0, JSON.stringify(oi))
+  // A route whose answer is a type the feature lists is its own: GET /vets returns Vets, which only Vets as JSON or XML carries.
+  const featureRoutes = () => page.evaluate(() => ({ own: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: [...document.querySelectorAll('#details .d-shared .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  await page.evaluate(() => window.__spike.controls.feature('Vets as JSON or XML'))
+  await sleep(400)
+  const vj = await featureRoutes()
+  await shot('09-feature-vets-json')
+  check('Vets as JSON or XML owns GET /vets, the route that returns Vets, and leaves the vet list page\'s route apart', vj.own.includes('GET /vets') && !vj.own.includes('GET /vets.html') && !vj.shared.includes('GET /vets'), JSON.stringify(vj))
+  await page.evaluate(() => window.__spike.controls.feature('Veterinarians'))
+  await sleep(400)
+  const vl = await featureRoutes()
+  check('Veterinarians keeps GET /vets.html, the route that renders its page, and claims no JSON route', vl.own.join() === 'GET /vets.html', JSON.stringify(vl))
   // An older map's handler with no line opens where it is declared.
   await open('model=petclinic&view=requests&at=petclinic.owners.ownerid.e2')
   await clickText('#details .d-handler .cite', 'OwnerController')
@@ -364,6 +375,16 @@ try {
     const got = await page.evaluate(() => [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]))
     check(`${f} gets ${want}, not ${not}`, got.includes(want) && !got.includes(not), JSON.stringify(got))
   }
+  // A route word that joins the feature's words ("signup" for "Sign up") names it; the users file's other routes stay shared.
+  await open('model=fastapi-cold')
+  await page.evaluate(() => window.__spike.controls.feature('Sign up'))
+  await sleep(600)
+  const su = await page.evaluate(() => ({ own: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: [...document.querySelectorAll('#details .d-shared .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  await shot('10-feature-sign-up')
+  check('Sign up owns POST /api/v1/users/signup and only that; the users file\'s other routes are listed apart', su.own.join() === 'POST /api/v1/users/signup' && !su.shared.includes('POST /api/v1/users/signup') && su.shared.length === 9, JSON.stringify(su))
+  await page.evaluate(() => window.__spike.controls.feature('User settings'))
+  await sleep(400)
+  check('User settings, whose words name every users route alike, claims none of them', await page.evaluate(() => document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep').length === 0 && document.querySelectorAll('#details .d-shared .d-ep').length === 10))
   // A switch back before the Requests model arrives still returns to the card left.
   await open(`${map}&view=requests&at=backend.market.e1.response`)
   await sleep(500)
