@@ -400,10 +400,11 @@ async function main() {
     if (!m) return frameFor(i)
     const rel = (f: { x: number; y: number; z: number }, r: Float64Array) => { const w = r[i * 4 + 2]; return [(f.x - r[i * 4] - w / 2) / w, (f.y - r[i * 4 + 1] - r[i * 4 + 3] / 2) / w, f.z * w] }
     const end = frameFor(i, m.to), b = rel(end, m.to.rect)
-    // A card that grows from nothing (added) is framed throughout as it ends.
-    const a = m.from.rect[i * 4 + 2] > 1e-9 ? rel(frameFor(i, { ...m.to, ...m.from }, m), m.from.rect) : b
+    // A card that grows from nothing (added) is framed throughout as it ends. Sizes are compared with
+    // zero itself: deep in a map a card a screen wide is 1e-10 world units across.
+    const a = m.from.rect[i * 4 + 2] > 0 ? rel(frameFor(i, { ...m.to, ...m.from }, m), m.from.rect) : b
     const r = world.rect, w = r[i * 4 + 2], e = m.e
-    if (w <= 1e-9) return end
+    if (!(w > 0)) return end
     const ox = a[0] + (b[0] - a[0]) * e, oy = a[1] + (b[1] - a[1]) * e, s = Math.exp(Math.log(a[2]) + (Math.log(b[2]) - Math.log(a[2])) * e)
     return { x: r[i * 4] + w / 2 + ox * w, y: r[i * 4 + 1] + r[i * 4 + 3] / 2 + oy * w, z: s / w }
   }
@@ -416,7 +417,9 @@ async function main() {
       if (cam.aim(f.x, f.y, f.z)) return
       // During a move, the gap it began with, closing as it goes: no jump when the new version frames the card otherwise.
       const g = morph?.gap?.of === intent ? morph.gap.d : null, k = g ? 1 - morph!.e : 0
-      cam.set(f.x + (g ? g[0] * k : 0), f.y + (g ? g[1] * k : 0), f.z * (g ? Math.exp(g[2] * k) : 1))
+      // A container open before the move stays open through it, at its opening scale now (render.ts draws its cards from there).
+      const open = morph && morph.wasOpen[i] && tree.children[i].length ? (OPEN_A + 12) / (CARD_W * openScale(world, i)) : 0
+      cam.set(f.x + (g ? g[0] * k : 0), f.y + (g ? g[1] * k : 0), Math.max(open, f.z * (g ? Math.exp(g[2] * k) : 1)))
     })
     return true
   }
@@ -436,7 +439,8 @@ async function main() {
     const z0 = cam.z
     cam.resize(app.screen.width, app.screen.height)
     // A live update moving a free camera scales its path with the window, as the camera did.
-    if (morph) { const k = cam.z / z0; morph.cam0[2] *= k; morph.cam1[2] *= k }
+    // The gap a framing's move began with was to the old screen's framing: on this one it is framed as it is.
+    if (morph) { const k = cam.z / z0; morph.cam0[2] *= k; morph.cam1[2] *= k; morph.gap = null }
     measureHud()
     // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
     renderer.wholeZ = frameFor(0).z
@@ -514,6 +518,7 @@ async function main() {
     setSafeTop(h)
     // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
     // what was framed (the whole map, or the card a link opened at) is framed again for it while you have not moved.
+    if (morph) morph.gap = null
     reframe()
     reshape()
   }).observe($('top'))
@@ -1279,10 +1284,11 @@ async function main() {
     // Per card, by id: open before this update (and not still opening from nothing in the last one).
     const wasOpen = new Uint8Array(next.size)
     for (let k = 1; k < next.size; k++) { const j = diff.oldIndex[k]; wasOpen[k] = j > 0 && tree.children[j].length > 0 && (!morph || morph.wasOpen[j]) ? 1 : 0 }
-    // The same layout as the move under way ends at: the same cards, each ending where it would have.
+    // The same layout as the move under way ends at: the same cards, each ending exactly where it
+    // would have (layout is deterministic; deep in a map a visible move is under 1e-9 world units).
     const sameEnd = !!morph && !diff.added.length && !diff.removed.length && next.els.every((_, k) => {
       const j = diff.oldIndex[k]
-      return j >= 0 && [0, 1, 2, 3].every(q => Math.abs(morph!.to.rect[j * 4 + q] - target.rect[k * 4 + q]) < 1e-9)
+      return j >= 0 && [0, 1, 2, 3].every(q => morph!.to.rect[j * 4 + q] === target.rect[k * 4 + q])
     })
     const live: World = { rect: start.rect.slice(), content: start.content.slice(), local: nextLocal }
 

@@ -455,6 +455,29 @@ try {
   })
   const onScreen = emptied.left.every(r => r[0] + r[2] > 0 && r[0] < emptied.w && r[1] + r[3] > 0 && r[1] < emptied.h)
   check('a container framed open that an update empties zooms smoothly, its cards left on screen', emptied.jump < 1.25 && onScreen, JSON.stringify(emptied))
+
+  // 13d. The same container emptied while the map around it fills (100 parts beside it at two
+  // levels): it stays open through the move, its cards drawn at every frame.
+  await page.goto(`${base}?model=knights-of-darkness`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => { document.querySelector('#welcome .ok')?.click(); const s = window.__spike; s.controls.enterPlace(s.id('backend.market.offers')) })
+  await still()
+  const kept13d = await page.evaluate(async () => {
+    const s = window.__spike
+    const json = await (await fetch('/models/knights-of-darkness.json')).json()
+    const kids = json.elements.filter(e => e.parent === 'backend.market.offers').map(e => e.id)
+    const gone = new Set(kids.slice(3))
+    json.elements = json.elements.filter(e => !gone.has(e.id) && !gone.has(e.parent))
+    json.relations = json.relations.filter(r => !gone.has(r.source) && !gone.has(r.target))
+    for (const p of ['backend', 'backend.market']) for (let k = 1; k <= 100; k++) json.elements.push({ id: `${p}.svc${k}`, parent: p, title: `Service ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+    s.manual(true)
+    await s.swapModel(json)
+    const left = kids.slice(0, 3).map(id => s.id(id)), missing = []
+    for (let k = 0; k < 50; k++) { s.advance(16); const shown = new Set(s.renderer.shown); if (!left.every(i => shown.has(i))) missing.push(k * 16 + 16) }
+    s.manual(false)
+    return { missing }
+  })
+  check('a container framed open stays open while an update empties it and fills the map around it', kept13d.missing.length === 0, JSON.stringify(kept13d))
   await page.setViewport({ width: 1600, height: 1000 })
 
   // 14. A sideways scroll during a jump is no trip of its own: one Back returns to where the jump began.
@@ -490,6 +513,108 @@ try {
   const clear = await page.evaluate(id => { const s = window.__spike, r = s.renderer.screenRectOf(s.id(id)); return { r: r.map(Math.round), sheet: document.getElementById('details').getBoundingClientRect().top, bar: document.getElementById('top').getBoundingClientRect().bottom } }, card)
   await shot('14-phone-reader-closed')
   check('on a phone, closing the code reader leaves the card clear of the sheet', clear.r[1] + clear.r[3] <= clear.sheet + 1 && clear.r[1] >= clear.bar - 1, JSON.stringify(clear))
+  await page.setViewport({ width: 1600, height: 1000 })
+
+  // 16-17. Deep in a map, where a card a screen wide is 1e-10 world units across: a map of 13 nested
+  // levels, each 64 numbered steps, two of which (1 and 8) an update swaps.
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }])
+  await openAcme()
+  const deepOk = await page.evaluate(async () => {
+    const s = window.__spike
+    s.manual(true)
+    const json = { name: 'Nested', elements: [], relations: [] }
+    const el = (id, parent, title, metadata = {}) => ({ id, parent, title, kind: 'service', description: '', technology: '', tags: [], metadata })
+    json.elements.push(el('root', null, 'Project'), el('external', null, 'External'))
+    let parent = 'root'
+    for (let d = 1; d <= 13; d++) {
+      const chain = `${parent}.inner`
+      for (let j = 1; j <= 64; j++) json.elements.push(el(j === 64 ? chain : `${parent}.s${j}`, parent, j === 64 ? 'Subsystem' : `${j} · File ${j}`, { role: 'step', step: String(j) }))
+      parent = chain
+    }
+    await s.swapModel(json)
+    s.advance(800)
+    const r = s.world.rect
+    // The level where steps 1 and 8 stand under 1e-9 apart, yet far apart on screen once framed.
+    const pick = json.elements.filter(e => e.id.endsWith('.s1')).find(e => { const i = s.id(e.id), b = s.id(`${e.parent}.s8`); const d = Math.max(Math.abs(r[i * 4] - r[b * 4]), Math.abs(r[i * 4 + 1] - r[b * 4 + 1])); return d > 1e-11 && d < 9.5e-10 })
+    if (!pick) return false
+    window.__deep = { json, id: pick.id, parent: pick.parent }
+    for (let n = s.tree.parent[s.id(pick.id)], chain = []; ; n = s.tree.parent[n]) { if (n <= 0) { for (const a of chain.reverse()) { s.controls.goSelect(a); s.advance(800) } break } chain.push(n) }
+    return true
+  })
+  check('a map deep enough that cards are 1e-10 world units across is built', deepOk)
+  // 16. A step selected mid-move is framed where it is then, not where it will end.
+  const picked = await page.evaluate(async () => {
+    const s = window.__spike, { json, id, parent } = window.__deep
+    s.controls.goSelect(s.id(`${parent}.s2`)); s.advance(800)
+    // The update: steps 1 and 8 swapped.
+    const out = structuredClone(json), els = out.elements
+    const a = els.find(e => e.id === id), b = els.find(e => e.id === `${parent}.s8`)
+    ;[a.metadata.step, b.metadata.step] = [b.metadata.step, a.metadata.step]
+    a.title = '8 · File 1'; b.title = '1 · File 8'
+    window.__deepNext = out
+    await s.swapModel(out)
+    for (let k = 0; k < 6; k++) s.advance(16)
+    s.controls.goSelect(s.id(id))
+    const r = s.renderer.screenRectOf(s.id(id))
+    s.advance(16)
+    const r2 = s.renderer.screenRectOf(s.id(id))
+    for (let k = 0; k < 60; k++) s.advance(16)
+    return { r: r.map(Math.round), r2: r2.map(Math.round), w: s.cam.w }
+  })
+  check('deep in a map, a step selected while it moves is framed where it is', [picked.r, picked.r2].every(r => r[0] >= 0 && r[0] + r[2] <= picked.w), JSON.stringify(picked))
+
+  // 17. A drag during one deep update, then a different one (rows reordered too): the selection
+  // moves with the camera from where the drag left it.
+  await page.evaluate(async () => {
+    const s = window.__spike, { json, id } = window.__deep
+    s.controls.goSelect(s.id(id)); s.advance(800)
+    // The first update changes a description only (the steps as they stand, swapped); the second
+    // swaps them back, a different layout, with two unrelated rows in another order.
+    const first = structuredClone(window.__deepNext)
+    first.elements.find(e => e.id === id).description = 'Changed description'
+    const back = structuredClone(json)
+    ;[back.elements[0], back.elements[1]] = [back.elements[1], back.elements[0]]
+    window.__deepBack = back
+    await s.swapModel(first)
+    for (let k = 0; k < 15; k++) s.advance(16)
+  })
+  await page.mouse.move(675, 400)
+  await page.mouse.down()
+  for (let k = 1; k <= 3; k++) await page.mouse.move(675 + k * 10.7, 400 + k * 4)
+  await sleep(160)
+  await page.mouse.up()
+  const followed = await page.evaluate(async () => {
+    const s = window.__spike, { id } = window.__deep, before = s.renderer.screenRectOf(s.id(id))
+    await s.swapModel(window.__deepBack)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    s.manual(false)
+    return { before: before.map(Math.round), after: s.renderer.screenRectOf(s.id(id)).map(Math.round) }
+  })
+  check('deep in a map, a drag then a different update: the selection stays where the drag left it', Math.abs(followed.after[0] - followed.before[0]) < 60 && Math.abs(followed.after[1] - followed.before[1]) < 60, JSON.stringify(followed))
+
+  // 18. A phone turned while an update moves a framed card into place: framed for the turned screen
+  // at once, never with the gap the move began with on the other.
+  await page.setViewport({ width: 844, height: 390, isMobile: true, hasTouch: true })
+  await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => { document.querySelector('#welcome .ok')?.click(); const s = window.__spike; s.controls.goSelect(s.id('acme.merchants.portal')) })
+  await still()
+  await page.evaluate(async () => {
+    const s = window.__spike
+    const json = await (await fetch('/models/acme.json')).json()
+    json.elements = json.elements.filter(e => e.parent !== 'acme.merchants.portal')
+    json.relations = json.relations.filter(r => !r.source.startsWith('acme.merchants.portal.') && !r.target.startsWith('acme.merchants.portal.'))
+    s.manual(true)
+    await s.swapModel(json)
+    for (let k = 0; k < 4; k++) s.advance(16)
+  })
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await sleep(150)
+  const rotated = await page.evaluate(() => { const s = window.__spike; s.advance(16); const r = s.renderer.screenRectOf(s.id('acme.merchants.portal')); s.manual(false); return { r: r.map(Math.round), w: s.cam.w } })
+  const rotatedEnd = await framedAfter('15-phone-turned-gap', 'acme.merchants.portal', pressCard)
+  const re = JSON.parse(rotatedEnd.detail)
+  check('a phone turned while an update moves a framed card keeps it within the screen and ends framed', rotated.r[0] >= -1 && rotated.r[0] + rotated.r[2] <= rotated.w + 1 && re.off <= 2, JSON.stringify({ rotated, ...re }))
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])
   await page.setViewport({ width: 1600, height: 1000 })
 } finally {
   writeFileSync(file, original)
