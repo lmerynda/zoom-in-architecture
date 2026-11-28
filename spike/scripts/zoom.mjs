@@ -22,9 +22,9 @@
 //   node scripts/zoom.mjs why <repo> <map.json> <file>…   where files sit, and who uses them and what they use, by node
 //   node scripts/zoom.mjs compare <repo> <a.json> <b.json>   how alike two maps of one repo are
 import { execFileSync } from 'node:child_process'
-import { cpSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, posix } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, toName } from './map.mjs'
@@ -200,10 +200,13 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         console.log(`watching ${a}; Ctrl+C stops`)
       }
     } else if (cmd === 'trace' && a && command.length) {
+      // Where the trace goes is made ready before the run, not after it: a run takes minutes, and
+      // an output folder that cannot be made fails now rather than losing what was traced.
+      const file = args.out ?? join(tmpdir(), `zoom-trace-${args.name ?? toName(a)}.json`)
+      mkdirSync(dirname(file), { recursive: true })
       // The project's tests run as the project runs them; only the tracing is added.
       const t = await runTraced(a, command, { log: s => process.stderr.write(s), testNames: !args.noTests, methods: args.methods })
       const o = { at: new Date().toISOString(), command: command.join(' '), exit: t.code, ms: t.ms, ...t.observed }
-      const file = args.out ?? join(tmpdir(), `zoom-trace-${args.name ?? toName(a)}.json`)
       writeFileSync(file, JSON.stringify(o, null, 1))
       console.log(`traced ${o.command} (exit ${t.code}, ${Math.round(t.ms / 1000)} s): ${o.spans} spans, ${o.endpoints.length} endpoints seen, ${o.endpoints.reduce((n, e) => n + e.count, 0)} requests; wrote ${file}`)
       if (!o.spans) { console.log('no spans arrived: is the server a JVM, and does the command start it?'); process.exitCode = 1 }

@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -445,6 +445,31 @@ describe('zoom why', () => {
     const out = execFileSync(process.execPath, ['scripts/zoom.mjs', 'why', 'test/fixtures/polyglot', 'test/fixtures/polyglot-map.json', 'web/src/api.ts'], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' })
     expect(out.split('\n')).toEqual(['web/src/api.ts is in web.orders', 'Used by 2 files:', '  web.shopping  2  main.ts, cart.ts', 'Uses 0 files:', ''])
   })
+})
+
+describe('zoom trace --out', () => {
+  const zoom = (args, cwd) => spawnSync(process.execPath, ['scripts/zoom.mjs', 'trace', cwd, ...args], { cwd: join(import.meta.dirname, '..'), encoding: 'utf8' })
+  it('makes a folder that does not exist yet before the run, not after it', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'zoom-out-'))
+    try {
+      const out = join(tmp, 'new', 'deeper', 'traced.json')
+      zoom(['--out', out, '--', process.execPath, '-e', '0'], tmp)
+      expect(existsSync(join(tmp, 'new', 'deeper'))).toBe(true)
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
+  }, 20000)
+  it('stops before running the command when the folder cannot be made', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'zoom-out-'))
+    try {
+      writeFileSync(join(tmp, 'a-file'), '')
+      // A script file, not -e: on Windows the command runs through a shell, which would mangle quotes.
+      const ran = join(tmp, 'ran')
+      writeFileSync(join(tmp, 'mark.cjs'), `require('fs').writeFileSync(${JSON.stringify(ran)}, '')`)
+      const r = zoom(['--out', join(tmp, 'a-file', 'traced.json'), '--', process.execPath, 'mark.cjs'], tmp)
+      expect(r.status).toBe(1)
+      expect(r.stderr).toMatch(/a-file/)
+      expect(existsSync(ran)).toBe(false)
+    } finally { rmSync(tmp, { recursive: true, force: true }) }
+  }, 20000)
 })
 
 describe('zoom check --uncited', () => {
