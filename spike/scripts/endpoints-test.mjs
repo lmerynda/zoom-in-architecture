@@ -42,6 +42,12 @@ const panel = () => page.evaluate(() => ({
   text: document.getElementById('details').innerText,
   rows: [...document.querySelectorAll('#details .d-ep')].map(b => b.querySelector('b').textContent),
 }))
+/** The open feature's routes, "GET /vets", read from each row's method and path: its own, and the ones listed apart. */
+const featureRoutes = () => page.evaluate(() => {
+  const rows = sel => [...document.querySelectorAll(sel)].map(b => `${b.querySelector('.d-m').textContent} ${b.querySelector('b').textContent}`)
+  return { own: rows('#details .d-serves:not(.d-shared) .d-ep'), shared: rows('#details .d-shared .d-ep') }
+})
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const clickText = (sel, text) => page.evaluate((sel, text) => { const b = [...document.querySelectorAll(sel)].find(x => x.textContent.startsWith(text)); b?.click(); return !!b }, sel, text)
 const crossed = async view => { await page.waitForFunction(v => (new URLSearchParams(location.search).get('view') ?? '') === v && window.__spike?.ready, { timeout: 60000 }, view); await ready() }
 
@@ -340,16 +346,15 @@ try {
   const oi = await page.evaluate(() => ({ claimed: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: document.querySelectorAll('#details .d-shared .d-ep').length }))
   check('a feature its words cannot place claims none of a shared controller\'s routes, and says they are shared', !oi.claimed.includes('POST /owners/new') && oi.shared > 0, JSON.stringify(oi))
   // A route whose answer is a type the feature lists is its own: GET /vets returns Vets, which only Vets as JSON or XML carries.
-  const featureRoutes = () => page.evaluate(() => ({ own: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: [...document.querySelectorAll('#details .d-shared .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
   await page.evaluate(() => window.__spike.controls.feature('Vets as JSON or XML'))
   await sleep(400)
   const vj = await featureRoutes()
   await shot('09-feature-vets-json')
-  check('Vets as JSON or XML owns GET /vets, the route that returns Vets, and leaves the vet list page\'s route apart', vj.own.includes('GET /vets') && !vj.own.includes('GET /vets.html') && !vj.shared.includes('GET /vets'), JSON.stringify(vj))
+  check('Vets as JSON or XML owns GET /vets, the route that returns Vets, and leaves the vet list page\'s route apart', same(vj, { own: ['GET /vets'], shared: ['GET /vets.html'] }), JSON.stringify(vj))
   await page.evaluate(() => window.__spike.controls.feature('Veterinarians'))
   await sleep(400)
   const vl = await featureRoutes()
-  check('Veterinarians keeps GET /vets.html, the route that renders its page, and claims no JSON route', vl.own.join() === 'GET /vets.html', JSON.stringify(vl))
+  check('Veterinarians keeps GET /vets.html, the route that renders its page, and leaves the JSON route apart', same(vl, { own: ['GET /vets.html'], shared: ['GET /vets'] }), JSON.stringify(vl))
   // An older map's handler with no line opens where it is declared.
   await open('model=petclinic&view=requests&at=petclinic.owners.ownerid.e2')
   await clickText('#details .d-handler .cite', 'OwnerController')
@@ -379,12 +384,14 @@ try {
   await open('model=fastapi-cold')
   await page.evaluate(() => window.__spike.controls.feature('Sign up'))
   await sleep(600)
-  const su = await page.evaluate(() => ({ own: [...document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]), shared: [...document.querySelectorAll('#details .d-shared .d-ep')].map(b => b.getAttribute('aria-label').split(':')[0]) }))
+  const su = await featureRoutes()
   await shot('10-feature-sign-up')
-  check('Sign up owns POST /api/v1/users/signup and only that; the users file\'s other routes are listed apart', su.own.join() === 'POST /api/v1/users/signup' && !su.shared.includes('POST /api/v1/users/signup') && su.shared.length === 9, JSON.stringify(su))
+  const users = ['GET /api/v1/users', 'POST /api/v1/users', 'GET /api/v1/users/me', 'PATCH /api/v1/users/me', 'DELETE /api/v1/users/me', 'PATCH /api/v1/users/me/password', 'POST /api/v1/users/signup', 'GET /api/v1/users/{user_id}', 'PATCH /api/v1/users/{user_id}', 'DELETE /api/v1/users/{user_id}']
+  check('Sign up owns POST /api/v1/users/signup and only that; the users file\'s other routes are listed apart', same(su, { own: ['POST /api/v1/users/signup'], shared: users.filter(r => r !== 'POST /api/v1/users/signup') }), JSON.stringify(su))
   await page.evaluate(() => window.__spike.controls.feature('User settings'))
   await sleep(400)
-  check('User settings, whose words name every users route alike, claims none of them', await page.evaluate(() => document.querySelectorAll('#details .d-serves:not(.d-shared) .d-ep').length === 0 && document.querySelectorAll('#details .d-shared .d-ep').length === 10))
+  const us = await featureRoutes()
+  check('User settings, whose words name every users route alike, claims none of them', same(us, { own: [], shared: users }), JSON.stringify(us))
   // A switch back before the Requests model arrives still returns to the card left.
   await open(`${map}&view=requests&at=backend.market.e1.response`)
   await sleep(500)

@@ -238,33 +238,55 @@ describe('featureFacts', () => {
     const api2 = buildApi({ name: 'p', elements: [el('app', null), ...ep('app.e1', 'GET /owners/{ownerId}', 'showOwner'), el('app.e1.v', 'app.e1', { title: '2 · ownerDetails', metadata: { path: 'templates/owners/ownerDetails.html' } }), ...ep('app.e2', 'POST /owners/new', 'processCreationForm')], relations: [] })
     expect(featureFacts(shown, api2, 'Owner information').endpoints.map(e => e.title)).toEqual(['GET /owners/{ownerId}'])
   })
-  /** A handler file `path` carrying `features`, and its routes: [title, method, returns, extra card paths]. */
-  const handler = (path: string, features: string[], routes: [string, string, string?, string[]?][], more: ElementJson[] = []) => {
+  /**
+   * A handler file `path` carrying `features`, and its routes: [title, method, the type its description
+   * says it returns, extra card paths, its responses' models].
+   */
+  const handler = (path: string, features: string[], routes: [string, string, string?, string[]?, string[]?][], more: ElementJson[] = []) => {
     const arch = [el('app', null, { kind: 'app' }), el('app.c', 'app', { features, metadata: { path } }), ...more]
-    const elements = [el('api', null), ...routes.flatMap(([title, m, ret, cards], k) => [
+    const elements = [el('api', null), ...routes.flatMap(([title, m, ret, cards, models], k) => [
       el(`api.e${k}`, 'api', { title, description: ret ? `${title}: C.${m} returns ${ret} as JSON.` : '' }),
       el(`api.e${k}.s1`, `api.e${k}`, { title: `1 · ${m}()`, metadata: { path } }),
       ...(cards ?? []).map((p, j) => el(`api.e${k}.s${j + 2}`, `api.e${k}`, { title: `${j + 2} · ${p}`, metadata: { path: p } })),
+      ...(models ?? []).map((model, j) => el(`api.e${k}.r${j}`, `api.e${k}`, { title: `${j + 9} · Response`, metadata: { role: 'response', model } })),
     ])]
     return { arch, api: buildApi({ name: 'r', elements, relations: [] }) }
   }
   const own = (f: ReturnType<typeof featureFacts>) => f.endpoints.map(e => e.title)
+  const apart = (f: ReturnType<typeof featureFacts>) => f.shared.map(e => e.title)
   it('names a route by a feature’s words joined as code writes them, and by none of its parameters', () => {
     expect(namedWords('Sign up', '/api/v1/users/signup', 'register_user')).toBe(1)
     expect(namedWords('Signup', '/sign-up', '')).toBe(1)
     expect(namedWords('Log in', '/auth', 'logIn')).toBe(1)
     expect(namedWords('Find owners', '/owners/find', 'initFindForm')).toBe(2)
-    // A route of parameters only is named by its method alone.
+    // Up to three words joined: four are not read as one.
+    expect(namedWords('Reset user password', '/resetuserpassword', '')).toBe(3)
+    expect(namedWords('Reset my user password', '/resetmyuserpassword', '')).toBe(0)
+    // A route of parameters only, in any style and script, is named by its method alone.
     expect(namedWords('Owner', '/{owner}', '')).toBe(0)
-    expect(namedWords('Owner', '/:owner/<int:owner>', 'show')).toBe(0)
+    expect(namedWords('Owner', '/:owner/<int:owner>/{owner:int}', 'show')).toBe(0)
+    expect(namedWords('Übung', '/:Übung', '')).toBe(0)
     expect(namedWords('Show article', '/{slug}', 'showArticle')).toBe(2)
-    // Any script: Página is a word, not "gina"; a plural folds.
-    expect(namedWords('Página de pedidos', '/pedidos/{id}', 'verPágina')).toBe(2)
-    expect(namedWords('Zélan', '/zélan/{slug}', '')).toBe(1)
-    expect(namedWords('Zélan', '/lan', '')).toBe(0)
     // No words of its own: nothing to name.
     expect(namedWords('', '/a', 'b')).toBe(0)
     expect(namedWords('UI', '/ui', 'ui')).toBe(0)
+  })
+  it('reads words in any script and either Unicode form, acronyms split, plurals folded only where they are plurals', () => {
+    expect(namedWords('Página de pedidos', '/pedido/{id}', 'verPágina')).toBe(2)
+    expect(namedWords('Zélan', '/zélan/{slug}', '')).toBe(1)
+    expect(namedWords('Zélan', '/lan', '')).toBe(0)
+    // A decomposed á (a + U+0301) is the same word as a composed one, and not a split before "gina".
+    expect(namedWords('Página', '/página', '')).toBe(1)
+    expect(namedWords('Gina', '/página', '')).toBe(0)
+    expect(namedWords('Search', '/x', 'getXMLSearch')).toBe(1)
+    expect(namedWords('XML export', '/x', 'getXMLExport')).toBe(2)
+    // News, status and class are no plurals of new, statu and clas.
+    expect(namedWords('News', '/new', '')).toBe(0)
+    expect(namedWords('Status', '/statu', '')).toBe(0)
+    expect(namedWords('Owners', '/owner', '')).toBe(1)
+  })
+  it('names the parameters of a route in any script', () => {
+    expect(routeParams('/:Übung/<int:größe>')).toEqual(['Übung', 'größe'])
   })
   it('gives Sign up its signup route and leaves the users file’s others apart', () => {
     const { arch, api } = handler('users.py', ['User administration', 'Sign up', 'User settings'], [['GET /users', 'read_users'], ['POST /users/signup', 'register_user'], ['PATCH /users/me', 'update_user_me']])
@@ -286,7 +308,13 @@ describe('featureFacts', () => {
     expect(own(featureFacts(arch, api, 'Export orders'))).toEqual(['GET /orders/export'])
     const hist = featureFacts(arch, api, 'Order history')
     expect(own(hist)).toEqual([])
-    expect(hist.shared.map(e => e.title)).toEqual(['GET /orders', 'GET /orders/export'])
+    expect(apart(hist)).toEqual(['GET /orders', 'GET /orders/export'])
+    // Two features whose words each tell the same route from the rest: neither claims it.
+    const two = handler('users.py', ['Sign up form', 'Sign up email'], [['GET /health', 'health'], ['POST /users/signup', 'register']])
+    for (const f of ['Sign up form', 'Sign up email']) {
+      expect(own(featureFacts(two.arch, two.api, f))).toEqual([])
+      expect(apart(featureFacts(two.arch, two.api, f))).toEqual(['GET /health', 'POST /users/signup'])
+    }
   })
   it('gives non-ASCII features the routes their words name', () => {
     const { arch, api } = handler('Reservas.java', ['Página de reservas', 'Anulación'], [['GET /reservas', 'verPágina'], ['POST /anulación/{id}', 'anular']])
@@ -297,17 +325,49 @@ describe('featureFacts', () => {
     const vets = 'vet/Vets.java', page = 'templates/vets/vetList.html'
     const more = [el('app.v', 'app', { features: ['Vets as JSON or XML'], metadata: { path: vets } }), el('app.l', 'app', { features: ['Veterinarians'], metadata: { path: page } })]
     const { arch, api } = handler('vet/VetController.java', ['Veterinarians', 'Vets as JSON or XML'], [['GET /vets', 'showResourcesVetList', 'Vets', [vets]], ['GET /vets.html', 'showVetList', '', [vets, page]]], more)
+    expect(api.endpoints.map(e => e.answers)).toEqual([['Vets'], []])
     const json = featureFacts(arch, api, 'Vets as JSON or XML')
     expect(own(json)).toEqual(['GET /vets'])
-    expect(json.shared.map(e => e.title)).toEqual(['GET /vets.html'])
-    expect(own(featureFacts(arch, api, 'Veterinarians'))).toEqual(['GET /vets.html'])
-    // A type in a generic counts; a type both features carry tells nothing; one only named, not a card of the route, neither.
-    const both = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'List<Thing>', ['Thing.java']], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list'], metadata: { path: 'Thing.java' } })])
-    expect(own(featureFacts(both.arch, both.api, 'A list'))).toEqual(['GET /x'])
-    const shared = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list', 'B view'], metadata: { path: 'Thing.java' } })])
-    expect(own(featureFacts(shared.arch, shared.api, 'A list'))).toEqual([])
-    const named = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing'], ['GET /y', 'y']], [el('app.t', 'app', { features: ['A list'], metadata: { path: 'Thing.java' } })])
-    expect(own(featureFacts(named.arch, named.api, 'A list'))).toEqual([])
+    expect(apart(json)).toEqual(['GET /vets.html'])
+    const list = featureFacts(arch, api, 'Veterinarians')
+    expect(own(list)).toEqual(['GET /vets.html'])
+    expect(apart(list)).toEqual(['GET /vets'])
+  })
+  describe('an answer tells a route’s feature only when it is unambiguous', () => {
+    const thing = (features: string[], path = 'Thing.java') => [el('app.t', 'app', { features, metadata: { path } })]
+    const owns = (h: ReturnType<typeof handler>) => ['A list', 'B view'].map(f => own(featureFacts(h.arch, h.api, f)))
+    it('counts a type in a generic, and one the route’s responses name', () => {
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'List<Thing>', ['Thing.java']], ['GET /y', 'y']], thing(['A list'])))).toEqual([['GET /x'], []])
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', ['Thing.java'], ['Thing']], ['GET /y', 'y']], thing(['B view'])))).toEqual([[], ['GET /x']])
+    })
+    it('tells nothing by a type both features carry, or two types of different features, in either order', () => {
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], thing(['A list', 'B view'])))).toEqual([[], []])
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Either<Foo, Bar>', ['Foo.java', 'Bar.java']], ['GET /y', 'y']], [el('app.f', 'app', { features: ['A list'], metadata: { path: 'Foo.java' } }), el('app.b', 'app', { features: ['B view'], metadata: { path: 'Bar.java' } })]))).toEqual([[], []])
+      const cards = ['Foo.java', 'Bar.java'], types = [el('app.f', 'app', { features: ['A list'], metadata: { path: 'Foo.java' } }), el('app.b', 'app', { features: ['B view'], metadata: { path: 'Bar.java' } })]
+      const fooFirst = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', cards, ['Foo', 'Bar']], ['GET /y', 'y']], types)
+      const barFirst = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', '', cards, ['Bar', 'Foo']], ['GET /y', 'y']], types)
+      expect(fooFirst.api.endpoints[0].answers).toEqual(['Foo', 'Bar'])
+      expect([owns(fooFirst), owns(barFirst)]).toEqual([[[], []], [[], []]])
+    })
+    it('tells nothing by a type only named, display text, a type in another folder, or a file no feature lists', () => {
+      // Not a card of the route.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Thing'], ['GET /y', 'y']], thing(['A list'])))).toEqual([[], []])
+      // "what the handler returns" says no type: a handler.py card is not its answer.
+      const said = handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'what the handler returns', ['handler.py']], ['GET /y', 'y']], thing(['A list'], 'handler.py'))
+      expect(said.api.endpoints[0].answers).toEqual([])
+      expect(owns(said)).toEqual([[], []])
+      // a.Result is a/Result, not b/Result; it is a/Result.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'a.Result', ['b/Result.java']], ['GET /y', 'y']], thing(['A list'], 'b/Result.java')))).toEqual([[], []])
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'a.Result', ['src/a/Result.java']], ['GET /y', 'y']], thing(['A list'], 'src/a/Result.java')))).toEqual([['GET /x'], []])
+      // Result in two folders of the route: which one is not known.
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Result', ['a/Result.java', 'b/Result.java']], ['GET /y', 'y']], thing(['A list'], 'a/Result.java')))).toEqual([[], []])
+      // Report.java lists no feature; the folder it sits in carrying one does not make it that feature's answer.
+      const folder = [el('app.k', 'app', { features: ['A list'] }), el('app.k.r', 'app.k', { metadata: { path: 'Report.java' } })]
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /x', 'x', 'Report', ['Report.java']], ['GET /y', 'y']], folder))).toEqual([[], []])
+    })
+    it('lists apart a route one feature’s words claim and another’s answer does', () => {
+      expect(owns(handler('C.java', ['A list', 'B view'], [['GET /list', 'x', 'Thing', ['Thing.java']], ['GET /y', 'y']], thing(['B view'])))).toEqual([[], []])
+    })
   })
   it('has nothing for an unknown feature or a map without endpoints', () => {
     expect(featureFacts(arch, buildApi(requests), 'Nope')).toEqual({ parts: [], pages: [], endpoints: [], shared: [], tables: '' })

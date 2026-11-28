@@ -22,6 +22,8 @@ export interface Endpoint {
   handler: { path: string; line: number; name: string } | null
   /** What it answers with, as written in the code: "ActionResult<MarketPurchaseDto>"; '' when not known. */
   returns: string
+  /** The types it answers with, as the code names them: every response's model; none when not known. */
+  answers: string[]
   /** Requests the project's own tests made to it; null when the map was not traced. */
   seen: number | null
   statuses: string
@@ -44,6 +46,8 @@ export interface Api {
 
 const VERBS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|ANY|ALL|WS|WEBSOCKET'
 const TITLE = new RegExp(`^(${VERBS})\\s+((?:\\/|…)\\S*)$`, 'i')
+/** A type as code writes it: a name, qualified or not, with generic or bracketed arguments; no phrase. */
+const TYPE = /^[\p{L}_$][\p{L}\p{N}_$.]*(?:[<[][\p{L}\p{N}_$.,<>[\]?\s]*[>\]])?$/u
 /** The order methods are listed in. */
 export const METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 const methodRank = (m: string) => { const k = METHOD_ORDER.indexOf(m); return k < 0 ? METHOD_ORDER.length : k }
@@ -63,9 +67,11 @@ export function endpointOf(e: Pick<ElementJson, 'title' | 'metadata'>, parent = 
   return { method: t[1].toUpperCase(), route: t[2].startsWith('…') && group.startsWith('/') ? group.replace(/\/$/, '') + t[2].slice(1) : t[2] }
 }
 
+/** A route's parameter in any style and script: {id}, {id:int}, :slug, <int:id>. */
+const PARAM = /\{([^}:]+)(?::[^}]*)?\}|:([\p{L}\p{M}\p{N}_]+)|<(?:\w+:)?([\p{L}\p{M}\p{N}_]+)>/gu
 /** The names of a route's parameters: "/market/{id}/buy" → id; ":slug" and "<int:id>" too. */
 export function routeParams(route: string): string[] {
-  return [...route.matchAll(/\{([^}:]+)(?::[^}]*)?\}|:(\w+)|<(?:\w+:)?(\w+)>/g)].map(m => m[1] ?? m[2] ?? m[3])
+  return [...route.matchAll(PARAM)].map(m => m[1] ?? m[2] ?? m[3])
 }
 
 /** The Requests model's surface: its endpoints, ordered by app, resource and path. */
@@ -93,11 +99,15 @@ export function buildApi(model: ModelJson): Api {
     } : null
     const response = steps.find(s => s.metadata?.role === 'response' && s.metadata.model) ?? steps.find(s => s.metadata?.role === 'response')
     const returns = response?.metadata?.model ?? e.description.match(/ returns (.+?)(?: as \w+)?\.?$/)?.[1] ?? ''
+    // Every response's model; in maps built before responses carried one, the type the description
+    // names, when it is a type ("Vets", "list[UserPublic]") and not words ("what the handler returns").
+    const models = [...new Set(steps.flatMap(s => (s.metadata?.role === 'response' && s.metadata.model ? [s.metadata.model] : [])))]
+    const answers = models.length ? models : TYPE.test(returns) ? [returns] : []
     const seen = traced && e.metadata?.seen != null ? Number(e.metadata.seen) : null
     endpoints.push({
       id: e.id, method: mr.method, route: mr.route, title: `${mr.method} ${mr.route}`,
       app: app.id, appTitle: app.title, group: g === e ? app.id : g.id, groupTitle: g === e ? app.title : g.title,
-      handler, returns, seen, statuses: e.metadata?.statuses ?? '', tables: e.metadata?.tables ?? '',
+      handler, returns, answers, seen, statuses: e.metadata?.statuses ?? '', tables: e.metadata?.tables ?? '',
       cards: steps.filter(s => s.metadata?.path).map(s => ({ path: s.metadata!.path, id: s.id })),
     })
   }
@@ -267,20 +277,28 @@ export const isPage = (path: string) => TEMPLATE.test(path) || (PAGE_DIR.test(pa
 /** A route file that frames pages rather than being one: __root, _layout. */
 const LAYOUT = /\/_[^/]*$/
 
-/** The words of a name in any script, lower case, camel case split: "Página deSaída" → página, de, saída. */
-const tokens = (s: string) => s.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-const fold = (w: string) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w)
+/**
+ * The words of a name in any script and either Unicode form, lower case, camel case and acronyms
+ * split: "Página deSaída" → página, de, saída; "getXMLSearch" → get, xml, search.
+ */
+const tokens = (s: string) => s.normalize('NFC').replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2').replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+  .toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean)
+/** Words that end in s and are no plural. */
+const SINGULAR_S = new Set(['news', 'series', 'species', 'alias', 'atlas', 'canvas', 'lens', 'chaos'])
+/** A plural as its singular: owners → owner, pedidos → pedido; class, status, analysis and news stay. */
+const fold = (w: string) => ([...w].length > 3 && w.endsWith('s') && !/(ss|us|is)$/.test(w) && !SINGULAR_S.has(w) ? w.slice(0, -1) : w)
 const word = (w: string) => [...w].length > 2 && !['and', 'the', 'for', 'with'].includes(w)
 /** Words of a name, plurals folded, small words dropped: "Find owners" → find, owner. */
 const nameWords = (s: string) => tokens(s).filter(word).map(fold)
 
 /**
- * How many of a feature's words a route names: each word as it stands, or joined with the words
- * beside it, as code writes a phrase ("Sign up" is named by /signup, "Log in" by logIn). The route's
- * words are its fixed path and its method's name; a parameter ({user_id}) names a value, not the feature.
+ * How many of a feature's words a route names: each word as it stands, or joined with up to two
+ * words beside it, as code writes a phrase ("Sign up" is named by /signup, "Log in" by logIn). The
+ * route's words are its fixed path and its method's name; a parameter ({user_id}) names a value,
+ * not the feature.
  */
 export function namedWords(feature: string, route: string, method: string): number {
-  const ts = tokens(feature), path = route.replace(/\{[^}]*\}|:\w+|<[^>]*>/g, ' ')
+  const ts = tokens(feature), path = route.replace(PARAM, ' ')
   const have = new Set<string>()
   // Each segment of the path, and the method's name, as words and as their joined runs.
   for (const seg of [...path.split('/'), method]) {
@@ -300,9 +318,9 @@ export function namedWords(feature: string, route: string, method: string): numb
  * them (see isPage), the endpoints whose handler is in a card that carries it, and the tables those
  * endpoints touched in tests. A handler that carries several features (one controller for finding,
  * adding and showing owners) gives the feature the endpoints whose route and method name its words
- * best (see namedWords), or whose answer is a type only it carries; the ones neither tells apart are
- * `shared`, said as such, not claimed. A route that renders one of its pages, or that one of its
- * pages calls, is its own.
+ * best (see namedWords), or whose answer is a type it alone lists, when no other feature of the
+ * handler claims them too; the rest are `shared`, said as such, not claimed. A route that renders
+ * one of its pages, or that one of its pages calls, is its own.
  */
 export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 'kind' | 'features' | 'metadata'>[], api: Api | null, name: string, calls: Map<string, string[]> = new Map()) {
   const byId = new Map(els.map(e => [e.id, e]))
@@ -311,37 +329,42 @@ export function featureFacts(els: Pick<ElementJson, 'id' | 'parent' | 'title' | 
   const pages = carriers.filter(e => isPage(e.metadata?.path ?? '')).map(e => e.id)
   const files = new Map(els.filter(e => e.metadata?.path).map(e => [e.metadata!.path, e.id]))
   const carried = (api?.endpoints ?? []).filter(ep => { const f = ep.handler && files.get(ep.handler.path); return !!f && featuresOf(f).has(name) })
-  const half = Math.ceil(nameWords(name).length / 2)
-  // By its route and its method's name (not its file's, which every route of the handler shares).
-  const hits = (ep: Endpoint) => namedWords(name, ep.route, ep.handler?.name.split('.').pop() ?? '')
-  const alone = (ep: Endpoint) => featuresOf(files.get(ep.handler!.path)!).size < 2
-  // Among the routes of one shared handler, the ones its words name best, when that tells them
-  // from the rest; a handler's only route, when it names at least half of them. Words that name
-  // nothing (a feature with none of its own) tell nothing.
-  const named = (ep: Endpoint) => {
-    const peers = carried.filter(x => x.handler!.path === ep.handler!.path).map(hits), mine = hits(ep)
+  const handlerFeatures = (ep: Endpoint) => featuresOf(files.get(ep.handler!.path)!)
+  const alone = (ep: Endpoint) => handlerFeatures(ep).size < 2
+  // Among the routes of one shared handler, the ones a feature's words name best, when that tells
+  // them from the rest; a handler's only route, when they name at least half of them. Words that
+  // name nothing (a feature with none of its own) tell nothing. By the route and its method's name,
+  // not its file's, which every route of the handler shares.
+  const named = (f: string, ep: Endpoint) => {
+    const hits = (x: Endpoint) => namedWords(f, x.route, x.handler?.name.split('.').pop() ?? '')
+    const peers = (api?.endpoints ?? []).filter(x => x.handler?.path === ep.handler!.path).map(hits), mine = hits(ep)
     const best = Math.max(...peers), least = Math.min(...peers)
-    return best > 0 && mine === best && (peers.length === 1 ? best >= half : best > least)
+    return best > 0 && mine === best && (peers.length === 1 ? best >= Math.ceil(nameWords(f).length / 2) : best > least)
   }
-  // A route of a shared handler whose answer is a type the feature lists, and none of the handler's
-  // other features does: GET /vets returns Vets, a file only "Vets as JSON or XML" carries. The type
-  // is a card of the route's own path, by its file's name.
-  const answers = (ep: Endpoint) => {
-    const types = new Set(ep.returns.match(/[\p{L}_$][\p{L}\p{N}_$]*/gu) ?? [])
-    const theirs = featuresOf(files.get(ep.handler!.path)!)
-    return ep.cards.some(c => {
-      const id = types.has(c.path.split('/').pop()!.replace(/\.\w+$/, '')) && files.get(c.path)
-      if (!id) return false
-      const both = [...featuresOf(id)].filter(f => theirs.has(f))
-      return both.length === 1 && both[0] === name
-    })
+  // The one feature of a shared handler that a route's answer carries, if one: GET /vets returns
+  // Vets, a file only "Vets as JSON or XML" lists. A type counts as a card of the route's own path
+  // whose file it names unambiguously (a qualified name by its folders); the feature is the card's
+  // own, not one of its folders'.
+  const answered = (ep: Endpoint): string | null => {
+    const theirs = handlerFeatures(ep), stems = [...new Set(ep.cards.map(c => c.path))].map(p => [p, p.replace(/\.\w+$/, '')])
+    const found = new Set<string>()
+    for (const t of ep.answers) for (const id of t.match(/[\p{L}_$][\p{L}\p{N}_$]*(?:\.[\p{L}_$][\p{L}\p{N}_$]*)*/gu) ?? []) {
+      const suffix = id.replace(/\./g, '/'), match = stems.filter(([, s]) => s === suffix || s.endsWith(`/${suffix}`))
+      if (match.length !== 1) continue
+      for (const f of byId.get(files.get(match[0][0]) ?? '')?.features ?? []) if (theirs.has(f)) found.add(f)
+    }
+    return found.size === 1 ? [...found][0] : null
   }
+  // A shared handler's route is the feature's when its words or its answer point at it, and at none
+  // of the handler's other features: a route two features claim alike is listed apart.
+  const claims = (f: string, ep: Endpoint) => named(f, ep) || answered(ep) === f
+  const own = (ep: Endpoint) => claims(name, ep) && ![...handlerFeatures(ep)].some(g => g !== name && claims(g, ep))
   // A route whose path renders a page that carries the feature serves it, whoever else its handler serves.
   const pagePaths = new Set(carriers.flatMap(e => (e.metadata?.path && isPage(e.metadata.path) ? [e.metadata.path] : [])))
   const renders = (ep: Endpoint) => ep.cards.some(c => pagePaths.has(c.path))
   // A route one of its pages calls (`calls`: endpoint id → the page cards whose code calls it) serves it too.
   const called = (ep: Endpoint) => (calls.get(ep.id) ?? []).some(p => pages.includes(p))
-  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || named(ep) || answers(ep))) || renders(ep) || called(ep))
+  const endpoints = (api?.endpoints ?? []).filter(ep => (carried.includes(ep) && (alone(ep) || own(ep))) || renders(ep) || called(ep))
   const shared = carried.filter(ep => !endpoints.includes(ep))
   return { parts: carriers.filter(e => !pages.includes(e.id)).map(e => e.id), pages, endpoints, shared, tables: mergeTables(endpoints.map(ep => ep.tables)) }
 }
