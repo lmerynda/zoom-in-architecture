@@ -411,8 +411,9 @@ function methodLines(file, cls) {
   let line = file.code.slice(0, t.open + 1).split('\n').length, at = 0
   for (const m of own.matchAll(new RegExp(`(?<![${ID_PART}.])([${ID_START}][${ID_PART}]*)\\s*\\(`, 'gu'))) {
     for (; at < m.index; at++) if (own[at] === '\n') line++
-    const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(own.slice(Math.max(0, m.index - 200), m.index))
-    if (!before || !/[\p{L}_$]/u.test(before[1]) || !/\s/.test(own[m.index - 1] ?? '') || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
+    // The word before it ends a type: a name, "Foo<?>", "byte[]"; not "->", "=", "," or a keyword.
+    const before = /(\S+)\s*$/u.exec(own.slice(Math.max(0, m.index - 200), m.index))
+    if (!before || !/[\p{L}\p{N}_$>\]]$/u.test(before[1]) || before[1].endsWith('->') || !/\s/.test(own[m.index - 1] ?? '') || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
     // A name declared twice (overloads) gets no line.
     lines.set(m[1], lines.has(m[1]) ? null : line)
   }

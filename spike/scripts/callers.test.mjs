@@ -193,9 +193,10 @@ describe('placeTree', () => {
   })
 
   it('gives no line it cannot be sure of: a lambda calling the method above it, or an overloaded name', () => {
-    const sources = { 'src/p/Work.java': ['package p;', 'class Work {', '  BooleanSupplier probe = () -> ready();', '  boolean ready() { return true; }', '  void list(int a) { }', '  void list(String a) { }', '}', ''].join('\n') }
-    const at = placeTree([{ at: 'p.Work.ready', count: 1 }, { at: 'p.Work.list', count: 1 }], declaredTypes(sources), sources)
-    expect(at.map(n => n.line)).toEqual([4, undefined])
+    const sources = { 'src/p/Work.java': ['package p;', 'class Work {', '  BooleanSupplier probe = () -> ready();', '  boolean ready() { return true; }', '  void list(int a) { }', '  void list(String a) { }', '  ResponseEntity<Order> find(long id) { }', '  ResponseEntity<?> find(String q) { }', '  byte[] raw(long id) { }', '  byte[] raw(String q) { }', '  List<Map<String, Order>> all() { }', '}', ''].join('\n') }
+    const at = placeTree(['ready', 'list', 'find', 'raw', 'all'].map(m => ({ at: `p.Work.${m}`, count: 1 })), declaredTypes(sources), sources)
+    // Overloads whatever their return types (a wildcard, an array): no line, as the trace does not say which.
+    expect(at.map(n => n.line)).toEqual([4, undefined, undefined, undefined, 11])
     expect(at[1].path).toBe('src/p/Work.java')
   })
 
