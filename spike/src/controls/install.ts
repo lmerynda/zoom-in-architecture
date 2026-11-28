@@ -220,6 +220,8 @@ export function installControls(c: Ctx) {
   const canvas = c.app.canvas
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
+    // A sideways scroll zooms nothing: no move, so no trip for Back to return from.
+    if (!e.deltaY) return
     menu.close()
     tooltip.close()
     moved()

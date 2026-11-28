@@ -151,10 +151,17 @@ Known edge cases left in fitting the map to the stage, after seventeen review ro
 The race on knights, before the change: a card framed before a resize was left 10 px off its framing when the same update arrived during the morph, and 91 px off when the height changed during it. It stayed on screen there, but at the old layout's zoom. Five checks in `scripts/live-test.mjs` cover this: the two races, the whole map through a repeated update and a height change, a drag during the morph being kept, and a jump of the reader's own (the minimap, Back) under way when an update arrives landing where it was going. The two races failed on the old code; all five pass.
 
 A review by Codex (gpt-6.2-astra, xhigh) found five blocking cases the model still got wrong, all reproduced in the running viewer and now fixed, each with a check that failed before its fix:
-- **A framed file given its first part** zoomed to 434,000× for a frame and could leave the map blank. A layout halfway through a morph has no framing of its own (a container opening from nothing has a near-zero opening scale). During a morph the camera now eases from where it was to the framing in the layout the update ends at.
+- **A framed file given its first part** zoomed to 434,000× for a frame and could leave the map blank. Halfway through a morph, a container opening from nothing has a near-zero opening scale of its own. The framing now takes that scale from the layout the update ends at, scaled to the card's size at that moment.
 - **A sideways scroll** zoomed by a factor of 1, and that dropped the intent. A zoom of 1 is now no move.
 - **Aiming a flight mid-way** jumped the zoom, because the whole elapsed share of the new end applied at once. The bend toward a new end now starts at zero at the moment of aiming and is complete when the flight lands.
 - **The same update repeated after a drag** took the camera back. A camera the reader took during one update's morph stays theirs through the next.
 - **On a phone, the sheet opening after a selection** nudged the camera as if by hand, dropping the intent. When the selected card is what the reader asked to see, it is now framed again for the open sheet.
 
 Two of Codex's non-blocking notes were also taken. A framed card that an update removes now falls back to the nearest part that still holds it. Failing live checks now set the exit code.
+
+A second Codex round confirmed those five fixed and found seven more. Four came from the first fix for the file-given-a-part case, which eased the camera toward the final layout's framing rather than following the card. That let a flight land on an empty spot, let the next morph frame undo Fit, let a turned phone hide the card under the bar, and let a container outgrow the stage halfway through. Following the card where it is now, with only its opening scale taken from the final layout, removed that easing state and fixed all four. The other three:
+- A drag followed by a *different* update now moves the camera with the selection from where the drag left it. Only the same update again keeps the camera where the drag put it.
+- Closing the code reader on a phone frames the intended card again for the sheet it hid.
+- A sideways scroll records no trip for Back.
+
+Each has a check in `live-test.mjs` that failed on the first-round code: 23 live checks in all. One timing window is left on purpose. A flight aimed somewhere new in its last millisecond or so (eased progress within 10⁻⁶ of the end) lands there in that frame, as a settled framing would on a resize.

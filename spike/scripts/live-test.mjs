@@ -288,7 +288,152 @@ try {
   // On a phone the sheet, not a column, bounds the free stage: the check's panel edge is the screen's.
   const p = JSON.parse(phone.detail)
   check('on a phone, a card selected again with its sheet folded stays framed when the phone turns', p.off <= 2 && p.got[1] >= 0, JSON.stringify({ ...p, sheetTop: turned }))
+
+  // 9. Still on a phone with reduced motion: the phone turned while an update moves into place keeps
+  // the card clear of the bar at once, and framed once it is in place.
+  await page.evaluate(async id => {
+    const s = window.__spike
+    s.controls.goSelect(s.id(id))
+    window.__same = await (await fetch('/models/knights-of-darkness.json')).json()
+  }, card)
+  await still()
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await still()
+  await page.evaluate(async () => { const s = window.__spike; s.manual(true); await s.swapModel(window.__same); s.advance(16); s.advance(16) })
+  await page.setViewport({ width: 844, height: 390, isMobile: true, hasTouch: true })
+  await sleep(150)
+  const turning = await page.evaluate(id => { const s = window.__spike, r = s.renderer.screenRectOf(s.id(id)); s.advance(16); const r2 = s.renderer.screenRectOf(s.id(id)); s.manual(false); return { bar: document.getElementById('top').getBoundingClientRect().bottom, top: Math.min(r[1], r2[1]) } }, card)
+  const turnedMid = await framedAfter('12-phone-turned-mid-move', card, pressCard)
+  const tm = JSON.parse(turnedMid.detail)
+  check('on a phone turned while an update moves into place, the card stays clear of the bar and ends framed', turning.top >= turning.bar - 1 && tm.off <= 2, JSON.stringify({ ...turning, ...tm }))
+
+  // 10. Fit pressed (reduced motion, so it lands at once) while an update moves into place holds.
+  await page.setViewport({ width: 1600, height: 1000 })
+  await openAcme()
+  await page.evaluate(pressCard, 'acme.ordering.checkout')
+  await still()
+  const fitHeld = await page.evaluate(async () => {
+    const s = window.__spike, c = s.cam
+    const same = await (await fetch('/models/acme.json')).json()
+    s.manual(true)
+    await s.swapModel(same)
+    for (let k = 0; k < 9; k++) s.advance(16)
+    s.controls.go(0)
+    const fitZ = c.z
+    let most = 0
+    for (let k = 0; k < 50; k++) { s.advance(16); most = Math.max(most, c.z) }
+    s.manual(false)
+    return { fitZ, most }
+  })
+  check('Fit pressed while an update moves into place holds', fitHeld.most <= fitHeld.fitZ * 1.05, JSON.stringify(fitHeld))
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])
+
+  // 11. A flight that lands while an update still moves its card lands on the card, and it ends framed.
+  await openAcme()
+  const payouts = 'acme.merchants.portal.payoutsUi'
+  const landing = await page.evaluate(async id => {
+    const s = window.__spike, c = s.cam
+    const json = await (await fetch('/models/acme.json')).json()
+    for (let k = 1; k <= 3; k++) json.elements.push({ id: `acme.extra${k}`, parent: 'acme', title: `Extra ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+    s.manual(true)
+    s.controls.goSelect(s.id(id))
+    for (let t = 0; t < c.flightMs - 144; t += 16) s.advance(16)
+    await s.swapModel(json)
+    while (c.flying) s.advance(16)
+    const r = s.renderer.screenRectOf(s.id(id))
+    for (let k = 0; k < 60; k++) s.advance(16)
+    s.manual(false)
+    return { r: r.map(Math.round), w: c.w, h: c.h }
+  }, payouts)
+  const landed11 = await framedAfter('13-landing-mid-move', payouts, pressCard)
+  const lr = landing.r
+  check('a flight landing while its card still moves lands on the card, and it ends framed', lr[0] >= 0 && lr[1] >= 0 && lr[0] + lr[2] <= landing.w && lr[1] + lr[3] <= landing.h && landed11.ok, JSON.stringify({ landing, ...JSON.parse(landed11.detail) }))
+
+  // 12. A framed container that an update fills never outgrows its framing halfway through the move.
+  await openAcme()
+  await page.evaluate(pressCard, 'acme.merchants.portal')
+  await still()
+  const widths = await page.evaluate(async () => {
+    const s = window.__spike, i = () => s.id('acme.merchants.portal')
+    const json = await (await fetch('/models/acme.json')).json()
+    for (let k = 1; k <= 40; k++) json.elements.push({ id: `acme.more${k}`, parent: 'acme', title: `More ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} }, { id: `acme.merchants.more${k}`, parent: 'acme.merchants', title: `More ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+    const w0 = s.renderer.screenRectOf(i())[2]
+    s.manual(true)
+    await s.swapModel(json)
+    let most = 0
+    for (let k = 0; k < 60; k++) { s.advance(16); most = Math.max(most, s.renderer.screenRectOf(i())[2]) }
+    s.manual(false)
+    return { w0, most, end: s.renderer.screenRectOf(i())[2], stage: document.getElementById('details').getBoundingClientRect().left }
+  })
+  check('a framed container an update fills keeps within its framing through the move', widths.most <= Math.max(widths.w0, widths.end) * 1.02 + 1 && widths.most <= widths.stage, JSON.stringify(widths))
+
+  // 13. A drag during one update's move, then a different update: the selection moves with the
+  // camera from where the drag left it, never off screen.
+  await openAcme()
+  const orderApi = 'acme.ordering.orders.orderApi'
+  await page.evaluate(pressCard, orderApi)
+  await still()
+  await page.evaluate(async id => {
+    const s = window.__spike
+    const json = await (await fetch('/models/acme.json')).json()
+    json.elements.find(e => e.id === id).description = 'Order placement, lookup and cancellation.'
+    const big = await (await fetch('/models/acme.json')).json()
+    for (let k = 1; k <= 16; k++) big.elements.push({ id: `acme.ordering.svc${k}`, parent: 'acme.ordering', title: `Service ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+    window.__big = big
+    s.manual(true)
+    await s.swapModel(json)
+    for (let k = 0; k < 15; k++) s.advance(16)
+  }, orderApi)
+  await page.mouse.move(700, 500)
+  await page.mouse.down()
+  for (let k = 1; k <= 8; k++) await page.mouse.move(700 + k * 4, 500 + k * 1.5)
+  await sleep(150)
+  await page.mouse.up()
+  const moved13 = await page.evaluate(async id => {
+    const s = window.__spike
+    const before = s.renderer.screenRectOf(s.id(id))
+    await s.swapModel(window.__big)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    s.manual(false)
+    return { before: before.map(Math.round), after: s.renderer.screenRectOf(s.id(id)).map(Math.round), w: s.cam.w, h: s.cam.h }
+  }, orderApi)
+  const a13 = moved13.after
+  check('a drag, then a different update: the selection stays on screen', a13[0] + a13[2] > 0 && a13[0] < moved13.w && a13[1] + a13[3] > 0 && a13[1] < moved13.h && Math.abs(a13[0] - moved13.before[0]) < 200, JSON.stringify(moved13))
+
+  // 14. A sideways scroll during a jump is no trip of its own: one Back returns to where the jump began.
+  await openAcme()
+  await page.evaluate(() => window.__spike.fly(0))
+  await still()
+  await page.evaluate(id => { const s = window.__spike; s.manual(true); s.controls.goSelect(s.id(id)); for (let t = 0; t < s.cam.flightMs * 0.2; t += 16) s.advance(16) }, orderApi)
+  await page.mouse.move(600, 500)
+  await page.mouse.wheel({ deltaX: 120, deltaY: 0 })
+  await sleep(100)
+  await page.evaluate(() => { const s = window.__spike; while (s.cam.flying) s.advance(16); s.manual(false) })
+  await sleep(800)
+  await page.evaluate(() => window.__spike.controls.back())
+  await still()
+  const backTo = await page.evaluate(() => window.__spike.controls.view())
+  check('a sideways scroll during a jump adds no Back step', backTo.selected === null && backTo.here === null, JSON.stringify(backTo))
+
+  // 15. On a phone, closing the code reader frames the card clear of the sheet it hid.
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await page.goto(`${base}?model=knights-of-darkness`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => document.querySelector('#welcome .ok')?.click())
+  await page.evaluate(pressCard, card)
+  await still()
+  for (let k = 0; k < 2; k++) {
+    const r = await page.evaluate(id => window.__spike.renderer.screenRectOf(window.__spike.id(id)), card)
+    await page.mouse.click(r[0] + r[2] / 2, r[1] + Math.min(r[3] / 2, 30), { count: 2, clickCount: 2 })
+    await page.waitForFunction(() => document.body.classList.contains('reading'), { timeout: 15000 })
+    await sleep(400)
+    await page.keyboard.press('Escape')
+    await still()
+  }
+  const clear = await page.evaluate(id => { const s = window.__spike, r = s.renderer.screenRectOf(s.id(id)); return { r: r.map(Math.round), sheet: document.getElementById('details').getBoundingClientRect().top, bar: document.getElementById('top').getBoundingClientRect().bottom } }, card)
+  await shot('14-phone-reader-closed')
+  check('on a phone, closing the code reader leaves the card clear of the sheet', clear.r[1] + clear.r[3] <= clear.sheet + 1 && clear.r[1] >= clear.bar - 1, JSON.stringify(clear))
+  await page.setViewport({ width: 1600, height: 1000 })
 } finally {
   writeFileSync(file, original)
   console.log(JSON.stringify({ results, errors }, null, 1))
