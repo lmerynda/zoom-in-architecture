@@ -1287,14 +1287,14 @@ export class Renderer {
 
 /**
  * What the project's own tests showed of a card, on a traced map: an app's endpoints seen, an
- * endpoint's requests (or that none came), a file or step that ran. Nothing on an untraced map.
+ * endpoint's requests (or that none came), the calls into a file, a step whose code was called. Nothing on an untraced map.
  */
 export function seenText(el: { metadata?: Record<string, string> }, traced: boolean): string {
   const s = el.metadata?.seen
   if (!traced || s == null) return ''
   if (s.includes('/')) return `${s} endpoints seen in tests`
   if (el.metadata?.method) return s === '0' ? 'untested' : `${count(+s)} request${s === '1' ? '' : 's'}`
-  if (el.metadata?.role === 'step') return s === '0' ? '' : 'ran in tests'
+  if (el.metadata?.role === 'step') return s === '0' ? '' : 'seen in tests'
   return s === '0' ? '' : `${count(+s)} call${s === '1' ? '' : 's'} in tests`
 }
 

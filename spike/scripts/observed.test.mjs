@@ -14,7 +14,9 @@ describe('declaredTypes', () => {
       'src/läden/Größe.java': java('läden', 'public enum Größe { KLEIN { void x() { } }, GROSS }\n@interface Maß { }'),
     })
     expect(types).toEqual(new Map([
-      ['shop.Offer', ['src/shop/Offer.java']], ['shop.Offer.Builder', ['src/shop/Offer.java']], ['shop.Offer.Builder.Step', ['src/shop/Offer.java']], ['shop.Offer.Step', ['src/shop/Offer.java']],
+      // A member type under its binary name, as the agent names it, and its name in the source.
+      ['shop.Offer', ['src/shop/Offer.java']], ['shop.Offer$Builder', ['src/shop/Offer.java']], ['shop.Offer.Builder', ['src/shop/Offer.java']],
+      ['shop.Offer$Builder$Step', ['src/shop/Offer.java']], ['shop.Offer.Builder.Step', ['src/shop/Offer.java']], ['shop.Offer$Step', ['src/shop/Offer.java']], ['shop.Offer.Step', ['src/shop/Offer.java']],
       ['shop.OfferHelper', ['src/shop/Offer.java']], ['shop.Price', ['src/shop/Offer.java']], ['shop.Shape', ['src/shop/Offer.java']],
       ['shop.OfferRepository', ['src/shop/OfferRepository.java']], ['Main', ['src/Main.java']],
       ['läden.Größe', ['src/läden/Größe.java']], ['läden.Maß', ['src/läden/Größe.java']],
@@ -30,6 +32,23 @@ describe('declaredTypes', () => {
       'src/shop/Text.java': 'package shop;\nclass Text { String s = """\n  ends in a backslash \\\\""";\n}\n// """ class Ghost { }\n',
     })
     expect([...types.keys()].sort()).toEqual(['shop.Invoice', 'shop.Order', 'shop.Text', 'shop.sales.Order'])
+  })
+
+  it('reads whole identifiers: "class" ending a name is no keyword, and a combining mark is part of a name', () => {
+    const types = declaredTypes({
+      'src/p/A.java': java('p', 'class A { X$class all() { return null; } }\nclass X$class { }'),
+      'src/p/Café.java': java('p', 'class Cafe\\u0301 { }'),
+    })
+    expect([...types.keys()].sort()).toEqual(['p.A', 'p.Café', 'p.X$class'])
+  })
+
+  it('lists a member type under its binary name too, so a top-level class of that name elsewhere makes it ambiguous', () => {
+    const types = declaredTypes({ 'a/p/Outer.java': java('p', 'class Outer { class Inner { } }'), 'b/p/Outer$Inner.java': java('p', 'class Outer$Inner { }') })
+    expect(types).toEqual(new Map([['p.Outer', ['a/p/Outer.java']], ['p.Outer$Inner', ['a/p/Outer.java', 'b/p/Outer$Inner.java']], ['p.Outer.Inner', ['a/p/Outer.java']]]))
+    expect(classFiles(types, ['p.Outer$Inner', 'p.Outer.Inner'])).toEqual(new Map([['p.Outer.Inner', 'a/p/Outer.java']]))
+    // With only the outer class in another module, the member's binary name is the one module's that declares it.
+    const split = declaredTypes({ 'a/p/Outer.java': java('p', 'class Outer { class Inner { } }'), 'b/p/Other.java': java('p', 'class Other { }') })
+    expect(classFiles(split, ['p.Outer$Inner', 'p.Outer$Inner$1'])).toEqual(new Map([['p.Outer$Inner', 'a/p/Outer.java'], ['p.Outer$Inner$1', 'a/p/Outer.java']]))
   })
 
   it('keeps every file one name is declared in, reads only Java, and lists nothing from nothing', () => {

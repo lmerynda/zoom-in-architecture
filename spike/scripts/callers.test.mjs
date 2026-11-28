@@ -178,6 +178,20 @@ describe('placeTree', () => {
     ] }])
   })
 
+  it('finds a method where its class declares it: not in an anonymous class, a call, an escaped comment, or a top-level class whose name has a "$"', () => {
+    const sources = {
+      'src/p/Work.java': [
+        'package p;', 'class Work {', '  Runnable r = new Runnable() {', '    public void run() { }', '  };', '  public void run() {', '    assert ready();', '  }', '  boolean ready() { return true; }', '  \\u002f\\u002f void list() { }', '  void list() { }', '}', '',
+      ].join('\n'),
+      'src/p/Cash$Box.java': ['package p;', 'class Cash$Box {', '  int get() { return 1; }', '  static class Inner {', '    int get() { return 2; }', '  }', '}', ''].join('\n'),
+    }
+    const tree = [{ at: 'p.Work.run', count: 1, kids: [{ at: 'p.Work.ready', count: 1 }, { at: 'p.Work.list', count: 1 }, { at: 'p.Work$1.run', count: 1 }, { at: 'p.Cash$Box$Inner.get', count: 1 }, { at: 'p.Cash$Box.get', count: 1 }] }]
+    const at = placeTree(tree, declaredTypes(sources), sources)
+    // Work$1 is the anonymous Runnable: its file is Work's, but which of Work's bodies it is the trace does not say, so no line.
+    expect([at[0].line, ...at[0].kids.map(k => k.line)]).toEqual([6, 9, 11, undefined, 5, 3])
+    expect(at[0].kids[2].path).toBe('src/p/Work.java')
+  })
+
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
     markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())

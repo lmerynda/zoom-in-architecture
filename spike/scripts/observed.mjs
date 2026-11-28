@@ -5,8 +5,15 @@
 import { posix } from 'node:path'
 import { javaCode, normalRoute } from './trace.mjs'
 
-/** Java source with its Unicode escapes read (A is A), as the compiler reads it before anything else. */
-const unescapeJava = text => text.replace(/(?<!\\)((?:\\\\)*)\\u+([0-9a-fA-F]{4})/g, (_, run, hex) => run + String.fromCharCode(parseInt(hex, 16)))
+/**
+ * Java source with its Unicode escapes read (A is A), as the compiler reads them before anything
+ * else. An escaped line break stays escaped, so every line keeps its number.
+ */
+const unescapeJava = text => text.replace(/(?<!\\)((?:\\\\)*)\\u+([0-9a-fA-F]{4})/g, (m, run, hex) => (/^000[aAdD]$/.test(hex) ? m : run + String.fromCharCode(parseInt(hex, 16))))
+
+/** A Java identifier's characters (JLS 3.8): letters, currency signs, connectors, then also digits and combining marks. */
+const ID_START = '\\p{L}\\p{Nl}\\p{Sc}\\p{Pc}', ID_PART = `${ID_START}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Cf}`
+const TYPE_DECL = new RegExp(`(?<![${ID_PART}])(?:class|interface|enum|record)\\s+([${ID_START}][${ID_PART}]*)[^;{}]*$`, 'u')
 
 /** The name a "{" at i opens a type of, from the declaration before it (back to the last ";", "{" or "}" outside parentheses), or null. */
 function typeAt(code, i) {
@@ -19,14 +26,15 @@ function typeAt(code, i) {
   }
   // What is in parentheses (annotations' values, a record's components) is never the declaration.
   let depth = 0
-  const head = [...code.slice(j + 1, i)].map(c => { if (c === '(') depth++; const out = depth ? ' ' : c; if (c === ')') depth--; return out }).join('')
-  return /\b(?:class|interface|enum|record)\s+([\p{L}_$][\p{L}\p{N}_$]*)[^;{}]*$/u.exec(head)?.[1] ?? null
+  const head = code.slice(j + 1, i).split('').map(c => { if (c === '(') depth++; const out = depth ? ' ' : c; if (c === ')') depth--; return out }).join('')
+  return TYPE_DECL.exec(head)?.[1] ?? null
 }
 
 /**
- * The types a Java source declares, comments and strings blanked (javaCode): its package and each
- * type with its name in the file ("Offer", "Offer.Builder") and where its body opens and closes.
- * Top-level and member types; a local or anonymous class, in a method or an initializer, is not one.
+ * The types a Java source declares, from its code with escapes read and comments and strings
+ * blanked: its package and each type with its name in the file ("Offer.Builder"), its binary name
+ * as the JVM names it ("Offer$Builder"), and where its body opens and closes. Top-level and member
+ * types; a local or anonymous class, in a method or an initializer, is not one.
  */
 function javaTypes(code) {
   const pkg = /^\s*package\s+([^;]+);/m.exec(code)?.[1].replace(/\s+/g, '') ?? ''
@@ -34,9 +42,11 @@ function javaTypes(code) {
   for (let i = 0; i < code.length; i++) {
     if (code[i] === '{') {
       // A type is declared at the top or straight in a type's body.
-      const parent = open.length ? open[open.length - 1].name : ''
-      const own = parent !== null ? typeAt(code, i) : null
-      const block = { name: own ? (parent ? `${parent}.${own}` : own) : null, open: i, close: code.length }
+      const parent = open.length ? open[open.length - 1] : { name: '', binary: '' }
+      const own = parent.name !== null ? typeAt(code, i) : null
+      const block = own
+        ? { name: parent.name ? `${parent.name}.${own}` : own, binary: parent.binary ? `${parent.binary}$${own}` : own, open: i, close: code.length }
+        : { name: null, binary: null, open: i, close: code.length }
       open.push(block)
       if (own) types.push(block)
     } else if (code[i] === '}' && open.length) open.pop().close = i
@@ -44,34 +54,36 @@ function javaTypes(code) {
   return { pkg, types }
 }
 
+/** A Java source's code as javaTypes and placeTree read it: escapes read, comments and strings blanked. */
+const javaRead = text => javaCode(unescapeJava(text))
+
 /**
- * The types the Java files of `texts` ({ path: source }) declare, by full name: a Map of
- * 'com.x.Foo' (a member type 'com.x.Foo.Inner') to every file that declares it (one, unless two
- * modules share a package). Classes, interfaces, enums, records and annotations, package-private
- * ones too. Only Java: the Java agent's spans name no other language's code, so a polyglot model's
- * shop/Order.py or Order.cs never takes shop.Order's calls.
+ * The types the Java files of `texts` ({ path: source }) declare: a Map of each type's full name to
+ * every file that declares it (one, unless two modules share a package, or a top-level class's name
+ * with a "$" is another's member type). A member type is there under its binary name, as the agent
+ * names it ('com.x.Foo$Inner'), and its name in the source ('com.x.Foo.Inner'). Classes, interfaces,
+ * enums, records and annotations, package-private ones too. Only Java: the Java agent's spans name no
+ * other language's code, so a polyglot model's shop/Order.py or Order.cs never takes shop.Order's calls.
  */
 export function declaredTypes(texts) {
   const out = new Map()
+  const put = (name, path) => out.set(name, [...new Set([...(out.get(name) ?? []), path])].sort())
   for (const [path, text] of Object.entries(texts)) {
     if (!path.endsWith('.java')) continue
-    const { pkg, types } = javaTypes(javaCode(unescapeJava(text)))
-    for (const t of types) {
-      const name = pkg ? `${pkg}.${t.name}` : t.name
-      out.set(name, [...new Set([...(out.get(name) ?? []), path])].sort())
-    }
+    const { pkg, types } = javaTypes(javaRead(text))
+    const full = n => (pkg ? `${pkg}.${n}` : n)
+    for (const t of types) { put(full(t.binary), path); if (t.name !== t.binary) put(full(t.name), path) }
   }
   return out
 }
 
 /**
- * Each class's file, among `types` (declaredTypes): the file that declares it. A name written with
- * dots (com.x.Foo.Inner) must be declared as it is. The agent names a nested, local or anonymous
- * class com.x.Foo$Inner or com.x.Foo$1 (a lambda com.x.Foo$$Lambda/…, a proxy
- * com.x.Foo$$SpringCGLIB$$0): with no type of that very name, it is cut at its "$"s from the end
- * until one is declared, so a top-level class named Foo$Bar is its own; a "$" with a dot after it
- * is in a package's name, never cut. A class no file declares (a library's), or two files do (one
- * package in two modules), has none: which file ran is not known.
+ * Each class's file, among `types` (declaredTypes): the file that declares a type of that very name.
+ * The agent names an anonymous or local class com.x.Foo$1 or com.x.Foo$1Local, a lambda
+ * com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0: with no type of its name, it is cut at
+ * its "$"s from the end until one is declared; a "$" with a dot after it is in a package's name,
+ * never cut. A class no file declares (a library's), or two files do, has none: which file ran is
+ * not known.
  */
 export function classFiles(types, classes) {
   const out = new Map()
@@ -85,26 +97,6 @@ export function classFiles(types, classes) {
     }
   }
   return out
-}
-
-/**
- * Where class `cls` is in a Java source's blanked code: its body's [open, close] without the bodies
- * of the types inside it, or null. A "$" name is its outer type's when it is no member type (an
- * anonymous or local class, a lambda).
- */
-function typeBody(code, cls) {
-  const { pkg, types } = javaTypes(code)
-  let name = pkg && cls.startsWith(`${pkg}.`) ? cls.slice(pkg.length + 1) : cls
-  for (;;) {
-    const t = types.find(x => x.name === name) ?? types.find(x => x.name === name.replace(/\$/g, '.'))
-    if (t) {
-      const chars = code.slice(0, t.close).split('')
-      for (const inner of types) if (inner.name.startsWith(`${t.name}.`) && inner.open > t.open && inner.close < t.close) for (let k = inner.open; k <= inner.close; k++) if (chars[k] !== '\n') chars[k] = ' '
-      return { open: t.open, close: t.close, text: chars.join('') }
-    }
-    if (!name.includes('$')) return null
-    name = name.slice(0, name.lastIndexOf('$'))
-  }
 }
 
 /**
@@ -349,7 +341,8 @@ export function markCallers(model, requests, observed, sources, types) {
   const eps = new Map(requests.elements.filter(e => e.metadata?.method && e.metadata?.route).map(e => [`${e.metadata.method} ${normalRoute(e.metadata.route)}`, e]))
   const handler = new Map(requests.elements.filter(e => e.metadata?.role === 'step' && e.metadata?.step === '1').map(e => [e.parent, e.metadata.path]))
   const fileEl = new Map(model.elements.filter(e => e.metadata?.path).map(e => [e.metadata.path, e]))
-  const calls = new Map(), routeOf = new Map()
+  // Each file's types and methods are read once for all the endpoints' trees.
+  const calls = new Map(), routeOf = new Map(), placed = new Map()
   for (const o of observed.endpoints) {
     const ep = eps.get(`${o.method} ${o.route}`)
     if (!ep) continue
@@ -379,7 +372,7 @@ export function markCallers(model, requests, observed, sources, types) {
     }
     if (o.untimed) ep.metadata.untimed = String(o.untimed)
     // trace --methods: its call tree, each method with the file and line it is declared at.
-    if (o.tree?.length) ep.metadata.callTree = JSON.stringify(placeTree(o.tree, types, sources))
+    if (o.tree?.length) ep.metadata.callTree = JSON.stringify(placeTree(o.tree, types, sources, placed))
   }
   for (const [path, c] of calls) {
     const e = fileEl.get(path)
@@ -393,32 +386,47 @@ export function markCallers(model, requests, observed, sources, types) {
 export const TESTS_KEPT = 40
 
 /**
- * A call tree from `trace --methods` with each method placed: { at, count, path, line, kids }, path
- * being the file of its class (classFiles of the model's `types`) and line where the method is declared there
- * (the first declaration of that name). Tables touched and "N more" stay as they are.
+ * Where each method a Java source's type declares is: for the type `cls` (its full binary or dotted
+ * name), the line of each method name declared straight in its body, the first of a name. Bodies of
+ * methods, initializers and the types inside it do not count, so neither does a call, an anonymous
+ * class's method or another class's of the file. Its name after a type (on this line or the one
+ * before), not after "return", "new" or a dot. Null when the file declares no type of that name: an
+ * anonymous or local class (Foo$1) is in its file, but which body it is the trace does not say.
  */
-export function placeTree(tree, types, sources) {
+function methodLines(file, cls) {
+  const name = file.pkg && cls.startsWith(`${file.pkg}.`) ? cls.slice(file.pkg.length + 1) : cls
+  const t = file.types.find(x => x.binary === name || x.name === name)
+  if (!t) return null
+  // The body at its own level: what is inside any brace in it blanked, line breaks kept.
+  let depth = 0
+  const own = file.code.slice(t.open + 1, t.close).split('').map(c => { if (c === '}') depth--; const out = depth > 0 && c !== '\n' ? ' ' : c; if (c === '{') depth++; return out }).join('')
+  const lines = new Map()
+  let line = file.code.slice(0, t.open + 1).split('\n').length, at = 0
+  for (const m of own.matchAll(new RegExp(`(?<![${ID_PART}.])([${ID_START}][${ID_PART}]*)\\s*\\(`, 'gu'))) {
+    for (; at < m.index; at++) if (own[at] === '\n') line++
+    const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(own.slice(Math.max(0, m.index - 200), m.index))
+    if (!before || !/\s/.test(own[m.index - 1] ?? '') || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
+    if (!lines.has(m[1])) lines.set(m[1], line)
+  }
+  return lines
+}
+
+/**
+ * A call tree from `trace --methods` with each method placed: { at, count, path, line, kids }, path
+ * being the file of its class (classFiles of the model's `types`) and line where its class declares
+ * the method there (methodLines). Tables touched and "N more" stay as they are. `placed` keeps what
+ * was read of each file and type across calls.
+ */
+export function placeTree(tree, types, sources, placed = new Map()) {
   const classes = new Set()
   const walk = ns => { for (const n of ns) { const k = n.at.lastIndexOf('.'); if (k > 0 && !/\s/.test(n.at)) classes.add(n.at.slice(0, k)); walk(n.kids ?? []) } }
   walk(tree)
   const fileOf = classFiles(types, [...classes])
-  // Where a method is declared in its class's own body (not another class's of the file, nor a type's
-  // inside it): its name after a type (on this line or the one before), not after "return", "new" or
-  // a dot, outside comments and strings.
-  const bodies = new Map()
   const lineOf = (path, cls, name) => {
-    const key = `${path}\n${cls}`
-    if (!bodies.has(key)) bodies.set(key, typeBody(javaCode(sources[path] ?? ''), cls))
-    const body = bodies.get(key)
-    if (!body) return null
-    const text = body.text
-    for (const m of text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}_$.])${name.replace(/\$/g, '\\$')}\\s*\\(`, 'gu'))) {
-      if (m.index <= body.open) continue
-      const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(text.slice(Math.max(0, m.index - 200), m.index))
-      if (!before || !/\s$/.test(text.slice(0, m.index)) || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
-      return text.slice(0, m.index).split('\n').length
-    }
-    return null
+    if (!placed.has(path)) { const code = javaRead(sources[path] ?? ''); placed.set(path, { code, ...javaTypes(code), lines: new Map() }) }
+    const file = placed.get(path)
+    if (!file.lines.has(cls)) file.lines.set(cls, methodLines(file, cls))
+    return file.lines.get(cls)?.get(name) ?? null
   }
   const place = ns => ns.map(n => {
     const k = n.at.lastIndexOf('.'), path = k > 0 && !/\s/.test(n.at) ? fileOf.get(n.at.slice(0, k)) ?? null : null
