@@ -82,6 +82,8 @@ export class Camera {
    * the current target never pulls the camera back.
    */
   zoomAt(sx: number, sy: number, factor: number, maxZ = Infinity, minZ = 0) {
+    // No zoom (a sideways scroll) is no move: it neither stops a flight nor takes the camera.
+    if (factor === 1) return
     this.hand()
     this.fly = null
     this.vx = this.vy = 0
@@ -108,18 +110,30 @@ export class Camera {
     const f = this.fly
     if (f) {
       const at = f.at, m = (p: View): View => [mx(p[0]), my(p[1]), p[2] * k]
-      this.fly = { ...f, at: s => m(at(s)), end: m(f.end), to: m(f.to) }
+      // The bend is in world units across, scaled as the world was; along the zoom it is a ratio, unchanged.
+      const [ax, bx, ay, by, aw, bw] = f.bend
+      this.fly = { ...f, at: s => m(at(s)), end: m(f.end), to: m(f.to), bend: [ax * k, bx * k, ay * k, by * k, aw, bw] }
     }
   }
 
   /**
-   * Sends a flight under way to a new end, centre (x, y) at zoom z, on its own clock: the path
-   * bends toward the new end as it goes, so a target that moves (a resize, a layout moving into
-   * place) is met when the flight was due to land, never restarted or stalled. False when not flying.
+   * Sends a flight under way to a new end, centre (x, y) at zoom z, on its own clock: from where
+   * it is now, the path bends toward the new end over the time left, so a target that moves (a
+   * resize, a layout moving into place) is met when the flight was due to land, with no jump,
+   * restart or stall. False when not flying.
    */
   aim(x: number, y: number, z: number) {
-    if (!this.fly) return false
-    this.fly.to = [x, y, this.w / z]
+    const f = this.fly
+    if (!f) return false
+    const to: View = [x, y, this.w / z]
+    // The change of end, added in proportion to the progress made from here on: nothing now, all of it at the end.
+    const d = [to[0] - f.to[0], to[1] - f.to[1], Math.log(to[2] / f.to[2])], left = 1 - f.e
+    for (let k = 0; k < 3; k++) {
+      if (left < 1e-6) { f.bend[k * 2 + 1] += d[k]; continue }
+      f.bend[k * 2] += d[k] / left
+      f.bend[k * 2 + 1] -= (d[k] * f.e) / left
+    }
+    f.to = to
     return true
   }
 
@@ -154,7 +168,7 @@ export class Camera {
     const ms = Math.min(this.maxFlightMs, dur ?? Math.max(350, 300 + f.S * 120))
     const end = f.at(f.S)
     if (ms <= 0) { this.place(end[0], end[1], this.w / end[2]); return }
-    this.fly = { ...f, t0: now, dur: ms, end, to: end }
+    this.fly = { ...f, t0: now, dur: ms, end, to: end, e: 0, bend: [0, 0, 0, 0, 0, 0] }
   }
 
   /** Ends a flight or a glide where it is now. */
@@ -178,10 +192,10 @@ export class Camera {
       const f = this.fly
       const u = Math.min(1, (now - f.t0) / f.dur)
       const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2
+      f.e = e
       // The path as planned, bent toward where the flight was sent since (aim), all of the way by its end.
-      const [px, py, pw] = f.at(e * f.S)
-      const cx = px + (f.to[0] - f.end[0]) * e, cy = py + (f.to[1] - f.end[1]) * e, vw = pw * Math.pow(f.to[2] / f.end[2], e)
-      this.x = cx; this.y = cy; this.z = this.w / vw
+      const [px, py, pw] = f.at(e * f.S), [ax, bx, ay, by, aw, bw] = f.bend
+      this.x = px + ax * e + bx; this.y = py + ay * e + by; this.z = this.w / (pw * Math.exp(aw * e + bw))
       this.focusX = this.w / 2; this.focusY = this.h / 2
       if (u >= 1) { this.fly = null; this.targetLogZ = Math.log(this.z) }
       return true
@@ -224,6 +238,13 @@ interface Flight {
   /** Where the planned path ends, and where the flight lands: that end, or where `aim` sent it since. */
   end: View
   to: View
+  /** The eased progress reached, 0 to 1. */
+  e: number
+  /**
+   * How far the flight is bent off its planned path, as a + b·e for x, y and the log of the view
+   * width ([ax, bx, ay, by, aw, bw]): 0 until aimed elsewhere, then reaching `to` − `end` at e = 1.
+   */
+  bend: [number, number, number, number, number, number]
 }
 
 /** A view as its centre x, y and its width, in world units. */

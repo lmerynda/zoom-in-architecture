@@ -24,7 +24,7 @@ page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const shot = name => page.screenshot({ path: join(outDir, `${name}.png`) })
 const results = {}
-const check = (name, ok, detail = '') => { results[name] = ok ? 'pass' : `FAIL ${detail}`; console.log(ok ? 'pass' : 'FAIL', name, detail) }
+const check = (name, ok, detail = '') => { results[name] = ok ? 'pass' : `FAIL ${detail}`; if (!ok) process.exitCode = 1; console.log(ok ? 'pass' : 'FAIL', name, detail) }
 
 try {
   await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
@@ -120,6 +120,21 @@ try {
     })
     await sleep(300)
   }
+  /** Opens acme at 1600×1000 with an update ready that adds three parts to Ordering, which is laid out again. */
+  const openAcme = async () => {
+    await page.setViewport({ width: 1600, height: 1000 })
+    await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
+    await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+    await page.evaluate(async () => {
+      document.querySelector('#welcome .ok')?.click()
+      const json = await (await fetch('/models/acme.json')).json()
+      const part = k => ({ id: `acme.ordering.extra${k}`, parent: 'acme.ordering', title: `Extra ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
+      json.elements.unshift(part(1), part(2), part(3))
+      window.__acme = json
+      window.__spike.unhover()
+    })
+    await sleep(300)
+  }
   const update = () => page.evaluate(() => { void window.__spike.swapModel(window.__update) })
   const midMorph = async () => { await page.waitForFunction(() => window.__spike.morphing, { timeout: 30000 }); await sleep(250) }
   /** After the race: the card on screen, left of the panel, and framed as a fresh press frames it. */
@@ -156,7 +171,7 @@ try {
   await still()
   await update()
   await midMorph()
-  await page.setViewport({ width: 1600, height: 1000 })
+  await page.setViewport({ width: 1200, height: 760 })
   const resized = await framedAfter('06-race-height-change', card, pressCard)
   check('a card framed before a resize stays framed when the window changes during a live update\'s morph', resized.ok, resized.detail)
 
@@ -172,42 +187,48 @@ try {
   const whole = await framedAfter('07-race-whole-map', null, () => window.__spike.fly(0))
   check('the whole map stays framed through a repeated update and a height change during the morph', whole.ok, whole.detail)
 
-  // 4. A drag during the morph makes the camera the reader's: the morph, and the update repeated
-  // after it, leave it where the drag put it.
-  await fresh()
-  await page.evaluate(pressCard, card)
+  // 4. A drag during the morph makes the camera the reader's: the morph, and the same update
+  // repeated before it ends, leave it where the drag put it. On acme, whose Ordering the update lays
+  // out again, so the morph has a camera path of its own to take it back along.
+  await openAcme()
+  await page.evaluate(pressCard, 'acme.ordering.checkout')
   await still()
-  await update()
-  await midMorph()
+  // On the page's manual clock, so the repeated update arrives while the first still moves into place.
+  await page.evaluate(async () => { const s = window.__spike; s.manual(true); await s.swapModel(window.__acme); for (let k = 0; k < 15; k++) s.advance(16) })
   await page.mouse.move(700, 500)
   await page.mouse.down()
-  for (let k = 1; k <= 10; k++) await page.mouse.move(700 + k * 20, 500 + k * 10)
+  for (let k = 1; k <= 10; k++) await page.mouse.move(700 + k * 18, 500 + k * 6)
   await sleep(150)
   await page.mouse.up()
   const dropped = await page.evaluate(() => [window.__spike.cam.x, window.__spike.cam.y, window.__spike.cam.z])
+  const kept = await page.evaluate(async () => {
+    const s = window.__spike
+    s.advance(16)
+    const midway = s.morphing
+    await s.swapModel(window.__acme)
+    for (let k = 0; k < 60; k++) s.advance(16)
+    s.manual(false)
+    return [s.cam.x, s.cam.y, s.cam.z, midway]
+  })
+  if (!kept.pop()) check('the repeated update arrives during the first one\'s morph', false)
   await still()
-  const kept = await page.evaluate(() => [window.__spike.cam.x, window.__spike.cam.y, window.__spike.cam.z])
   check('a drag during a live update\'s morph is kept', Math.hypot(kept[0] - dropped[0], kept[1] - dropped[1]) * kept[2] < 2 && Math.abs(kept[2] / dropped[2] - 1) < 1e-3, JSON.stringify({ dropped, kept }))
 
   // 5. A jump of the reader's own under way when an update arrives (the minimap, Back) flies on to
   // where it was going: the morph does not cut it short. On acme, whose Ordering is laid out again by
   // the update, so the selection moves and the morph has a camera path of its own.
-  await page.goto(`${base}?model=acme`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await openAcme()
   await page.evaluate(pressCard, 'acme.ordering.checkout')
   await still()
   // On the page's manual clock, so the flight is still under way when the update moves into place.
   const headed = await page.evaluate(async () => {
     const s = window.__spike, c = s.cam
-    const json = await (await fetch('/models/acme.json')).json()
-    const part = k => ({ id: `acme.ordering.extra${k}`, parent: 'acme.ordering', title: `Extra ${k}`, kind: 'service', description: '', technology: '', tags: [], metadata: {} })
-    json.elements.unshift(part(1), part(2), part(3))
     s.manual(true)
     // As the minimap's pick flies: a point to the centre, at this zoom.
     c.flyTo(c.x - c.w / c.z / 2 + 30, c.y - c.h / c.z / 2 + 20, c.w / c.z, c.h / c.z, s.now(), 1)
     const dest = c.destination
     s.advance(100)
-    await s.swapModel(json)
+    await s.swapModel(window.__acme)
     for (let k = 0; k < 80; k++) s.advance(16)
     s.manual(false)
     return dest
@@ -215,6 +236,59 @@ try {
   await still()
   const landedAt = await page.evaluate(() => [window.__spike.cam.x, window.__spike.cam.y, window.__spike.cam.z])
   check('a jump under way when a live update arrives lands where it was going', Math.hypot(landedAt[0] - headed[0], landedAt[1] - headed[1]) * landedAt[2] < 2 && Math.abs(landedAt[2] / headed[2] - 1) < 1e-3, JSON.stringify({ headed, landedAt }))
+
+  // 6. A card framed as a file that an update gives its first part: every step of the move keeps the
+  // map in view (a container opening from nothing has no framing of its own halfway), and it ends
+  // framed as a container, as pressing it then frames it.
+  await openAcme()
+  await page.evaluate(pressCard, 'acme.ordering.cartCache')
+  await still()
+  const grown = await page.evaluate(async () => {
+    const s = window.__spike, c = s.cam
+    const json = await (await fetch('/models/acme.json')).json()
+    json.elements.push({ id: 'acme.ordering.cartCache.ttl', parent: 'acme.ordering.cartCache', title: 'TTL sweeper', kind: 'component', description: '', technology: '', tags: [], metadata: {} })
+    s.manual(true)
+    const z0 = c.z
+    await s.swapModel(json)
+    let most = 0, emptiest = Infinity
+    for (let k = 0; k < 60; k++) { s.advance(16); most = Math.max(most, c.z / z0); emptiest = Math.min(emptiest, s.last().nodes) }
+    s.manual(false)
+    return { most, emptiest }
+  })
+  const opened = await framedAfter('08-first-child', 'acme.ordering.cartCache', pressCard)
+  check('a framed card given its first part stays in view as it opens, and ends framed', grown.most < 4 && grown.emptiest > 0 && opened.ok, JSON.stringify({ ...grown, ...JSON.parse(opened.detail) }))
+
+  // 7. A sideways scroll is no zoom: the whole map framed stays framed through a resize after it.
+  await fresh()
+  await page.evaluate(() => window.__spike.fly(0))
+  await still()
+  await page.mouse.move(600, 500)
+  await page.mouse.wheel({ deltaX: 120, deltaY: 0 })
+  await sleep(100)
+  await page.setViewport({ width: 1600, height: 600 })
+  const sideways = await framedAfter('09-sideways-scroll', null, () => window.__spike.fly(0))
+  check('a sideways scroll leaves the whole map framed through a resize', sideways.ok, sideways.detail)
+
+  // 8. On a phone with reduced motion: a card selected again with its sheet folded is framed for the
+  // sheet that opens, and stays framed when the phone turns.
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }])
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
+  await page.goto(`${base}?model=knights-of-darkness`, { waitUntil: 'load' })
+  await page.waitForFunction(() => window.__spike?.ready, { timeout: 60000 })
+  await page.evaluate(() => document.querySelector('#welcome .ok')?.click())
+  await page.evaluate(pressCard, card)
+  await still()
+  await page.evaluate(() => document.querySelector('#details > .d-grip')?.click())
+  await sleep(200)
+  await page.evaluate(id => window.__spike.select(window.__spike.id(id)), card)
+  await still()
+  await page.setViewport({ width: 844, height: 390, isMobile: true, hasTouch: true })
+  const turned = await page.evaluate(() => document.getElementById('details').getBoundingClientRect().top)
+  const phone = await framedAfter('10-phone-turned', card, pressCard)
+  // On a phone the sheet, not a column, bounds the free stage: the check's panel edge is the screen's.
+  const p = JSON.parse(phone.detail)
+  check('on a phone, a card selected again with its sheet folded stays framed when the phone turns', p.off <= 2 && p.got[1] >= 0, JSON.stringify({ ...p, sheetTop: turned }))
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])
 } finally {
   writeFileSync(file, original)
   console.log(JSON.stringify({ results, errors }, null, 1))

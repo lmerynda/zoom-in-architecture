@@ -480,6 +480,40 @@ describe('Camera', () => {
     expect(cam.destination).toEqual([-5000, 9000, expect.closeTo(0.01, 9)])
   })
 
+  it('a flight sent to a new end halfway goes on from where it is, with no jump', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    cam.flyTo(500, 500, 10, 6, 0, 1)
+    let t = 0
+    for (; t < cam.flightMs * 0.52; t += 16) cam.step(t, 16)
+    const at = [cam.x, cam.y, cam.z]
+    // Sent elsewhere twice, then stepped again at the same moment: the camera has not moved.
+    cam.aim(300, -100, 20)
+    cam.aim(250, -50, 30)
+    cam.step(t - 16, 0)
+    expect(cam.x).toBeCloseTo(at[0], 9)
+    expect(cam.y).toBeCloseTo(at[1], 9)
+    expect(cam.z).toBeCloseTo(at[2], 9)
+    // And it lands on the last end it was sent to, when it was due.
+    const due = cam.flightMs
+    while (cam.flying) { t += 16; cam.step(t, 16) }
+    expect(t).toBeLessThanOrEqual(due + 16)
+    expect([cam.x, cam.y]).toEqual([expect.closeTo(250, 6), expect.closeTo(-50, 6)])
+    expect(cam.z).toBeCloseTo(30, 6)
+  })
+
+  it('a sideways scroll (no zoom) neither stops a flight nor takes the camera', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    let hands = 0
+    cam.onHand = () => { hands++ }
+    cam.steer(() => cam.flyTo(500, 500, 10, 6, 0, 1))
+    cam.zoomAt(500, 300, 1)
+    expect(cam.flying).toBe(true)
+    expect(hands).toBe(0)
+  })
+
   it('a layout moved under a flight sent elsewhere moves its new end too', () => {
     const cam = new Camera()
     cam.resize(1000, 600)
