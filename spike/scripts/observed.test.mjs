@@ -6,18 +6,30 @@ const file = (id, path, parent = 'app') => ({ id, parent, title: id, kind: 'code
 const java = (pkg, body) => `${pkg ? `package ${pkg};\n\n` : ''}import java.util.List;\n\n${body}\n`
 
 describe('declaredTypes', () => {
-  it('lists the top-level types each Java file declares, by package: package-private ones and interfaces too, nested ones not', () => {
+  it('lists the types each Java file declares, by package: package-private ones, interfaces and member types too, local and anonymous ones not', () => {
     const types = declaredTypes({
-      'src/shop/Offer.java': java('shop', '/** An offer. class NotThis {} */\n@Entity(name = "class Nope {")\npublic class Offer {\n  static class Builder { }\n  interface Step { }\n}\n\nclass OfferHelper implements Comparable<OfferHelper> { }\nrecord Price(int cents) { }'),
+      'src/shop/Offer.java': java('shop', '/** An offer. class NotThis {} */\n@Entity(name = "class Nope {")\n@Import({ Foo.class, Bar.class })\npublic class Offer {\n  static class Builder { class Step { } }\n  interface Step { }\n  Runnable r = new Runnable() { public void run() { } };\n  static { }\n  void make() { class Local { } if (true) { } }\n}\n\nclass OfferHelper implements Comparable<OfferHelper> { }\nrecord Price(@Min({ 0 }) int cents) { Price { } }\nsealed interface Shape permits Price { }'),
       'src/shop/OfferRepository.java': java('shop', 'public interface OfferRepository extends JpaRepository<Offer, Long> { }'),
       'src/Main.java': java('', 'public final class Main { public static void main(String[] a) { new Object() { }; } }'),
-      'src/läden/Größe.java': java('läden', 'public enum Größe { KLEIN { }, GROSS }\n@interface Maß { }'),
+      'src/läden/Größe.java': java('läden', 'public enum Größe { KLEIN { void x() { } }, GROSS }\n@interface Maß { }'),
     })
     expect(types).toEqual(new Map([
-      ['shop.Offer', ['src/shop/Offer.java']], ['shop.OfferHelper', ['src/shop/Offer.java']], ['shop.Price', ['src/shop/Offer.java']],
+      ['shop.Offer', ['src/shop/Offer.java']], ['shop.Offer.Builder', ['src/shop/Offer.java']], ['shop.Offer.Builder.Step', ['src/shop/Offer.java']], ['shop.Offer.Step', ['src/shop/Offer.java']],
+      ['shop.OfferHelper', ['src/shop/Offer.java']], ['shop.Price', ['src/shop/Offer.java']], ['shop.Shape', ['src/shop/Offer.java']],
       ['shop.OfferRepository', ['src/shop/OfferRepository.java']], ['Main', ['src/Main.java']],
       ['läden.Größe', ['src/läden/Größe.java']], ['läden.Maß', ['src/läden/Größe.java']],
     ]))
+  })
+
+  it('reads a declaration as the compiler does: a long record, a package split by a comment, Unicode escapes, a text block ending in backslashes', () => {
+    const fields = Array.from({ length: 60 }, (_, k) => `long component${k}`).join(', ')
+    const types = declaredTypes({
+      'src/shop/Invoice.java': java('shop', `public record Invoice(${fields}) { }`),
+      'src/shop/sales/Order.java': 'package shop /* the shop */ . sales;\n\nclass Order { }\n',
+      'src/shop/Ord.java': 'package shop;\nclass Ord\\u0065r { }\n\\u002f\\u002f class Phantom { }\n',
+      'src/shop/Text.java': 'package shop;\nclass Text { String s = """\n  ends in a backslash \\\\""";\n}\n// """ class Ghost { }\n',
+    })
+    expect([...types.keys()].sort()).toEqual(['shop.Invoice', 'shop.Order', 'shop.Text', 'shop.sales.Order'])
   })
 
   it('keeps every file one name is declared in, reads only Java, and lists nothing from nothing', () => {
@@ -40,8 +52,9 @@ describe('classFiles', () => {
     'src/market/Offer.java': java('market', 'public class Offer { }'),
     'a/src/shop/Cart.java': java('shop', 'class Cart { }'), 'b/src/shop/Cart.java': java('shop', 'class Cart { }'),
     'src/shop/Main.java': java('shop', 'class Main { }'),
-    'src/shop/付款.java': java('shop', 'class 付款 { }'),
-    'src/läden/Größe.java': java('läden', 'class Größe { }'),
+    'src/shop/付款.java': java('shop', 'class 付款 { static class Inner { } }'),
+    'src/läden/Größe.java': java('läden', 'class Größe { enum Maß { A } }'),
+    'src/acme/API.java': java('acme', 'class API { }'),
   })
 
   it('finds a class’s file by its package and name, two top-level classes of one file both, and never a longer or shorter name', () => {
@@ -58,11 +71,13 @@ describe('classFiles', () => {
     ]))
   })
 
-  it('places a nested class written with a dot in its outer class’s file, in any script', () => {
-    expect(classFiles(types, ['shop.Offer.Builder', 'shop.Offer.Builder.Step', 'shop.付款.Inner', 'läden.Größe.Maß', 'läden.Größe$Maß', 'shop.Missing.Inner'])).toEqual(new Map([
+  it('places a nested class written with a dot in the file that declares it, in any script, and a class of a package named like a class nowhere', () => {
+    expect(classFiles(types, ['shop.Offer.Builder', 'shop.Offer.Builder.Step', 'shop.付款.Inner', 'läden.Größe.Maß', 'läden.Größe$Maß', 'shop.Missing.Inner', 'shop.Offer.Missing'])).toEqual(new Map([
       ['shop.Offer.Builder', 'src/shop/Offer.java'], ['shop.Offer.Builder.Step', 'src/shop/Offer.java'],
       ['shop.付款.Inner', 'src/shop/付款.java'], ['läden.Größe.Maß', 'src/läden/Größe.java'], ['läden.Größe$Maß', 'src/läden/Größe.java'],
     ]))
+    // A library's acme.API.Client (package acme.API) is not a class of acme/API.java; nor is a class of a package with a "$" in its name.
+    expect(classFiles(types, ['acme.API.Client', 'shop.Cash$external.Client', 'acme.API$1'])).toEqual(new Map([['acme.API$1', 'src/acme/API.java']]))
   })
 
   it('places no class in a package it is not in, and none that two files declare', () => {

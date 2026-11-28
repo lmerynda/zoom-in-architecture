@@ -128,6 +128,24 @@ describe('call trees', () => {
     expect(observe([w2, log, w1, r], [], { methods: true }).endpoints[0].tree).toEqual([{ at: 'com.shop.Walker.walk', count: 1, kids: [{ at: 'com.shop.Walker.walk', count: 1 }, { at: 'com.shop.Log.write', count: 1 }] }])
   })
 
+  it('keeps a request one endpoint makes to another out of its tree, and starts a tree at a server span that names its handler', () => {
+    const front = span('GET /front', '', { 'http.request.method': 'GET', 'http.route': '/front' }, 'server')
+    const f = code('Front', 'handle', front.id)
+    const out = span('GET', f.id, { 'http.request.method': 'GET', 'server.address': 'localhost' }, 'client')
+    const back = span('GET /back', out.id, { 'http.request.method': 'GET', 'http.route': '/back', 'code.function.name': 'com.shop.Back.handle' }, 'server')
+    const q = span('SELECT orders', back.id, { 'db.system': 'h2', 'db.sql.table': 'orders', 'db.operation': 'SELECT' }, 'client')
+    const o = observe([front, f, out, back, q], [], { methods: true })
+    expect(o.endpoints.find(e => e.route === '/front').tree).toEqual([{ at: 'com.shop.Front.handle', count: 1 }])
+    expect(o.endpoints.find(e => e.route === '/back').tree).toEqual([{ at: 'com.shop.Back.handle', count: 1, kids: [{ at: 'SELECT orders', count: 1 }] }])
+  })
+
+  it('folds a call seen twenty thousand times over itself without running out of stack', () => {
+    const spans = [span('GET /deep', '', { 'http.request.method': 'GET', 'http.route': '/deep' }, 'server')]
+    for (let k = 0; k < 20000; k++) spans.push(code('Walker', 'walk', spans[spans.length - 1].id))
+    // Each is its caller's only call and the same method: one call seen many times.
+    expect(observe(spans, [], { methods: true }).endpoints[0].tree).toEqual([{ at: 'com.shop.Walker.walk', count: 1 }])
+  })
+
   it('adds up requests into one tree per endpoint, only when asked for', () => {
     const o = observe([...request(), ...request()], [], { methods: true })
     expect(o.endpoints[0].tree).toEqual([{ at: 'com.shop.OrderController.all', count: 2, kids: [{ at: 'com.shop.OrderService.list', count: 2, kids: [

@@ -164,6 +164,20 @@ describe('placeTree', () => {
     expect(placeTree([], new Map(), {})).toEqual([])
   })
 
+  it('finds a method in its own class: two classes of one file, and a nested class, each with a method of one name', () => {
+    const sources = { 'src/shop/OrderController.java': [
+      'package shop;', '', 'public class OrderController {', '  static class Page {', '    List<Order> all() { return List.of(); }', '  }', '', '  public List<Order> all() {', '    return helper.all();', '  }', '}', '', 'class Helper {', '  List<Order> all() { return List.of(); }', '}', '',
+    ].join('\n') }
+    const tree = [{ at: 'shop.OrderController.all', count: 1, kids: [{ at: 'shop.Helper.all', count: 1, kids: [{ at: 'shop.OrderController$Page.all', count: 1 }, { at: 'shop.Helper.gone', count: 1 }] }] }]
+    expect(placeTree(tree, declaredTypes(sources), sources)).toEqual([{ at: 'shop.OrderController.all', count: 1, path: 'src/shop/OrderController.java', line: 8, kids: [
+      { at: 'shop.Helper.all', count: 1, path: 'src/shop/OrderController.java', line: 14, kids: [
+        { at: 'shop.OrderController$Page.all', count: 1, path: 'src/shop/OrderController.java', line: 5 },
+        // A method its class does not declare there has no line: never another class's.
+        { at: 'shop.Helper.gone', count: 1, path: 'src/shop/OrderController.java' },
+      ] },
+    ] }])
+  })
+
   it('folds an endpoint’s call tree into the requests view', () => {
     const requests = { elements: [{ id: 'e', parent: 'app', title: 'GET /x', metadata: { method: 'GET', route: '/x' } }], relations: [] }
     markCallers({ elements: [], relations: [] }, requests, { endpoints: [{ method: 'GET', route: '/x', count: 1, pages: {}, tests: {}, untimed: 0, tree: [{ at: 'a.B.c', count: 1 }] }] }, {}, new Map())

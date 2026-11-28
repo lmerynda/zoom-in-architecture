@@ -580,8 +580,8 @@ export function seenText(tree: Tree, i: number): { lines: string[]; unseen: bool
   if (m.seen?.includes('/')) lines.push(`Seen in tests: ${m.seen.split('/').map(n => count(+n)).join(' of ')} endpoints`)
   else if (m.method && m.seen === '0') { lines.push('Not seen in tests: no test called it, so its path is inferred from code only'); unseen = true }
   else if (m.method && m.seen) lines.push(`Seen in tests: ${count(+m.seen)} HTTP request${m.seen === '1' ? '' : 's'}${m.statuses ? ` · ${m.statuses.replace(/×(\d+)/g, (_, n) => `×${count(+n)}`)}` : ''}`)
-  else if (m.role === 'step' && m.seen && m.seen !== '0') lines.push('Ran in tests: its code ran during this endpoint’s tested requests')
-  else if (m.seen && m.seen !== '0') lines.push(`Ran in tests: ${count(+m.seen)} call${m.seen === '1' ? '' : 's'} into its code`)
+  else if (m.role === 'step' && m.seen && m.seen !== '0') lines.push('Seen in tests: its code was called during this endpoint’s tested requests')
+  else if (m.seen && m.seen !== '0') lines.push(`Seen in tests: ${count(+m.seen)} call${m.seen === '1' ? '' : 's'} into its code`)
   return { lines, unseen }
 }
 

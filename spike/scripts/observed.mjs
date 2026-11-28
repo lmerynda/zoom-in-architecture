@@ -5,47 +5,79 @@
 import { posix } from 'node:path'
 import { javaCode, normalRoute } from './trace.mjs'
 
+/** Java source with its Unicode escapes read (A is A), as the compiler reads it before anything else. */
+const unescapeJava = text => text.replace(/(?<!\\)((?:\\\\)*)\\u+([0-9a-fA-F]{4})/g, (_, run, hex) => run + String.fromCharCode(parseInt(hex, 16)))
+
+/** The name a "{" at i opens a type of, from the declaration before it (back to the last ";", "{" or "}" outside parentheses), or null. */
+function typeAt(code, i) {
+  let j = i - 1
+  for (let depth = 0; j >= 0; j--) {
+    const c = code[j]
+    if (c === ')') depth++
+    else if (c === '(') { if (!depth) break; depth-- }
+    else if (!depth && (c === ';' || c === '{' || c === '}')) break
+  }
+  // What is in parentheses (annotations' values, a record's components) is never the declaration.
+  let depth = 0
+  const head = [...code.slice(j + 1, i)].map(c => { if (c === '(') depth++; const out = depth ? ' ' : c; if (c === ')') depth--; return out }).join('')
+  return /\b(?:class|interface|enum|record)\s+([\p{L}_$][\p{L}\p{N}_$]*)[^;{}]*$/u.exec(head)?.[1] ?? null
+}
+
 /**
- * The top-level types the Java files of `texts` ({ path: source }) declare, by full name: a Map of
- * 'com.x.Foo' to every file that declares it (one, unless two modules share a package). Classes,
- * interfaces, enums, records and annotations, package-private ones too; nested and local types are
- * their top-level type's. Only Java: the Java agent's spans name no other language's code, so a
- * polyglot model's shop/Order.py or Order.cs never takes shop.Order's calls.
+ * The types a Java source declares, comments and strings blanked (javaCode): its package and each
+ * type with its name in the file ("Offer", "Offer.Builder") and where its body opens and closes.
+ * Top-level and member types; a local or anonymous class, in a method or an initializer, is not one.
+ */
+function javaTypes(code) {
+  const pkg = /^\s*package\s+([^;]+);/m.exec(code)?.[1].replace(/\s+/g, '') ?? ''
+  const types = [], open = []
+  for (let i = 0; i < code.length; i++) {
+    if (code[i] === '{') {
+      // A type is declared at the top or straight in a type's body.
+      const parent = open.length ? open[open.length - 1].name : ''
+      const own = parent !== null ? typeAt(code, i) : null
+      const block = { name: own ? (parent ? `${parent}.${own}` : own) : null, open: i, close: code.length }
+      open.push(block)
+      if (own) types.push(block)
+    } else if (code[i] === '}' && open.length) open.pop().close = i
+  }
+  return { pkg, types }
+}
+
+/**
+ * The types the Java files of `texts` ({ path: source }) declare, by full name: a Map of
+ * 'com.x.Foo' (a member type 'com.x.Foo.Inner') to every file that declares it (one, unless two
+ * modules share a package). Classes, interfaces, enums, records and annotations, package-private
+ * ones too. Only Java: the Java agent's spans name no other language's code, so a polyglot model's
+ * shop/Order.py or Order.cs never takes shop.Order's calls.
  */
 export function declaredTypes(texts) {
   const out = new Map()
   for (const [path, text] of Object.entries(texts)) {
     if (!path.endsWith('.java')) continue
-    const code = javaCode(text)
-    const pkg = /^\s*package\s+([\p{L}\p{N}_$.]+)\s*;/mu.exec(code)?.[1]
-    let depth = 0
-    for (let i = 0; i < code.length; i++) {
-      if (code[i] === '}') depth--
-      else if (code[i] === '{' && depth++ === 0) {
-        // A top-level type starts: the declaration just before this brace names it.
-        const decl = /\b(?:class|interface|enum|record)\s+([\p{L}_$][\p{L}\p{N}_$]*)[^;{}]*$/u.exec(code.slice(Math.max(0, i - 500), i))
-        if (!decl) continue
-        const name = pkg ? `${pkg}.${decl[1]}` : decl[1]
-        out.set(name, [...new Set([...(out.get(name) ?? []), path])].sort())
-      }
+    const { pkg, types } = javaTypes(javaCode(unescapeJava(text)))
+    for (const t of types) {
+      const name = pkg ? `${pkg}.${t.name}` : t.name
+      out.set(name, [...new Set([...(out.get(name) ?? []), path])].sort())
     }
   }
   return out
 }
 
 /**
- * Each class's file, among `types` (declaredTypes): the file that declares it, or for a nested,
- * inner, local or anonymous class its top-level class's, which the agent names com.x.Foo$Inner or
- * com.x.Foo$1 (a lambda com.x.Foo$$Lambda/…, a proxy com.x.Foo$$SpringCGLIB$$0) and others
- * com.x.Foo.Inner. The longest declared name wins, so a top-level class named Foo$Bar is its own.
- * A class no file declares (a library's), or two files do (one package in two modules), has none:
- * which file ran is not known.
+ * Each class's file, among `types` (declaredTypes): the file that declares it. A name written with
+ * dots (com.x.Foo.Inner) must be declared as it is. The agent names a nested, local or anonymous
+ * class com.x.Foo$Inner or com.x.Foo$1 (a lambda com.x.Foo$$Lambda/…, a proxy
+ * com.x.Foo$$SpringCGLIB$$0): with no type of that very name, it is cut at its "$"s from the end
+ * until one is declared, so a top-level class named Foo$Bar is its own; a "$" with a dot after it
+ * is in a package's name, never cut. A class no file declares (a library's), or two files do (one
+ * package in two modules), has none: which file ran is not known.
  */
 export function classFiles(types, classes) {
   const out = new Map()
   for (const c of classes) {
-    // The whole name, then shorter at each "$" or "." from its end: Foo$Inner$1, Foo$Inner, Foo.
-    for (let k = c.length; k > 0; k = Math.max(c.lastIndexOf('$', k - 1), c.lastIndexOf('.', k - 1))) {
+    for (let k = c.length; k > 0; k = c.lastIndexOf('$', k - 1)) {
+      if (c.slice(k).includes('.')) break
       const hits = types.get(c.slice(0, k))
       if (!hits) continue
       if (hits.length === 1) out.set(c, hits[0])
@@ -53,6 +85,26 @@ export function classFiles(types, classes) {
     }
   }
   return out
+}
+
+/**
+ * Where class `cls` is in a Java source's blanked code: its body's [open, close] without the bodies
+ * of the types inside it, or null. A "$" name is its outer type's when it is no member type (an
+ * anonymous or local class, a lambda).
+ */
+function typeBody(code, cls) {
+  const { pkg, types } = javaTypes(code)
+  let name = pkg && cls.startsWith(`${pkg}.`) ? cls.slice(pkg.length + 1) : cls
+  for (;;) {
+    const t = types.find(x => x.name === name) ?? types.find(x => x.name === name.replace(/\$/g, '.'))
+    if (t) {
+      const chars = code.slice(0, t.close).split('')
+      for (const inner of types) if (inner.name.startsWith(`${t.name}.`) && inner.open > t.open && inner.close < t.close) for (let k = inner.open; k <= inner.close; k++) if (chars[k] !== '\n') chars[k] = ' '
+      return { open: t.open, close: t.close, text: chars.join('') }
+    }
+    if (!name.includes('$')) return null
+    name = name.slice(0, name.lastIndexOf('$'))
+  }
 }
 
 /**
@@ -350,11 +402,18 @@ export function placeTree(tree, types, sources) {
   const walk = ns => { for (const n of ns) { const k = n.at.lastIndexOf('.'); if (k > 0 && !/\s/.test(n.at)) classes.add(n.at.slice(0, k)); walk(n.kids ?? []) } }
   walk(tree)
   const fileOf = classFiles(types, [...classes])
-  // Where a method is declared: its name after a type (on this line or the one before), not after
-  // "return", "new" or a dot, outside comments and strings.
-  const lineOf = (path, name) => {
-    const text = javaCode(sources[path] ?? '')
+  // Where a method is declared in its class's own body (not another class's of the file, nor a type's
+  // inside it): its name after a type (on this line or the one before), not after "return", "new" or
+  // a dot, outside comments and strings.
+  const bodies = new Map()
+  const lineOf = (path, cls, name) => {
+    const key = `${path}\n${cls}`
+    if (!bodies.has(key)) bodies.set(key, typeBody(javaCode(sources[path] ?? ''), cls))
+    const body = bodies.get(key)
+    if (!body) return null
+    const text = body.text
     for (const m of text.matchAll(new RegExp(`(?<![\\p{L}\\p{N}_$.])${name.replace(/\$/g, '\\$')}\\s*\\(`, 'gu'))) {
+      if (m.index <= body.open) continue
       const before = /([\p{L}\p{N}_$>\]]+)\s*$/u.exec(text.slice(Math.max(0, m.index - 200), m.index))
       if (!before || !/\s$/.test(text.slice(0, m.index)) || /^(return|new|throw|else|case|yield|await)$/.test(before[1])) continue
       return text.slice(0, m.index).split('\n').length
@@ -363,7 +422,7 @@ export function placeTree(tree, types, sources) {
   }
   const place = ns => ns.map(n => {
     const k = n.at.lastIndexOf('.'), path = k > 0 && !/\s/.test(n.at) ? fileOf.get(n.at.slice(0, k)) ?? null : null
-    const line = path ? lineOf(path, n.at.slice(k + 1)) : null
+    const line = path ? lineOf(path, n.at.slice(0, k), n.at.slice(k + 1)) : null
     return { at: n.at, count: n.count, ...(path ? { path } : {}), ...(line ? { line } : {}), ...(n.kids?.length ? { kids: place(n.kids) } : {}) }
   })
   return place(tree)
