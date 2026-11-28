@@ -311,22 +311,22 @@ export function revision(repo) {
  * Evidence that moved with the code: for each cited line whose text changed since `before` (what
  * a file said when the map was last right, e.g. at the last commit), the one line in the current
  * file that still reads exactly as the cited line did. Only exact, unique matches move; anything
- * else is left for a person, with the reason. Returns the new map and what it did.
+ * else is left for a person, with the reason. `cited` is the evidence the map held at that same
+ * point (null when the map was not kept there): evidence written later already reads against
+ * today's code, so it stays, and following twice from the same point moves nothing more.
+ * Returns the new map and what it did.
  */
-export function followEvidence(repo, map, before, marked = () => false) {
+export function followEvidence(repo, map, before, cited = null) {
   const moved = [], left = []
   const now = new Map()
   const current = file => now.get(file) ?? (now.set(file, existsSync(join(repo, file)) ? readFileSync(join(repo, file), 'utf8').split('\n') : null), now.get(file))
   const renamed = new Map()
   const links = (map.links ?? []).map(l => (!l.evidence ? l : { ...l, evidence: l.evidence.map(ev => {
     const m = String(ev).match(/^(.+?):(\d+)(?:-(\d+))?$/)
-    if (!m) return ev
+    if (!m || (cited && !cited.has(String(ev)))) return ev
     const [file, from, to] = [m[1], Number(m[2]), Number(m[3] ?? m[2])]
     const old = before(file), cur = current(file)
     if (!old || !cur || !old[from - 1]?.trim()) return ev
-    // Evidence already on a line the scanner marks is where it should be, whatever an older
-    // version said there: following it from a stale --since would move it off the call.
-    if (marked(file, from)) return ev
     const was = old.slice(from - 1, to).map(s => s.trim()).join('\n')
     if (cur.slice(from - 1, to).map(s => s.trim()).join('\n') === was) return ev
     const hits = []

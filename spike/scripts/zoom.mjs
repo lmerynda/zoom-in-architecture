@@ -24,7 +24,7 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, posix } from 'node:path'
+import { dirname, join, posix, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { buildGraph } from './graph.mjs'
 import { auditPlacement, buildModel, bundle, compareMaps, followEvidence, toName } from './map.mjs'
@@ -245,9 +245,12 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       // What each cited file said at --since (the last commit by default), from git.
       const rev = args.since ?? 'HEAD'
       const before = file => { try { return execFileSync('git', ['-C', a, 'show', `${rev}:./${file}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 26 }).split('\n') } catch { return null } }
-      // Lines the scanner marks today (calls, routes, stores): evidence on one stays put.
-      const hints = new Map(buildGraph(a).files.map(f => [f.path, new Set(f.hints.map(h => h.line))]))
-      const r = followEvidence(a, readMap(b), before, (file, line) => !!hints.get(file)?.has(line))
+      // The evidence the map held at --since, when the repo kept it there: only that is followed.
+      const kept = relative(resolve(a), resolve(b)).replace(/\\/g, '/')
+      const was = kept.startsWith('..') ? null : before(kept)
+      let cited = null
+      try { cited = was && new Set((JSON.parse(was.join('\n')).links ?? []).flatMap(l => (l.evidence ?? []).map(String))) } catch { /* not a map there */ }
+      const r = followEvidence(a, readMap(b), before, cited)
       // Only the moved strings change, so the map keeps its own layout; through placeholders, so a
       // line moving onto another moved line's old number is not moved twice.
       if (r.moved.length) {

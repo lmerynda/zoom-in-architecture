@@ -315,6 +315,16 @@ describe('followEvidence', () => {
     expect(r.map.accepted).toEqual({ 'web/src/api.ts:1': 'x' })
   })
 
+  it('follows what the map cited at --since past shifted code, once', () => {
+    // Since --since a line was added on top: the call once on line 1 is on line 2, and line 1
+    // now holds another call. The map cited line 1 then, so it moves, however line 1 reads now.
+    const since = new Set(['web/src/api.ts:1'])
+    const r = followEvidence(repo, cite('web/src/api.ts:1'), () => cur.slice(1), since)
+    expect(r.moved).toEqual(['web/src/api.ts:1 → web/src/api.ts:2'])
+    // Following again from the same point moves nothing more.
+    expect(followEvidence(repo, r.map, () => cur.slice(1), since).moved).toEqual([])
+  })
+
   it('leaves a line that did not change, and one it cannot place for certain', () => {
     expect(followEvidence(repo, cite('web/src/api.ts:1'), () => cur).moved).toEqual([])
     // The cited text (a closing brace) now reads the same on many lines: a person decides.
@@ -322,10 +332,10 @@ describe('followEvidence', () => {
     const many = followEvidence(crowd, { links: [{ from: 'a', to: 'b', evidence: ['src/main/java/shop/AccountService.java:2'] }] }, () => ['', '}'])
     expect(many.moved).toEqual([])
     expect(many.left[0]).toMatch(/^src\/main\/java\/shop\/AccountService\.java:2: \d+ lines read as it did$/)
-    // Evidence already on a marked line stays, even when an older version read differently there.
-    const stale = followEvidence(repo, cite('web/src/api.ts:2'), () => ['// old header', ...cur], (f, l) => f === 'web/src/api.ts' && l === 2)
+    // Evidence the map did not hold at --since was written against today's code: it stays.
+    const stale = followEvidence(repo, cite('web/src/api.ts:2'), () => ['// old header', ...cur], new Set(['web/src/api.ts:3']))
     expect(stale.moved).toEqual([])
-    const none = followEvidence(repo, cite('web/src/api.ts:1'), () => ['something that is gone'])
+    const none =followEvidence(repo, cite('web/src/api.ts:1'), () => ['something that is gone'])
     expect(none.left).toEqual(['web/src/api.ts:1: no line reads as it did'])
   })
 })
