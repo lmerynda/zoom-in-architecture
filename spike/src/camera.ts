@@ -25,6 +25,19 @@ export class Camera {
    * 0 (reduced motion) cuts straight to the destination.
    */
   maxFlightMs = 700
+  /**
+   * Called when the camera is moved other than inside `steer`: the reader's wheel, drag, keys,
+   * minimap, or a flight they asked for that the page does not keep aimed. The page steers the
+   * camera to what the reader asked to see inside `steer`; any other move makes the camera theirs.
+   */
+  onHand: (() => void) | null = null
+  private steering = 0
+  /** Runs `fn` as the page steering the camera, not the reader moving it: no `onHand`. */
+  steer<T>(fn: () => T): T {
+    this.steering++
+    try { return fn() } finally { this.steering-- }
+  }
+  private hand() { if (!this.steering) this.onHand?.() }
 
   /** A new window size keeps what was in view in view: the zoom scales with the window. */
   resize(w: number, h: number) {
@@ -53,6 +66,11 @@ export class Camera {
   get flightMs() { return this.fly?.dur ?? 0 }
 
   set(x: number, y: number, z: number) {
+    this.hand()
+    this.place(x, y, z)
+  }
+
+  private place(x: number, y: number, z: number) {
     this.x = x; this.y = y; this.z = z
     this.targetLogZ = Math.log(z)
     this.anchor = null; this.fly = null; this.vx = this.vy = 0
@@ -64,6 +82,7 @@ export class Camera {
    * the current target never pulls the camera back.
    */
   zoomAt(sx: number, sy: number, factor: number, maxZ = Infinity, minZ = 0) {
+    this.hand()
     this.fly = null
     this.vx = this.vy = 0
     if (!this.anchor || this.anchor.sx !== sx || this.anchor.sy !== sy) {
@@ -88,27 +107,39 @@ export class Camera {
     if (this.anchor) { this.anchor.wx = mx(this.anchor.wx); this.anchor.wy = my(this.anchor.wy) }
     const f = this.fly
     if (f) {
-      const at = f.at
-      this.fly = { ...f, at: s => { const [cx, cy, vw] = at(s); return [mx(cx), my(cy), vw * k] } }
+      const at = f.at, m = (p: View): View => [mx(p[0]), my(p[1]), p[2] * k]
+      this.fly = { ...f, at: s => m(at(s)), end: m(f.end), to: m(f.to) }
     }
+  }
+
+  /**
+   * Sends a flight under way to a new end, centre (x, y) at zoom z, on its own clock: the path
+   * bends toward the new end as it goes, so a target that moves (a resize, a layout moving into
+   * place) is met when the flight was due to land, never restarted or stalled. False when not flying.
+   */
+  aim(x: number, y: number, z: number) {
+    if (!this.fly) return false
+    this.fly.to = [x, y, this.w / z]
+    return true
   }
 
   /** Where a flight under way ends: its centre in world units and its zoom, or null. */
   get destination(): [number, number, number] | null {
     if (!this.fly) return null
-    const [cx, cy, vw] = this.fly.at(this.fly.S)
+    const [cx, cy, vw] = this.fly.to
     return [cx, cy, this.w / vw]
   }
 
   /** Pans by screen pixels. A zoom in progress keeps going, still anchored on the same screen point. */
   panBy(dx: number, dy: number) {
+    this.hand()
     this.fly = null
     this.x -= dx / this.z
     this.y -= dy / this.z
     if (this.anchor) { this.anchor.wx -= dx / this.z; this.anchor.wy -= dy / this.z }
   }
 
-  release(vx: number, vy: number) { this.vx = vx; this.vy = vy }
+  release(vx: number, vy: number) { if (vx || vy) this.hand(); this.vx = vx; this.vy = vy }
 
   /**
    * Fits a world rect along the van Wijk–Nuij optimal path: far jumps pull back, glide and dive
@@ -116,17 +147,19 @@ export class Camera {
    */
   flyTo(x: number, y: number, w: number, h: number, now: number, fill = 0.85, dur?: number) {
     const z1 = Math.min((this.w * fill) / w, (this.h * fill) / h)
+    this.hand()
     this.anchor = null
     this.vx = this.vy = 0
     const f = flight(this.x, this.y, this.w / this.z, x + w / 2, y + h / 2, this.w / z1)
     const ms = Math.min(this.maxFlightMs, dur ?? Math.max(350, 300 + f.S * 120))
-    if (ms <= 0) { const [cx, cy, vw] = f.at(f.S); this.set(cx, cy, this.w / vw); return }
-    this.fly = { ...f, t0: now, dur: ms }
+    const end = f.at(f.S)
+    if (ms <= 0) { this.place(end[0], end[1], this.w / end[2]); return }
+    this.fly = { ...f, t0: now, dur: ms, end, to: end }
   }
 
   /** Ends a flight or a glide where it is now. */
   stop() {
-    if (this.fly) { this.fly = null; this.targetLogZ = Math.log(this.z) }
+    if (this.fly) { this.hand(); this.fly = null; this.targetLogZ = Math.log(this.z) }
     this.vx = this.vy = 0
   }
 
@@ -145,7 +178,9 @@ export class Camera {
       const f = this.fly
       const u = Math.min(1, (now - f.t0) / f.dur)
       const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2
-      const [cx, cy, vw] = f.at(e * f.S)
+      // The path as planned, bent toward where the flight was sent since (aim), all of the way by its end.
+      const [px, py, pw] = f.at(e * f.S)
+      const cx = px + (f.to[0] - f.end[0]) * e, cy = py + (f.to[1] - f.end[1]) * e, vw = pw * Math.pow(f.to[2] / f.end[2], e)
       this.x = cx; this.y = cy; this.z = this.w / vw
       this.focusX = this.w / 2; this.focusY = this.h / 2
       if (u >= 1) { this.fly = null; this.targetLogZ = Math.log(this.z) }
@@ -185,8 +220,14 @@ interface Flight {
   /** Path length in the zoom-pan metric. */
   S: number
   /** Centre x, y and view width in world units at path position s in [0, S]. */
-  at: (s: number) => [number, number, number]
+  at: (s: number) => View
+  /** Where the planned path ends, and where the flight lands: that end, or where `aim` sent it since. */
+  end: View
+  to: View
 }
+
+/** A view as its centre x, y and its width, in world units. */
+type View = [number, number, number]
 
 const RHO = 1.42
 
@@ -194,7 +235,7 @@ const RHO = 1.42
  * van Wijk & Nuij, "Smooth and efficient zooming and panning" (2003): the path from view
  * (c0, w0) to (c1, w1) that is shortest when zooming out costs as much as panning.
  */
-export function flight(x0: number, y0: number, w0: number, x1: number, y1: number, w1: number): Omit<Flight, 't0' | 'dur'> {
+export function flight(x0: number, y0: number, w0: number, x1: number, y1: number, w1: number): Pick<Flight, 'S' | 'at'> {
   const dx = x1 - x0, dy = y1 - y0
   const u1 = Math.hypot(dx, dy)
   const r2 = RHO * RHO

@@ -450,6 +450,81 @@ describe('Camera', () => {
     expect(cam.y).toBeCloseTo(503, 6)
     expect(cam.z).toBeCloseTo(100, 6)
   })
+
+  it('a flight sent to a new end lands there when it was due, not later', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    cam.flyTo(500, 500, 10, 6, 0, 1)
+    const due = cam.flightMs
+    let t = 0
+    // Sent on again and again, as a resize or a layout moving into place does each frame.
+    while (cam.flying && t < 10000) { t += 16; cam.aim(-200 + t / 10, 40, 50 + t / 100); cam.step(t, 16) }
+    expect(t).toBeLessThanOrEqual(due + 16)
+    expect(cam.x).toBeCloseTo(-200 + t / 10, 6)
+    expect(cam.y).toBeCloseTo(40, 6)
+    expect(cam.z).toBeCloseTo(50 + t / 100, 6)
+    expect(cam.aim(0, 0, 1)).toBe(false)
+  })
+
+  it('a flight sent to a new end starts where it was, with no jump', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    cam.flyTo(500, 500, 10, 6, 0, 1)
+    cam.aim(-5000, 9000, 0.01)
+    cam.step(0, 16)
+    expect(cam.x).toBeCloseTo(0, 6)
+    expect(cam.y).toBeCloseTo(0, 6)
+    expect(cam.z).toBeCloseTo(1, 6)
+    expect(cam.destination).toEqual([-5000, 9000, expect.closeTo(0.01, 9)])
+  })
+
+  it('a layout moved under a flight sent elsewhere moves its new end too', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    cam.set(0, 0, 1)
+    cam.flyTo(500, 500, 10, 6, 0, 1)
+    cam.aim(100, 200, 4)
+    // The world doubles about the origin and shifts by (10, 0).
+    cam.remap(0, 0, 10, 0, 2)
+    let t = 0
+    while (cam.flying && t < 10000) { t += 16; cam.step(t, 16) }
+    expect(cam.x).toBeCloseTo(210, 6)
+    expect(cam.y).toBeCloseTo(400, 6)
+    expect(cam.z).toBeCloseTo(2, 6)
+  })
+
+  it('tells the page when the reader moves it, never when the page steers it', () => {
+    const cam = new Camera()
+    cam.resize(1000, 600)
+    let hands = 0
+    cam.onHand = () => { hands++ }
+    cam.steer(() => { cam.set(0, 0, 1); cam.flyTo(500, 500, 10, 6, 0, 1); cam.aim(1, 2, 3); cam.stop() })
+    cam.resize(800, 600)
+    cam.remap(0, 0, 1, 1, 2)
+    // A press with no flight under way, and a release with no speed, move nothing.
+    cam.stop()
+    cam.release(0, 0)
+    expect(hands).toBe(0)
+    const moves: [string, () => void][] = [
+      ['set', () => cam.set(5, 5, 2)],
+      ['wheel', () => cam.zoomAt(10, 10, 1.1)],
+      ['drag', () => cam.panBy(3, 0)],
+      ['glide', () => cam.release(0.5, 0)],
+      ['jump', () => cam.flyTo(0, 0, 10, 10, 0, 1)],
+      ['press in a flight', () => cam.stop()],
+    ]
+    for (const [name, move] of moves) {
+      const before = hands
+      move()
+      expect(hands, name).toBe(before + 1)
+    }
+    // Nested steering stays the page's until the outermost ends.
+    cam.steer(() => cam.steer(() => cam.set(1, 1, 1)))
+    cam.steer(() => { try { cam.steer(() => { throw new Error('x') }) } catch { /* */ } cam.set(2, 2, 2) })
+    expect(hands).toBe(moves.length)
+  })
 })
 
 describe('flight (van Wijk–Nuij)', () => {

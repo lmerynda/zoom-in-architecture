@@ -288,26 +288,24 @@ async function main() {
     }
     return best
   }
-  // A live update moving into place (swapModel, stepMorph): declared here, as a resize reads it.
-  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean; last: [number, number, number]; resized: boolean; flying: boolean } | null = null
   /**
-   * The card the camera was last framed on and where that put it: while the camera is still there,
-   * the reader has not moved, and a change of the free stage (the bar settling) frames it again.
+   * A live update moving into place (swapModel, stepMorph). With nothing framed, the camera moves
+   * from cam0 to cam1 with what it shows, until the reader moves it (handsOff).
    */
-  // By id, not index: a live update may number the cards anew.
-  // vw: the framing's view width in world units, which a resize does not change.
-  let framedAt: { id: string; x: number; y: number; z: number; vw: number } | null = null
-  const atFramed = () => !!framedAt && cam.settled && Math.abs(cam.w / cam.z / framedAt.vw - 1) < 1e-3 && Math.hypot(cam.x - framedAt.x, cam.y - framedAt.y) * cam.z < 1
-  // The whole map framed, with or without a card selected in it (the map's crumb keeps the selection).
-  const atWhole = () => atFramed() && framedAt!.id === ''
-  /** A flight under way to the last framing (a card, or the whole map). */
-  // Its centre and its view width: a Back or Forward to the same centre at another zoom is not it,
-  // and a resize under the flight does not make it another.
-  const headedFramed = () => { const d = cam.destination; return !!d && !!framedAt && Math.hypot(d[0] - framedAt.x, d[1] - framedAt.y) * framedAt.z < 1 && Math.abs(cam.w / d[2] / framedAt.vw - 1) < 1e-3 }
-  /** A flight under way to the whole map's framing (Fit, the map's crumb, a refit). */
-  const headedWhole = () => headedFramed() && framedAt!.id === ''
-  /** The card last framed, in the current tree (-1 once it is gone). */
-  const framedCard = () => (framedAt!.id === '' ? 0 : tree.byId.get(framedAt!.id) ?? -1)
+  let morph: { t0: number; dur: number; from: { rect: Float64Array; content: Float64Array }; to: World; cam0: [number, number, number]; cam1: [number, number, number]; handsOff: boolean } | null = null
+  /**
+   * What the reader asked to see: a card (by id, since a live update may number the cards anew),
+   * the whole map, or nothing framed: a camera they moved by hand, or one a jump left somewhere
+   * no framing names (Back, a problem, a feature). The camera follows a framing wherever it is
+   * worked out again: a resize, the bar settling, the map laid out again, a live update moving into
+   * place (each step of it, a repeated update included), and a flight to it under way. It ends only
+   * when the reader moves the camera themselves (Camera.onHand) or asks for something else.
+   */
+  type Intent = { kind: 'card'; id: string } | { kind: 'whole' } | { kind: 'free' }
+  let intent: Intent = { kind: 'free' }
+  /** The card the reader asked to see, in the current tree: 0 for the whole map, -1 for none. */
+  const intended = () => (intent.kind === 'whole' ? 0 : intent.kind === 'card' ? tree.byId.get(intent.id) ?? -1 : -1)
+  cam.onHand = () => { intent = { kind: 'free' }; if (morph) morph.handsOff = true }
   /**
    * The camera that frames several cards together in the largest free frame, no closer than any one
    * of them alone, and close enough that every container they sit in is open, so each is drawn as
@@ -366,48 +364,45 @@ async function main() {
     }
     return best
   }
+  /** Flies to card i (0: the whole map), which becomes what the reader asked to see. */
   const fit = (i = 0) => {
     const f = frameFor(i), vw = cam.w / f.z, vh = cam.h / f.z
     if (i === 0) renderer.wholeZ = f.z
-    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f, vw: cam.w / f.z }
-    cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1)
+    cam.steer(() => cam.flyTo(f.x - vw / 2, f.y - vh / 2, vw, vh, now(), 1))
+    intent = i > 0 ? { kind: 'card', id: tree.els[i].id } : { kind: 'whole' }
   }
-  /** Frames card i at once, no flight: on load, and for a stage that changed under it. */
+  /** Frames card i at once, no flight (on load), and it becomes what the reader asked to see. */
   const setFrame = (i: number) => {
-    const f = frameFor(i)
-    cam.set(f.x, f.y, f.z)
-    if (i === 0) renderer.wholeZ = f.z
-    framedAt = { id: i > 0 ? tree.els[i].id : '', ...f, vw: cam.w / f.z }
+    intent = i > 0 ? { kind: 'card', id: tree.els[i].id } : { kind: 'whole' }
+    reframe()
   }
   const setWhole = () => setFrame(0)
+  /**
+   * Works the camera out again from what the reader asked to see, for the map and the screen as
+   * they are now: set there, or a flight under way sent there. False when nothing is framed (the
+   * camera is the reader's) or the card asked for is gone.
+   */
+  const reframe = () => {
+    const i = intended()
+    if (i < 0) return false
+    const f = frameFor(i)
+    if (i === 0) renderer.wholeZ = f.z
+    cam.steer(() => { if (!cam.aim(f.x, f.y, f.z)) cam.set(f.x, f.y, f.z) })
+    return true
+  }
   const resize = () => {
-    const was = atWhole(), z0 = cam.z, flyingTo = headedFramed() ? framedCard() : -1
+    const z0 = cam.z
     cam.resize(app.screen.width, app.screen.height)
-    // A live update moving into place scales its camera path with the window, as the camera did.
+    // A live update moving a free camera scales its path with the window, as the camera did.
     if (morph) { const k = cam.z / z0; morph.cam0[2] *= k; morph.cam1[2] *= k }
     measureHud()
-    if (was) setWhole()
     // The whole map's zoom on this screen, which says when you are at the whole map (breadcrumb).
-    else renderer.wholeZ = frameFor(0).z
-    // A resize is not the reader taking the camera from a live update's morph.
-    if (morph) { morph.last = [cam.x, cam.y, cam.z]; morph.resized = true }
-    // A flight to a framing was aimed for the old screen: once the window stops changing it is aimed
-    // again at that framing on this one (each resize step would restart it, and it would stall).
-    if (flyingTo >= 0) {
-      clearTimeout(reaiming)
-      // Only if nothing has been framed since and the reader has not taken over (a wheel stops the
-      // flight short of its framing).
-      const target = framedAt
-      // By id when it fires: a live update meanwhile may number the cards anew.
-      // A live update moving into place re-aims it itself when it ends (stepMorph).
-      reaiming = setTimeout(() => { const i = framedAt === target && !morph ? framedCard() : -1; if (i >= 0 && (headedFramed() || atFramed())) fit(i) }, 150)
-    }
+    renderer.wholeZ = frameFor(0).z
+    reframe()
     reshape()
   }
   /** Lays the whole map out again once the stage's shape has changed by more than a seventh and settled. */
   let reshaping: ReturnType<typeof setTimeout> | undefined, relaying = false
-  /** A flight to a framing, aimed again once a resize settles. */
-  let reaiming: ReturnType<typeof setTimeout> | undefined
   /** Live updates being laid out: a relayout waits for them, and they for nothing. */
   let swapping = 0
   const reshape = () => {
@@ -417,7 +412,8 @@ async function main() {
   /**
    * A new shape for the stage lays out only the whole map's own level again, in place: the model,
    * the selection and the panel (an arrow being inspected) stay. The reader stays where they were:
-   * at the whole map, framed again; else on the selection, or the card at the screen's centre.
+   * on what they asked to see (a card, the whole map), framed again; else on the selection, or
+   * the card at the screen's centre.
    */
   const relayout = async () => {
     const next = stageAspect()
@@ -452,15 +448,9 @@ async function main() {
       world.content.set(placed.content)
       world.local = local
       renderer.router.reset()
-      // At the whole map before and still now (the reader may have moved while it was laid out).
-      // On the way to the whole map (Fit, the map's crumb, a live update's refit): it flies on to the new frame.
-      const goingWhole = headedWhole()
-      // At the whole map now the layout has landed (whether the reader was there, or a flight landed
-      // meanwhile): framed whole again.
-      if (atWhole()) setWhole()
-      else if (goingWhole) fit(0)
-      // Otherwise the camera moves with that card, a flight or a wheel zoom under way included.
-      else if (anchor > 0) cam.remap(ax, ay, r[a], r[a + 1], r[a + 2] / aw)
+      // What the reader asked to see is framed again in the new layout, or a flight to it sent
+      // there; a camera that is theirs moves with that card, a flight or a wheel zoom under way included.
+      if (!reframe() && anchor > 0) cam.remap(ax, ay, r[a], r[a + 1], r[a + 2] / aw)
       renderer.wholeZ = frameFor(0).z
     } finally { relaying = false }
   }
@@ -482,7 +472,7 @@ async function main() {
     setSafeTop(h)
     // A bar that wraps to another row, or unwraps once the views are listed, changes the stage:
     // what was framed (the whole map, or the card a link opened at) is framed again for it while you have not moved.
-    if (atFramed() && framedCard() >= 0) setFrame(framedCard())
+    reframe()
     reshape()
   }).observe($('top'))
 
@@ -1227,8 +1217,6 @@ async function main() {
   // version replaces the old in place: unchanged containers keep their layout, survivors glide
   // to their new places, new cards grow out of their parent, and changes glow for a moment.
   let liveVersion = 0
-  /** A live update arrived while the reader was at the whole map: frame it whole again after its morph. */
-  let refitAfterMorph = false
   const swapModel = async (json: ModelJson, buildMs = 0, said?: string) => {
     raw = json
     const swapStart = performance.now()
@@ -1321,17 +1309,12 @@ async function main() {
       if (keep.focus) focusHeading()
     }
     refreshSurface()
-    // At the whole map when it is installed (not when it was asked for: the reader may have moved
-    // while it was laid out), a new version is framed whole again once it has moved into place.
-    // An update arriving while the last one still moves into place inherits its pending refit (the
-    // camera is mid-path then, not at a framing) and whether a resize moved it.
-    // Not if the reader moved the camera since that morph's last step (a drag not yet seen by it).
-    const l = morph?.last, moved = !!l && (!cam.settled || Math.hypot(cam.x - l[0], cam.y - l[1]) * cam.z > 0.5 || Math.abs(cam.z / l[2] - 1) > 1e-6)
-    const pending = !!morph && refitAfterMorph && !morph.handsOff && !moved, resized = !!morph && morph.resized
-    // One arriving while the camera flies to the whole map (a refit, Fit) keeps that destination.
-    const flying = headedWhole()
-    refitAfterMorph = pending || flying || atWhole()
-    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: false, last: [cam.x, cam.y, cam.z], resized, flying }
+    // A card asked for that this version no longer has: the camera moves with what it shows instead.
+    if (intended() < 0) intent = { kind: 'free' }
+    // What the reader asked to see is framed at each step of the move (stepMorph); an update
+    // arriving while the last one still moves into place starts from where that one had got to.
+    // A free camera already moving is the reader's (a jump of theirs, a wheel, a glide): the move leaves it be.
+    morph = { t0: t, dur: 700, from: start, to: target, cam0, cam1, handsOff: intended() < 0 && !cam.settled }
     liveVersion++
     // An update that changed nothing (a file written twice) says nothing, so it never hides one that did.
     const changed = diff.added.length + diff.removed.length + diff.changed.length + diff.arrowsAdded + diff.arrowsRemoved + diff.evidenceChanged + diff.viaChanged > 0
@@ -1352,33 +1335,14 @@ async function main() {
     for (let k = 0; k < r.length; k++) r[k] = fr[k] + (tr[k] - fr[k]) * e
     for (let k = 0; k < c.length; k++) c[k] = fc[k] + (tc[k] - fc[k]) * e
     const [x0, y0, z0] = morph.cam0, [x1, y1, z1] = morph.cam1
-    // The morph moves the camera with what it shows until the reader takes over (a wheel, a pan, a
-    // flight): from then on the camera is theirs, and no refit follows.
-    // A wheel or a flight leaves the camera unsettled; a drag moves it from where the morph put it.
-    const l = morph.last
-    // Moved by more than rounding: a drag, not the next step of the morph's own numbers.
-    if (!cam.settled || Math.hypot(cam.x - l[0], cam.y - l[1]) * cam.z > 0.5 || Math.abs(cam.z / l[2] - 1) > 1e-6) morph.handsOff = true
-    if (!morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
+    // What the reader asked to see is framed where it now is, or a flight to it sent there. Else the
+    // camera moves with what it shows until the reader moves it (a wheel, a pan, a jump): then it is theirs.
+    if (!reframe() && !morph.handsOff && (x0 !== x1 || y0 !== y1 || z0 !== z1)) {
       const z = Math.exp(Math.log(z0) + (Math.log(z1) - Math.log(z0)) * e)
-      cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z)
-      morph.last = [cam.x, cam.y, cam.z]
+      cam.steer(() => cam.set(x0 + (x1 - x0) * e, y0 + (y1 - y0) * e, z))
     }
     renderer.router.invalidate()
-    // The refit waits for the morph, and is dropped if the reader moved meanwhile (a wheel, a pan).
-    if (u >= 1) {
-      // A resize moved the camera too (not the reader): the whole map is still framed after it.
-      const stayed = !morph.handsOff && cam.settled && (morph.resized || (Math.abs(cam.z / z1 - 1) < 1e-3 && Math.hypot(cam.x - x1, cam.y - y1) * cam.z < 1))
-      // A refit flight that was under way when it was installed still counts if it is still headed
-      // there or has landed there (a reader's click or wheel would have changed or stopped it).
-      const stillWhole = morph.flying && (headedWhole() || atWhole())
-      morph = null
-      // Or the reader asked for a framing during the morph (a card, the crumb, Fit), or a resize re-aimed
-      // one: that flight aimed at a layout still moving, so it is framed again for the one now in place.
-      const asked = !!framedAt && (atFramed() || headedFramed()) ? framedCard() : -1
-      if (refitAfterMorph && (stayed || stillWhole)) fit(0)
-      else if (asked >= 0) fit(asked)
-      refitAfterMorph = false
-    }
+    if (u >= 1) morph = null
   }
   let pending: Promise<void> = Promise.resolve()
   import.meta.hot?.on('model:update', ({ name }: { name: string }) => {
